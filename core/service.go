@@ -128,47 +128,12 @@ func (s *Service) start(configPath string, ruleSetProxy string) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
-	// Translate YAML to sing-box JSON if needed
-	var jsonContent string
-	if translator.DetectFormat(data) == translator.FormatYAML {
-		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-		result, _, err := translator.TranslateWithOptions(data, opts)
-		if err != nil {
-			return fmt.Errorf("translate config: %w", err)
-		}
-		jsonContent = result
-	} else {
-		jsonContent = string(data)
-	}
-
-	// Start or reload the service
-	err = s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{})
+	jsonContent, err := s.translateConfig(data, ruleSetProxy)
 	if err != nil {
-		return fmt.Errorf("start service: %w", err)
+		return err
 	}
 
-	// Create and connect the new command client before disconnecting old
-	opts := &libbox.CommandClientOptions{
-		StatusInterval: 1000,
-	}
-	opts.AddCommand(libbox.CommandLog)
-	opts.AddCommand(libbox.CommandStatus)
-	opts.AddCommand(libbox.CommandGroup)
-	opts.AddCommand(libbox.CommandConnections)
-
-	newClient := libbox.NewCommandClient(s.handler, opts)
-	if err := newClient.Connect(); err != nil {
-		return fmt.Errorf("connect command client: %w", err)
-	}
-
-	// Disconnect previous client after new one is ready (reload case)
-	if s.commandClient != nil {
-		s.commandClient.Disconnect()
-	}
-	s.commandClient = newClient
-
-	s.started = true
-	return nil
+	return s.startWithJSON(jsonContent)
 }
 
 // Stop shuts down the running singleton service.
@@ -357,18 +322,30 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 
 	s.ruleSetProxy = ruleSetProxy
 
-	var jsonContent string
-	if translator.DetectFormat([]byte(content)) == translator.FormatYAML {
-		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-		result, _, err := translator.TranslateWithOptions([]byte(content), opts)
-		if err != nil {
-			return fmt.Errorf("translate config: %w", err)
-		}
-		jsonContent = result
-	} else {
-		jsonContent = content
+	jsonContent, err := s.translateConfig([]byte(content), ruleSetProxy)
+	if err != nil {
+		return err
 	}
 
+	return s.startWithJSON(jsonContent)
+}
+
+// translateConfig translates raw config bytes (YAML or JSON) to sing-box JSON.
+func (s *Service) translateConfig(data []byte, ruleSetProxy string) (string, error) {
+	if translator.DetectFormat(data) == translator.FormatYAML {
+		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
+		result, _, err := translator.TranslateWithOptions(data, opts)
+		if err != nil {
+			return "", fmt.Errorf("translate config: %w", err)
+		}
+		return result, nil
+	}
+	return string(data), nil
+}
+
+// startWithJSON feeds the already-translated JSON config to libbox and
+// reconnects the command client. Caller must hold s.mu.
+func (s *Service) startWithJSON(jsonContent string) error {
 	err := s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{})
 	if err != nil {
 		return fmt.Errorf("start service: %w", err)
