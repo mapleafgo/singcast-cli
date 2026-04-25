@@ -14,7 +14,9 @@ const (
 func DetectFormat(data []byte) Format {
 	var v any
 	if json.Unmarshal(data, &v) == nil {
-		return FormatJSON
+		if _, ok := v.(map[string]any); ok {
+			return FormatJSON
+		}
 	}
 	return FormatYAML
 }

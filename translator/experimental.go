@@ -1,5 +1,7 @@
 package translator
 
+import "strings"
+
 func translateExperimental(cfg *RawConfig, result *singboxConfig) {
 	clashAPI := map[string]any{
 		"external_controller": "127.0.0.1:9090",
@@ -12,15 +14,17 @@ func translateExperimental(cfg *RawConfig, result *singboxConfig) {
 	if cfg.Secret != "" {
 		clashAPI["secret"] = cfg.Secret
 	}
+	if cfg.ExternalUI != "" {
+		clashAPI["external_ui"] = cfg.ExternalUI
+	}
 	if cfg.Mode != "" {
 		clashAPI["default_mode"] = modeMap(cfg.Mode)
 	}
 
 	cacheFile := map[string]any{
-		"enabled":      cfg.Profile.StoreSelected,
+		"enabled":      true,
 		"path":         "cache.db",
 		"store_fakeip": cfg.Profile.StoreFakeIP,
-		"store_dns":    true,
 	}
 
 	exp := map[string]any{
@@ -31,7 +35,7 @@ func translateExperimental(cfg *RawConfig, result *singboxConfig) {
 }
 
 func modeMap(mode string) string {
-	switch mode {
+	switch strings.ToLower(mode) {
 	case "rule":
 		return "Rule"
 	case "global":

@@ -1,0 +1,66 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/urfave/cli/v3"
+
+	"github.com/mapleafgo/singcast/translator"
+)
+
+func convertCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "convert",
+		Usage: "Translate a mihomo YAML config to sing-box JSON",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "config",
+				Aliases:  []string{"c"},
+				Usage:    "input config file path",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:    "output",
+				Aliases: []string{"o"},
+				Usage:   "output file path (default: stdout)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			data, err := os.ReadFile(cmd.String("config"))
+			if err != nil {
+				return fmt.Errorf("read config: %w", err)
+			}
+			if len(bytes.TrimSpace(data)) == 0 {
+				return fmt.Errorf("config file is empty")
+			}
+
+			var result string
+			if translator.DetectFormat(data) == translator.FormatJSON {
+				result = string(data)
+			} else {
+				translated, warnings, err := translator.Translate(data)
+				if err != nil {
+					return fmt.Errorf("translate: %w", err)
+				}
+				for _, w := range warnings {
+					fmt.Fprintln(os.Stderr, "warning:", w)
+				}
+				result = translated
+			}
+
+			outputPath := cmd.String("output")
+			if outputPath == "" {
+				os.Stdout.Write([]byte(result))
+				os.Stdout.Write([]byte("\n"))
+			} else {
+				if err := os.WriteFile(outputPath, []byte(result), 0o644); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
+			}
+			return nil
+		},
+	}
+}

@@ -20,9 +20,21 @@ jobs:
       - uses: thebritican/fetch-latest-release@v2.0.0
         id: get-release
 
+  # ── 测试 ────────────────────────────────────────────────
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: go test ./translator/...
+
   # ── CLI 二进制 ──────────────────────────────────────────
 
   build-cli:
+    needs: [get-release, test]
     strategy:
       matrix:
         include:
@@ -51,7 +63,6 @@ jobs:
             goarch: arm64
             ext: ".exe"
     runs-on: ${{ matrix.os }}
-    needs: [get-release]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -60,9 +71,11 @@ jobs:
       - name: Build
         env:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
+          CGO_ENABLED: 0
         run: |
           mkdir -p build
-          go build -trimpath -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
+          go build -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
+            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
             ./cmd/singcast
       - name: Package
@@ -79,35 +92,41 @@ jobs:
   # ── FFI 共享库 (桌面) ───────────────────────────────────
 
   build-ffi-desktop:
+    needs: [get-release, test]
     strategy:
       matrix:
         include:
-          - goos: linux
+          - os: ubuntu-latest
+            goos: linux
             goarch: amd64
             ext: .so
             prefix: lib
-          - goos: linux
+          - os: ubuntu-latest
+            goos: linux
             goarch: arm64
             ext: .so
             prefix: lib
-          - goos: darwin
+          - os: macos-latest
+            goos: darwin
             goarch: amd64
             ext: .dylib
             prefix: lib
-          - goos: darwin
+          - os: macos-latest
+            goos: darwin
             goarch: arm64
             ext: .dylib
             prefix: lib
-          - goos: windows
+          - os: windows-latest
+            goos: windows
             goarch: amd64
             ext: .dll
             prefix: ""
-          - goos: windows
+          - os: windows-latest
+            goos: windows
             goarch: arm64
             ext: .dll
             prefix: ""
-    runs-on: ubuntu-latest
-    needs: [get-release]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -127,10 +146,10 @@ jobs:
           if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
           fi
-          go build -buildmode=c-shared -trimpath \
+          go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/${{ matrix.prefix }}singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
-            ./cffi
+            ./ffi
       - name: Package
         run: |
           cd build
@@ -145,6 +164,7 @@ jobs:
   # ── FFI 共享库 (Android) ────────────────────────────────
 
   build-ffi-android:
+    needs: [get-release, test]
     strategy:
       matrix:
         include:
@@ -153,7 +173,6 @@ jobs:
           - target: android/amd64
             goarch: amd64
     runs-on: ubuntu-latest
-    needs: [get-release]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -171,13 +190,13 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
-          gomobile bind -trimpath \
+          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/libsingcast-${{ matrix.goarch }}.aar \
             -target=${{ matrix.target }} \
             -androidapi 29 \
             -javapkg cn.mapleafgo \
-            ./cffi
+            ./ffi
       - name: Package
         run: |
           cd build
@@ -193,7 +212,7 @@ jobs:
 
   build-ffi-ios:
     runs-on: macos-latest
-    needs: [get-release]
+    needs: [get-release, test]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -206,11 +225,11 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
-          gomobile bind -trimpath \
+          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/singcast.xcframework \
             -target=ios \
-            ./cffi
+            ./ffi
       - name: Package
         run: |
           cd build

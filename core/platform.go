@@ -1,12 +1,14 @@
 package core
 
 import (
+	"fmt"
+	"net"
 	"os"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
 )
 
-// PlatformIO implements libbox.PlatformInterface with no-op methods.
+// PlatformIO implements libbox.PlatformInterface for desktop CLI usage.
 type PlatformIO struct{}
 
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
@@ -14,7 +16,7 @@ func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
-	return false
+	return true
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
@@ -34,6 +36,38 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	conn, err := net.Dial("udp4", "8.8.8.8:53")
+	if err != nil {
+		return err
+	}
+	localAddr := conn.LocalAddr()
+	conn.Close()
+
+	localUDP, ok := localAddr.(*net.UDPAddr)
+	if !ok {
+		return fmt.Errorf("unexpected local address type: %T", localAddr)
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ipNet.Contains(localUDP.IP) {
+				listener.UpdateDefaultInterface(iface.Name, int32(iface.Index), false, false)
+				return nil
+			}
+		}
+	}
 	return nil
 }
 
@@ -42,7 +76,33 @@ func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	return nil, os.ErrInvalid
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var result []*libbox.NetworkInterface
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		var addrStrings []string
+		for _, addr := range addrs {
+			addrStrings = append(addrStrings, addr.String())
+		}
+		ifaceType := int32(libbox.InterfaceTypeOther)
+		if iface.Flags&net.FlagBroadcast != 0 {
+			ifaceType = libbox.InterfaceTypeEthernet
+		}
+		result = append(result, &libbox.NetworkInterface{
+			Index:     int32(iface.Index),
+			MTU:       int32(iface.MTU),
+			Name:      iface.Name,
+			Addresses: &stringIterator{items: addrStrings},
+			Type:      ifaceType,
+		})
+	}
+	return &networkInterfaceIterator{items: result}, nil
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
@@ -65,4 +125,46 @@ func (p *PlatformIO) ClearDNSCache() {}
 
 func (p *PlatformIO) SendNotification(notification *libbox.Notification) error {
 	return nil
+}
+
+// stringIterator implements libbox.StringIterator.
+type stringIterator struct {
+	items []string
+	index int
+}
+
+func (s *stringIterator) Len() int32 {
+	return int32(len(s.items))
+}
+
+func (s *stringIterator) Next() string {
+	if s.index >= len(s.items) {
+		return ""
+	}
+	item := s.items[s.index]
+	s.index++
+	return item
+}
+
+func (s *stringIterator) HasNext() bool {
+	return s.index < len(s.items)
+}
+
+// networkInterfaceIterator implements libbox.NetworkInterfaceIterator.
+type networkInterfaceIterator struct {
+	items []*libbox.NetworkInterface
+	index int
+}
+
+func (it *networkInterfaceIterator) Next() *libbox.NetworkInterface {
+	if it.index >= len(it.items) {
+		return nil
+	}
+	item := it.items[it.index]
+	it.index++
+	return item
+}
+
+func (it *networkInterfaceIterator) HasNext() bool {
+	return it.index < len(it.items)
 }

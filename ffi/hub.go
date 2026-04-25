@@ -1,4 +1,4 @@
-package cffi
+package main
 
 /*
 #include <stdlib.h>
@@ -27,12 +27,12 @@ func svcResultJSON(fn func(*core.Service) error) *C.char {
 	return resultJSON(fn(svc))
 }
 
-func queryCached(getter func() string, fallback string) *C.char {
+func queryCached(getter func(*core.Service) string, fallback string) *C.char {
 	svc := core.GetService()
 	if svc == nil || svc.Handler() == nil {
 		return cString(fallback)
 	}
-	return cString(getter())
+	return cString(getter(svc))
 }
 
 //export CoreInit
@@ -67,29 +67,29 @@ func CoreReloadConfig() *C.char {
 
 //export CoreQueryProxies
 func CoreQueryProxies() *C.char {
-	return queryCached(func() string {
-		return core.GetService().Handler().GetCachedGroupsJSON()
+	return queryCached(func(svc *core.Service) string {
+		return svc.Handler().GetCachedGroupsJSON()
 	}, "[]")
 }
 
 //export CoreQueryTraffic
 func CoreQueryTraffic() *C.char {
-	return queryCached(func() string {
-		return core.GetService().Handler().GetCachedStatusJSON()
+	return queryCached(func(svc *core.Service) string {
+		return svc.Handler().GetCachedStatusJSON()
 	}, "{}")
 }
 
 //export CoreQueryLogs
 func CoreQueryLogs() *C.char {
-	return queryCached(func() string {
-		return core.GetService().Handler().GetCachedLogsJSON()
+	return queryCached(func(svc *core.Service) string {
+		return svc.Handler().GetCachedLogsJSON()
 	}, "[]")
 }
 
 //export CoreQueryConnections
 func CoreQueryConnections() *C.char {
-	return queryCached(func() string {
-		return core.GetService().Handler().GetCachedConnectionsJSON()
+	return queryCached(func(svc *core.Service) string {
+		return svc.Handler().GetCachedConnectionsJSON()
 	}, "[]")
 }
 

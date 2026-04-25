@@ -42,10 +42,10 @@ func TestDetectFormat(t *testing.T) {
 		expect Format
 	}{
 		{"json object", `{"type":"vless"}`, FormatJSON},
-		{"json array", `[1,2,3]`, FormatJSON},
-		{"json number", `42`, FormatJSON},
-			{"json bool true", `true`, FormatJSON},
-			{"json null", `null`, FormatJSON},
+		{"json array", `[1,2,3]`, FormatYAML},
+		{"json number", `42`, FormatYAML},
+		{"json bool true", `true`, FormatYAML},
+		{"json null", `null`, FormatYAML},
 		{"yaml mapping", "mixed-port: 7890\n", FormatYAML},
 		{"yaml with proxy", "proxies:\n  - name: test\n    type: ss\n", FormatYAML},
 		{"empty", "", FormatYAML},

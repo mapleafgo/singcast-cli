@@ -76,7 +76,7 @@ func Init(homeDir string) error {
 	platformIO := &PlatformIO{}
 
 	// Create the CommandServer
-	commandServer, err := libbox.NewCommandServer((*serverHandler)(nil), platformIO)
+	commandServer, err := libbox.NewCommandServer(&serverHandler{}, platformIO)
 	if err != nil {
 		return fmt.Errorf("create command server: %w", err)
 	}
@@ -105,6 +105,10 @@ func (s *Service) start(configPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.commandServer == nil {
+		return fmt.Errorf("service closed")
+	}
+
 	s.configPath = configPath
 
 	data, err := os.ReadFile(configPath)
@@ -125,17 +129,12 @@ func (s *Service) start(configPath string) error {
 	}
 
 	// Start or reload the service
-	err = s.commandServer.StartOrReloadService(jsonContent, nil)
+	err = s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{})
 	if err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
 
-	// Disconnect previous client before creating a new one (reload case)
-	if s.commandClient != nil {
-		s.commandClient.Disconnect()
-	}
-
-	// Create and connect the command client
+	// Create and connect the new command client before disconnecting old
 	opts := &libbox.CommandClientOptions{
 		StatusInterval: 1000,
 	}
@@ -144,10 +143,16 @@ func (s *Service) start(configPath string) error {
 	opts.AddCommand(libbox.CommandGroup)
 	opts.AddCommand(libbox.CommandConnections)
 
-	s.commandClient = libbox.NewCommandClient(s.handler, opts)
-	if err := s.commandClient.Connect(); err != nil {
+	newClient := libbox.NewCommandClient(s.handler, opts)
+	if err := newClient.Connect(); err != nil {
 		return fmt.Errorf("connect command client: %w", err)
 	}
+
+	// Disconnect previous client after new one is ready (reload case)
+	if s.commandClient != nil {
+		s.commandClient.Disconnect()
+	}
+	s.commandClient = newClient
 
 	s.started = true
 	return nil
@@ -189,6 +194,10 @@ func Close() error {
 func (s *Service) close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.started {
+		s.commandServer.CloseService()
+		s.started = false
+	}
 	if s.commandClient != nil {
 		s.commandClient.Disconnect()
 		s.commandClient = nil
@@ -197,7 +206,6 @@ func (s *Service) close() error {
 		s.commandServer.Close()
 		s.commandServer = nil
 	}
-	s.started = false
 	return nil
 }
 
@@ -214,10 +222,13 @@ func ReloadConfig() error {
 
 // ReloadConfig re-reads and re-translates the config, then reloads.
 func (s *Service) ReloadConfig() error {
-	if s.configPath == "" {
+	s.mu.Lock()
+	path := s.configPath
+	s.mu.Unlock()
+	if path == "" {
 		return fmt.Errorf("no config path set")
 	}
-	return s.start(s.configPath)
+	return s.start(path)
 }
 
 // CheckConfig validates a sing-box JSON config string.

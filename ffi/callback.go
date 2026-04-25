@@ -1,4 +1,4 @@
-package cffi
+package main
 
 /*
 #include <stdlib.h>

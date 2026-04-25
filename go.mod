@@ -4,6 +4,7 @@ go 1.24.7
 
 require (
 	github.com/sagernet/sing-box v1.13.11
+	github.com/urfave/cli/v3 v3.8.0
 	go.yaml.in/yaml/v3 v3.0.4
 )
 

@@ -4,7 +4,7 @@
 
 Add a standalone CLI binary (`singcast`) that can independently run as a proxy core from the terminal, similar to mihomo/clash. The CLI reads mihomo YAML configs (or sing-box JSON), translates them internally, and starts the sing-box proxy service with clash_api enabled.
 
-The existing FFI shared library build (`cffi/`) remains unchanged.
+The existing FFI shared library build (`ffi/`) remains unchanged.
 
 ## CLI Framework
 
@@ -159,7 +159,7 @@ Standard library:
 | Component | Change |
 |---|---|
 | `main.go` | No change (FFI shell) |
-| `cffi/` | No change |
+| `ffi/` | No change |
 | `core/` | No change |
 | `translator/` | Add experimental.go, minor changes to types_singbox.go + assemble.go |
 | `Makefile` | Replaced by `Taskfile.yml` |

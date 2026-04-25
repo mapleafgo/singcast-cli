@@ -76,6 +76,17 @@ func TestTranslateExperimentalCustom(t *testing.T) {
 	}
 }
 
+func TestTranslateExperimentalExternalUI(t *testing.T) {
+	cfg := &RawConfig{ExternalUI: "/path/to/ui"}
+	result := &singboxConfig{}
+	translateExperimental(cfg, result)
+
+	clashAPI := result.Experimental["clash_api"].(map[string]any)
+	if clashAPI["external_ui"] != "/path/to/ui" {
+		t.Errorf("external_ui = %v, want /path/to/ui", clashAPI["external_ui"])
+	}
+}
+
 func TestTranslateExperimentalCacheFile(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -102,8 +113,8 @@ func TestTranslateExperimentalCacheFile(t *testing.T) {
 
 			cacheFile := result.Experimental["cache_file"].(map[string]any)
 
-			if cacheFile["enabled"] != tt.storeSelected {
-				t.Errorf("cache_file.enabled = %v, want %v", cacheFile["enabled"], tt.storeSelected)
+			if cacheFile["enabled"] != true {
+				t.Errorf("cache_file.enabled = %v, want true (auto-enabled with clash_api)", cacheFile["enabled"])
 			}
 			if cacheFile["store_fakeip"] != tt.storeFakeIP {
 				t.Errorf("cache_file.store_fakeip = %v, want %v", cacheFile["store_fakeip"], tt.storeFakeIP)
@@ -111,8 +122,8 @@ func TestTranslateExperimentalCacheFile(t *testing.T) {
 			if cacheFile["path"] != "cache.db" {
 				t.Errorf("cache_file.path = %v, want cache.db", cacheFile["path"])
 			}
-			if cacheFile["store_dns"] != true {
-				t.Error("cache_file.store_dns should always be true")
+			if _, exists := cacheFile["store_dns"]; exists {
+				t.Error("cache_file.store_dns should not be present")
 			}
 		})
 	}

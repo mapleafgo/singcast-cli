@@ -46,23 +46,37 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 	_ = buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result)
 
-	// Step 5: Domain resolver chain — for servers with domain-based server addresses,
-	// set domain_resolver pointing to a default-nameserver (IP-based UDP resolver).
-	for _, srv := range result.Servers {
-		serverAddr, _ := srv["server"].(string)
-		if serverAddr == "" {
-			continue
-		}
-		if !isIPAddress(serverAddr) {
-			// This server's address is a domain; it needs a domain_resolver.
-			// Pick the first default-nameserver that is IP-based.
-			if len(domainResolverTags) > 0 {
-				srv["domain_resolver"] = domainResolverTags[0]
-			} else {
-				t.warn("DNS server \"" + serverAddr + "\" has a domain address but no default-nameserver is configured; this may cause DNS resolution deadlock")
+		// Step 5: Domain resolver chain — for servers with domain-based server addresses,
+		// set domain_resolver pointing to a default-nameserver (IP-based UDP resolver).
+		// Avoid circular dependency: skip servers whose tag matches the domain_resolver.
+		for _, srv := range result.Servers {
+			serverAddr, _ := srv["server"].(string)
+			if serverAddr == "" {
+				continue
+			}
+			if !isIPAddress(serverAddr) {
+				srvTag, _ := srv["tag"].(string)
+				if len(domainResolverTags) > 0 {
+					for _, drTag := range domainResolverTags {
+						if drTag != srvTag {
+							srv["domain_resolver"] = drTag
+							break
+						}
+					}
+				}
+				if _, hasDR := srv["domain_resolver"]; !hasDR && len(defaultServerTags) > 0 {
+					for _, dsTag := range defaultServerTags {
+						if dsTag != srvTag {
+							srv["domain_resolver"] = dsTag
+							break
+						}
+					}
+				}
+				if _, hasDR := srv["domain_resolver"]; !hasDR {
+					t.warn("DNS server \"" + serverAddr + "\" has a domain address but no non-circular domain_resolver is available")
+				}
 			}
 		}
-	}
 
 	// Determine the first nameserver tag for use as final and fakeip-filter target.
 	firstNSTag := ""
@@ -223,9 +237,8 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 
 	// Step 9: Final DNS server
-	if fakeIPEnabled && fakeipTag != "" {
-		result.Final = fakeipTag
-	} else if len(fallbackTags) > 0 {
+	// Note: sing-box does not allow fakeip server as the default (final) DNS server.
+	if len(fallbackTags) > 0 {
 		result.Final = fallbackTags[0]
 	} else if firstNSTag != "" {
 		result.Final = firstNSTag

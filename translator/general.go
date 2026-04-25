@@ -73,7 +73,7 @@ func translateGeneral(cfg *RawConfig, result *singboxConfig) {
 	if cfg.FindProcessMode == "always" || cfg.FindProcessMode == "strict" {
 		result.Route.FindProcess = true
 	}
-	result.Route.AutoDetectInterface = true
+	result.Route.AutoDetectInterface = false
 
 	// Global interface/routing-mark
 	if cfg.Interface != "" {

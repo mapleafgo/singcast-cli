@@ -56,13 +56,10 @@ func parseRule(rule string, t *translation) {
 	payload := parts[1]
 	target := parts[2]
 	isSrc := false
-	noResolve := false
 	for i := 3; i < len(parts); i++ {
 		switch parts[i] {
 		case "src":
 			isSrc = true
-		case "no-resolve":
-			noResolve = true
 		}
 	}
 
@@ -111,14 +108,10 @@ func parseRule(rule string, t *translation) {
 		}
 		t.config.Route.Rules = append(t.config.Route.Rules, rule)
 	case "IP-CIDR", "IP-CIDR6":
-		rule := map[string]any{
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"ip_cidr":  []string{payload},
 			"outbound": target,
-		}
-		if noResolve {
-			rule["ip_cidr_resolve_no"] = true
-		}
-		t.config.Route.Rules = append(t.config.Route.Rules, rule)
+		})
 	case "SRC-IP-CIDR":
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"source_ip_cidr": []string{payload},
