@@ -1,6 +1,6 @@
 module github.com/mapleafgo/singcast
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/sagernet/sing-box v1.13.11
