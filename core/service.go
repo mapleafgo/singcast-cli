@@ -154,6 +154,11 @@ func (s *Service) stop() error {
 		return nil
 	}
 	s.started = false
+	// The service closes the TUN interface on shutdown; clear the
+	// stored fd so a subsequent start cannot reuse a stale descriptor.
+	if s.platformIO != nil {
+		s.platformIO.ResetTunFd()
+	}
 	return s.commandServer.CloseService()
 }
 
@@ -175,6 +180,9 @@ func (s *Service) close() error {
 	if s.started {
 		s.commandServer.CloseService()
 		s.started = false
+	}
+	if s.platformIO != nil {
+		s.platformIO.ResetTunFd()
 	}
 	if s.commandClient != nil {
 		s.commandClient.Disconnect()

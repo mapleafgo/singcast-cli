@@ -26,6 +26,14 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	p.tunFd = fd
 }
 
+// ResetTunFd clears the stored TUN file descriptor. Called when the
+// service stops so that a stale fd cannot be reused accidentally.
+func (p *PlatformIO) ResetTunFd() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tunFd = 0
+}
+
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
 	return nil
 }
