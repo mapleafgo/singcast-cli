@@ -452,18 +452,18 @@ func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 		return
 	}
 
-	var baseURL string
+	var url string
 	if geoType == "geoip" {
-		baseURL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/"
+		url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-" + strings.ToLower(name) + ".srs"
 	} else {
-		baseURL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/"
+		url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-" + strings.ToLower(name) + ".srs"
 	}
 
 	t.ruleSetDefs[tag] = map[string]any{
 		"type":            "remote",
 		"tag":             tag,
 		"format":          "binary",
-		"url":             baseURL + name + ".srs",
+		"url":             url,
 		"update_interval": "1d",
 	}
 }

@@ -33,9 +33,12 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	// Determine first proxy group tag for detour fields.
 	detour := firstGroupTag(t)
 
-	// Build DNS server entries from various mihomo DNS sections
+	// Build DNS server entries from various mihomo DNS sections.
+	// default-nameserver and proxy-server-nameserver use plain/China DNS — no detour needed.
+	// nameserver and fallback may use foreign DoH (Cloudflare, Google) — set detour so they
+	// route through the proxy, ensuring they work in GFW environments.
 	defaultServerTags := buildDNSServerEntries(dns.DefaultNameserver, "def-", "", result)
-	nameserverTags := buildDNSServerEntries(dns.NameServer, "ns-", "", result)
+	nameserverTags := buildDNSServerEntries(dns.NameServer, "ns-", detour, result)
 	fallbackTags := buildDNSServerEntries(dns.Fallback, "fb-", detour, result)
 	psnTags := buildDNSServerEntries(dns.ProxyServerNameserver, "psn-", "", result)
 
@@ -46,37 +49,46 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 	_ = buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result)
 
-		// Step 5: Domain resolver chain — for servers with domain-based server addresses,
-		// set domain_resolver pointing to a default-nameserver (IP-based UDP resolver).
-		// Avoid circular dependency: skip servers whose tag matches the domain_resolver.
-		for _, srv := range result.Servers {
-			serverAddr, _ := srv["server"].(string)
-			if serverAddr == "" {
-				continue
+	// Set route.default_domain_resolver: used by sing-box to resolve outbound (proxy) server domains.
+	// This is the official sing-box mechanism for the DNS chicken-and-egg problem.
+	// Points to a plain UDP DNS server (IP-based, no domain to resolve itself).
+	if len(defaultServerTags) > 0 {
+		t.config.Route.DefaultDomainResolver = defaultServerTags[0]
+	} else {
+		t.warn("no default-nameserver configured; proxy server domains may not resolve correctly")
+	}
+
+	// Step 5: Domain resolver chain — for servers with domain-based server addresses,
+	// set domain_resolver pointing to a default-nameserver (IP-based UDP resolver).
+	// Avoid circular dependency: skip servers whose tag matches the domain_resolver.
+	for _, srv := range result.Servers {
+		serverAddr, _ := srv["server"].(string)
+		if serverAddr == "" {
+			continue
+		}
+		if !isIPAddress(serverAddr) {
+			srvTag, _ := srv["tag"].(string)
+			if len(domainResolverTags) > 0 {
+				for _, drTag := range domainResolverTags {
+					if drTag != srvTag {
+						srv["domain_resolver"] = drTag
+						break
+					}
+				}
 			}
-			if !isIPAddress(serverAddr) {
-				srvTag, _ := srv["tag"].(string)
-				if len(domainResolverTags) > 0 {
-					for _, drTag := range domainResolverTags {
-						if drTag != srvTag {
-							srv["domain_resolver"] = drTag
-							break
-						}
+			if _, hasDR := srv["domain_resolver"]; !hasDR && len(defaultServerTags) > 0 {
+				for _, dsTag := range defaultServerTags {
+					if dsTag != srvTag {
+						srv["domain_resolver"] = dsTag
+						break
 					}
 				}
-				if _, hasDR := srv["domain_resolver"]; !hasDR && len(defaultServerTags) > 0 {
-					for _, dsTag := range defaultServerTags {
-						if dsTag != srvTag {
-							srv["domain_resolver"] = dsTag
-							break
-						}
-					}
-				}
-				if _, hasDR := srv["domain_resolver"]; !hasDR {
-					t.warn("DNS server \"" + serverAddr + "\" has a domain address but no non-circular domain_resolver is available")
-				}
+			}
+			if _, hasDR := srv["domain_resolver"]; !hasDR {
+				t.warn("DNS server \"" + serverAddr + "\" has a domain address but no non-circular domain_resolver is available")
 			}
 		}
+	}
 
 	// Determine the first nameserver tag for use as final and fakeip-filter target.
 	firstNSTag := ""
@@ -96,8 +108,8 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		}
 
 		fakeipSrv := map[string]any{
-			"type":       "fakeip",
-			"tag":        fakeipTag,
+			"type":        "fakeip",
+			"tag":         fakeipTag,
 			"inet4_range": inet4Range,
 		}
 		if dns.FakeIPRange6 != "" {
@@ -237,7 +249,8 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 
 	// Step 9: Final DNS server
-	// Note: sing-box does not allow fakeip server as the default (final) DNS server.
+	// With route.default_domain_resolver set, proxy server domains resolve via that
+	// dedicated server, so DNS final can safely use the user's intended nameserver/fallback.
 	if len(fallbackTags) > 0 {
 		result.Final = fallbackTags[0]
 	} else if firstNSTag != "" {
@@ -317,12 +330,9 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string) map[string]
 		srv["path"] = path
 	}
 
-	// Process # parameters
-	if useProxy, ok := params["proxy"]; ok && useProxy == "" {
-		// "#proxy" means use detour
-		if defaultDetour != "" {
-			srv["detour"] = defaultDetour
-		}
+	// Set detour if provided (for nameserver/fallback servers that need proxy access)
+	if defaultDetour != "" {
+		srv["detour"] = defaultDetour
 	}
 	if _, ok := params["skip-cert-verify"]; ok {
 		if dnsType == "https" || dnsType == "tls" || dnsType == "h3" {

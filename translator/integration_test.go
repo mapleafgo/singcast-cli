@@ -39,8 +39,8 @@ func TestIntegrationRealProfile(t *testing.T) {
 	if mixedInb["type"] != "mixed" {
 		t.Errorf("first inbound type = %v, want mixed", mixedInb["type"])
 	}
-	if mixedInb["listen_port"].(float64) != 7890 {
-		t.Errorf("listen_port = %v, want 7890", mixedInb["listen_port"])
+	if mixedInb["listen_port"].(float64) != 9870 {
+		t.Errorf("listen_port = %v, want 9870", mixedInb["listen_port"])
 	}
 	if mixedInb["listen"] != "0.0.0.0" {
 		t.Errorf("listen = %v, want 0.0.0.0 (allow-lan=true)", mixedInb["listen"])
@@ -218,7 +218,6 @@ func TestIntegrationRealProfile(t *testing.T) {
 		{`"rule_set":["geosite-telegram"]`, "GEOSITE telegram"},
 		{`"rule_set":["geosite-cn"]`, "GEOSITE cn"},
 		{`"rule_set":["geoip-CN"]`, "GEOIP CN"},
-		{`"rule_set":["rp-overseas-ai"]`, "RULE-SET"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(ruleStr, c.substr) {
@@ -247,9 +246,9 @@ func TestIntegrationRealProfile(t *testing.T) {
 	if !rsTagMap["geoip-CN"] {
 		t.Error("missing geoip-CN rule_set definition")
 	}
-	// Verify custom RULE-SET definition
-	if !rsTagMap["rp-overseas-ai"] {
-		t.Error("missing rp-overseas-ai rule_set definition")
+	// Verify classical RULE-SET was skipped
+	if rsTagMap["rp-overseas-ai"] {
+		t.Error("rp-overseas-ai should be skipped (classical format)")
 	}
 
 	// === DNS ===

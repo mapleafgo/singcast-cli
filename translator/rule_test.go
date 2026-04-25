@@ -85,8 +85,8 @@ func TestParseRuleGeoSite(t *testing.T) {
 		t.Errorf("def type = %v, want remote", def["type"])
 	}
 	url, _ := def["url"].(string)
-	if !strings.Contains(url, "meta-rules-dat") || !strings.Contains(url, "geosite") {
-		t.Errorf("def url = %v, want MetaCubeX geosite URL", url)
+	if !strings.Contains(url, "sing-geosite") || !strings.Contains(url, "geosite") {
+		t.Errorf("def url = %v, want SagerNet sing-geosite URL", url)
 	}
 	if !strings.HasSuffix(url, "google.srs") {
 		t.Errorf("def url = %v, want to end with google.srs", url)
@@ -125,11 +125,11 @@ func TestParseRuleGeoIP(t *testing.T) {
 		t.Errorf("def type = %v, want remote", def["type"])
 	}
 	url, _ := def["url"].(string)
-	if !strings.Contains(url, "meta-rules-dat") || !strings.Contains(url, "geoip") {
-		t.Errorf("def url = %v, want MetaCubeX geoip URL", url)
+	if !strings.Contains(url, "sing-geoip") || !strings.Contains(url, "geoip") {
+		t.Errorf("def url = %v, want SagerNet sing-geoip URL", url)
 	}
-	if !strings.HasSuffix(url, "CN.srs") {
-		t.Errorf("def url = %v, want to end with CN.srs", url)
+	if !strings.HasSuffix(url, "cn.srs") {
+		t.Errorf("def url = %v, want to end with cn.srs", url)
 	}
 }
 
