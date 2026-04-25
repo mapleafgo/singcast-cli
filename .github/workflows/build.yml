@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: go test -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" ./...
+      - run: go test -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" ./...
 
   # ── CLI 二进制 ──────────────────────────────────────────
 
@@ -75,7 +75,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p build
-          go build -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
+          go build -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
             ./cmd/singcast
@@ -144,7 +144,7 @@ jobs:
           if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
           fi
-          go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
+          go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/${{ matrix.prefix }}singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
             ./cmd/lib
@@ -190,7 +190,7 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
-          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
+          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s -checklinkname=0" \
             -o build/libsingcast-${{ matrix.goarch }}.aar \
             -target=${{ matrix.target }} \
@@ -226,7 +226,7 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
-          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
+          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/singcast.xcframework \
             -target=ios \

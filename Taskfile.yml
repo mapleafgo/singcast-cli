@@ -9,7 +9,7 @@ vars:
   LDFLAGS: >-
     -w -s
     -X github.com/mapleafgo/singcast/core.Version={{.VERSION}}
-  BUILDTAGS: with_clash_api,with_utls,with_quic,with_v2ray_api
+  BUILDTAGS: with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api
 
 env:
   CGO_ENABLED: 1

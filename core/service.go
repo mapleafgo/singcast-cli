@@ -40,6 +40,7 @@ type Service struct {
 	configPath    string
 	ruleSetProxy  string
 	started       bool
+	platformIO    *PlatformIO
 }
 
 // GetService returns the singleton service instance.
@@ -89,6 +90,7 @@ func Init(homeDir string) error {
 		commandServer: commandServer,
 		handler:       handler,
 		homeDir:       homeDir,
+		platformIO:    platformIO,
 	}
 
 	return nil
@@ -322,3 +324,74 @@ func (h *serverHandler) GetSystemProxyStatus() (*libbox.SystemProxyStatus, error
 }
 func (h *serverHandler) SetSystemProxyEnabled(enabled bool) error { return nil }
 func (h *serverHandler) WriteDebugMessage(message string)         {}
+
+// SetPlatformIO allows mobile callers to inject a platform-specific
+// PlatformInterface at any time after Init.
+func SetPlatformIO(pio libbox.PlatformInterface) {
+	mu.Lock()
+	defer mu.Unlock()
+	if instance != nil && instance.platformIO != nil {
+		instance.platformIO.SetDelegate(pio)
+	}
+}
+
+// StartWithContent starts the service with raw YAML or JSON content.
+// No file is involved; the content is translated and used directly.
+func StartWithContent(content, ruleSetProxy string) error {
+	mu.Lock()
+	svc := instance
+	mu.Unlock()
+	if svc == nil {
+		return fmt.Errorf("core not initialized")
+	}
+	return svc.startWithContent(content, ruleSetProxy)
+}
+
+func (s *Service) startWithContent(content, ruleSetProxy string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.commandServer == nil {
+		return fmt.Errorf("service closed")
+	}
+
+	s.ruleSetProxy = ruleSetProxy
+
+	var jsonContent string
+	if translator.DetectFormat([]byte(content)) == translator.FormatYAML {
+		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
+		result, _, err := translator.TranslateWithOptions([]byte(content), opts)
+		if err != nil {
+			return fmt.Errorf("translate config: %w", err)
+		}
+		jsonContent = result
+	} else {
+		jsonContent = content
+	}
+
+	err := s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{})
+	if err != nil {
+		return fmt.Errorf("start service: %w", err)
+	}
+
+	opts := &libbox.CommandClientOptions{
+		StatusInterval: 1000,
+	}
+	opts.AddCommand(libbox.CommandLog)
+	opts.AddCommand(libbox.CommandStatus)
+	opts.AddCommand(libbox.CommandGroup)
+	opts.AddCommand(libbox.CommandConnections)
+
+	newClient := libbox.NewCommandClient(s.handler, opts)
+	if err := newClient.Connect(); err != nil {
+		return fmt.Errorf("connect command client: %w", err)
+	}
+
+	if s.commandClient != nil {
+		s.commandClient.Disconnect()
+	}
+	s.commandClient = newClient
+
+	s.started = true
+	return nil
+}

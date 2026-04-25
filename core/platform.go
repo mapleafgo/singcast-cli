@@ -9,21 +9,37 @@ import (
 )
 
 // PlatformIO implements libbox.PlatformInterface for desktop CLI usage.
-type PlatformIO struct{}
+type PlatformIO struct {
+	delegate libbox.PlatformInterface
+}
+
+// SetDelegate sets the platform interface delegate.
+func (p *PlatformIO) SetDelegate(d libbox.PlatformInterface) {
+	p.delegate = d
+}
 
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
 	return nil
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
+	if p.delegate != nil {
+		return p.delegate.UsePlatformAutoDetectInterfaceControl()
+	}
 	return true
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
+	if p.delegate != nil {
+		return p.delegate.AutoDetectInterfaceControl(fd)
+	}
 	return nil
 }
 
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
+	if p.delegate != nil {
+		return p.delegate.OpenTun(options)
+	}
 	return 0, os.ErrInvalid
 }
 
@@ -32,10 +48,16 @@ func (p *PlatformIO) UseProcFS() bool {
 }
 
 func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string, sourcePort int32, destinationAddress string, destinationPort int32) (*libbox.ConnectionOwner, error) {
+	if p.delegate != nil {
+		return p.delegate.FindConnectionOwner(ipProtocol, sourceAddress, sourcePort, destinationAddress, destinationPort)
+	}
 	return nil, os.ErrInvalid
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	if p.delegate != nil {
+		return p.delegate.StartDefaultInterfaceMonitor(listener)
+	}
 	conn, err := net.Dial("udp4", "8.8.8.8:53")
 	if err != nil {
 		return err
@@ -72,10 +94,16 @@ func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	if p.delegate != nil {
+		return p.delegate.CloseDefaultInterfaceMonitor(listener)
+	}
 	return nil
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
+	if p.delegate != nil {
+		return p.delegate.GetInterfaces()
+	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -106,18 +134,30 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
+	if p.delegate != nil {
+		return p.delegate.UnderNetworkExtension()
+	}
 	return false
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
+	if p.delegate != nil {
+		return p.delegate.IncludeAllNetworks()
+	}
 	return false
 }
 
 func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState {
+	if p.delegate != nil {
+		return p.delegate.ReadWIFIState()
+	}
 	return nil
 }
 
 func (p *PlatformIO) SystemCertificates() libbox.StringIterator {
+	if p.delegate != nil {
+		return p.delegate.SystemCertificates()
+	}
 	return nil
 }
 
