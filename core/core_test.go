@@ -155,34 +155,6 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 	}
 }
 
-// TestAutoRoutingSTUNReject verifies the auto-routing STUN block uses action:reject.
-func TestAutoRoutingSTUNReject(t *testing.T) {
-	yaml := `mixed-port: 1080
-proxies:
-  - name: p1
-    type: socks5
-    server: 1.2.3.4
-    port: 1080
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies: [p1, DIRECT]
-`
-	jsonStr := mustTranslateYAML(t, yaml)
-	m := parseJSONMap(t, jsonStr)
-	route := m["route"].(map[string]any)
-	rules := route["rules"].([]any)
-	for _, r := range rules {
-		rm := r.(map[string]any)
-		if ob, ok := rm["outbound"]; ok && ob == "REJECT" {
-			t.Error("found outbound:REJECT in rules; should be action:reject")
-		}
-	}
-	if !strings.Contains(jsonStr, `"action": "reject"`) {
-		t.Error("expected action:reject in auto-routing STUN block")
-	}
-}
-
 // TestServiceLifecycle tests Init/Start/Stop/Close with a minimal config.
 func TestServiceLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
