@@ -17,7 +17,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/mapleafgo/singcast/core"
+	"github.com/mapleafgo/singcast/ffi"
 )
 
 var (
@@ -25,13 +25,14 @@ var (
 	callbackMu     sync.RWMutex
 )
 
-// setCallback stores the C function pointer and wires it into the core event system.
+// setCallback stores the C function pointer and wires it into the event system.
 func setCallback(cb unsafe.Pointer) {
 	callbackMu.Lock()
 	globalCallback = C.CoreCallback(cb)
 	callbackMu.Unlock()
 
-	core.SetOnEvent(func(eventType int, jsonPayload string) {
+	api := ffi.New()
+	api.SetOnEvent(func(eventType int, jsonPayload string) {
 		callbackMu.RLock()
 		cb := globalCallback
 		callbackMu.RUnlock()
