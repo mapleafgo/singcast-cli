@@ -37,6 +37,8 @@ type translation struct {
 	groupTags     map[string]bool
 	// rule_set definitions accumulated from GEOIP/GEOSITE rules
 	ruleSetDefs map[string]map[string]any
+	// options from caller
+	opts *Options
 }
 
 func (t *translation) warn(msg string) {

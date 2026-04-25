@@ -110,16 +110,19 @@ rules:
 		}
 	}
 
-	// Check route.final set to my-proxy
+	// Check route.final — no proxy groups, so falls back to DIRECT
 	route := m["route"].(map[string]any)
-	if route["final"] != "my-proxy" {
-		t.Errorf("route.final = %v, want my-proxy", route["final"])
+	if route["final"] != "DIRECT" {
+		t.Errorf("route.final = %v, want DIRECT (no proxy groups)", route["final"])
 	}
 
-	// Check default rules (sniff, hijack-dns)
+	// Check default rules (sniff, hijack-dns + auto-routing rules)
 	rules := route["rules"].([]any)
 	if len(rules) < 2 {
 		t.Errorf("expected at least 2 default rules, got %d", len(rules))
+	}
+	if rules[0].(map[string]any)["action"] != "sniff" {
+		t.Errorf("first rule should be sniff")
 	}
 
 	_ = warns // warnings ok
@@ -321,51 +324,30 @@ rules:
 		t.Errorf("AUTO type = %v", autoGrp["type"])
 	}
 
-	// Check route rules
+	// Check route rules (auto-routing)
 	route := m["route"].(map[string]any)
 	rules := route["rules"].([]any)
-	// Should have: sniff, hijack-dns, user rules, icmp
-	foundDomainSuffix := false
-	foundGeoIP := false
-	foundGeoSite := false
+	// Should have: sniff, hijack-dns, ip_is_private, geo rules
+	if len(rules) < 5 {
+		t.Errorf("expected at least 5 route rules, got %d", len(rules))
+	}
+	// First two rules are always sniff + hijack-dns
+	if rules[0].(map[string]any)["action"] != "sniff" {
+		t.Error("first rule should be sniff")
+	}
+	if rules[1].(map[string]any)["action"] != "hijack-dns" {
+		t.Error("second rule should be hijack-dns")
+	}
+	// Verify ip_is_private rule exists
+	foundPrivate := false
 	for _, r := range rules {
 		rm := r.(map[string]any)
-		if _, ok := rm["domain_suffix"]; ok {
-			foundDomainSuffix = true
-		}
-		if _, ok := rm["rule_set"]; ok {
-			rs := rm["rule_set"].([]any)
-			tag := rs[0].(string)
-			if tag == "geoip-CN" {
-				foundGeoIP = true
-			}
-			if tag == "geosite-google" {
-				foundGeoSite = true
-			}
+		if rm["ip_is_private"] == true {
+			foundPrivate = true
 		}
 	}
-	if !foundDomainSuffix {
-		t.Error("missing DOMAIN-SUFFIX rule")
-	}
-	if !foundGeoIP {
-		t.Error("missing GEOIP rule_set rule")
-	}
-	if !foundGeoSite {
-		t.Error("missing GEOSITE rule_set rule")
-	}
-
-	// Check rule_set definitions
-	ruleSets := route["rule_set"].([]any)
-	rsTags := map[string]bool{}
-	for _, rs := range ruleSets {
-		rsMap := rs.(map[string]any)
-		rsTags[rsMap["tag"].(string)] = true
-	}
-	if !rsTags["geoip-CN"] {
-		t.Error("missing geoip-CN rule_set definition")
-	}
-	if !rsTags["geosite-google"] {
-		t.Error("missing geosite-google rule_set definition")
+	if !foundPrivate {
+		t.Error("missing ip_is_private rule")
 	}
 
 	// Check DNS

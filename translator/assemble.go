@@ -32,13 +32,14 @@ func assemble(t *translation) {
 		}
 	}
 
-	// Add rule_set definitions from accumulated definitions, with download_detour
-	detour := firstGroupTag(t)
+	// Add rule_set definitions with download_detour=DIRECT.
+	// This ensures rule_set downloads use system DNS (via DIRECT outbound)
+	// instead of going through the proxy chain, which would fail if proxy
+	// servers are unreachable. Users behind GFW should use --rule-set-proxy
+	// for URL-level proxying (e.g. gh-proxy.org mirror).
 	for _, def := range t.ruleSetDefs {
-		if typ, _ := def["type"].(string); typ == "remote" {
-			if _, has := def["download_detour"]; !has && detour != "" {
-				def["download_detour"] = detour
-			}
+		if _, has := def["download_detour"]; !has {
+			def["download_detour"] = "DIRECT"
 		}
 		t.config.Route.RuleSet = append(t.config.Route.RuleSet, def)
 	}

@@ -36,4 +36,4 @@ docs/.vitepress/cache
 
 # docs site build files
 docs/.vitepress/dist
-singcast
+/singcast

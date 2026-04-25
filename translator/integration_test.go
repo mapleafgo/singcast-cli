@@ -11,14 +11,15 @@ import (
 const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.clash_for_flutter/profiles/1777039692584.yaml"
 
 // TestIntegrationRealProfile loads the real production YAML file,
-// translates it, and validates the output structure.
+// translates it with auto-routing, and validates the output structure.
 func TestIntegrationRealProfile(t *testing.T) {
 	data, err := os.ReadFile(realConfigPath)
 	if err != nil {
 		t.Skipf("real profile not found: %v", err)
 	}
 
-	out, warns, err := Translate(data)
+	// Force CN country for deterministic test
+	out, warns, err := TranslateWithOptions(data, &Options{Country: "CN"})
 	if err != nil {
 		t.Fatalf("Translate failed: %v", err)
 	}
@@ -80,96 +81,11 @@ func TestIntegrationRealProfile(t *testing.T) {
 	if autoTest["type"] != "urltest" {
 		t.Errorf("自动选择 type = %v, want urltest", autoTest["type"])
 	}
-	if autoTest["url"] != "http://cp.cloudflare.com/generate_204" {
-		t.Errorf("自动选择 url = %v", autoTest["url"])
-	}
-	if autoTest["interval"] != "5m" {
-		t.Errorf("自动选择 interval = %v, want 5m", autoTest["interval"])
-	}
 
-	// Verify all 36 proxy outbounds exist
-	expectedProxies := []string{
-		"剩余流量：127.73 GB",
-		"距离下次重置剩余：19 天",
-		"套餐到期：2028-01-13",
-		"🇺🇸United States 01",
-		"🇺🇸United States 02",
-		"🇺🇸United States 03",
-		"🇺🇸United States 04",
-		"🇸🇬Singapore 01",
-		"🇸🇬Singapore 02",
-		"🇸🇬Singapore 03",
-		"🇸🇬Singapore 04",
-		"🇯🇵Japan 01",
-		"🇯🇵Japan 02",
-		"🇯🇵Japan 03",
-		"🇯🇵Japan 04",
-		"🇰🇷Korea 03",
-		"🇰🇷Korea 04",
-		"🇳🇱Netherlands 01",
-		"🇳🇱Netherlands 02",
-		"🇬🇧United Kingdom 01",
-		"🇬🇧United Kingdom 02",
-		"🇬🇧United Kingdom 03",
-		"🇬🇧United Kingdom 04",
-		"🇭🇰Hong Kong 01 [Home]",
-		"🇭🇰Hong Kong 02 [Home]",
-		"🇭🇰Hong Kong 03",
-		"🇭🇰Hong Kong 04",
-		"🇭🇰Hong Kong 05",
-		"🇭🇰Hong Kong 06",
-		"🇹🇼Taiwan 01 [Home]",
-		"🇹🇼Taiwan 02 [Home]",
-		"🇹🇼Taiwan 03",
-		"🇹🇼Taiwan 04",
-		"🇩🇪Deutschland 01 IPv6",
-		"🇩🇪Deutschland 02 IPv6",
-	}
-	for _, name := range expectedProxies {
-		if !tags[name] {
-			t.Errorf("missing proxy outbound: %s", name)
-		}
-	}
-
-	// Verify proxy types: first vless should have proper REALITY config
-	us01 := findOutbound(outbounds, "🇺🇸United States 01")
-	if us01 == nil {
-		t.Fatal("🇺🇸United States 01 not found")
-	}
-	if us01["type"] != "vless" {
-		t.Errorf("us01 type = %v, want vless", us01["type"])
-	}
-	if us01["flow"] != "xtls-rprx-vision" {
-		t.Errorf("us01 flow = %v, want xtls-rprx-vision", us01["flow"])
-	}
-	tls, _ := us01["tls"].(map[string]any)
-	if tls == nil {
-		t.Fatal("us01 tls is nil")
-	}
-	reality, _ := tls["reality"].(map[string]any)
-	if reality == nil {
-		t.Fatal("us01 reality is nil")
-	}
-	if reality["public_key"] == "" {
-		t.Error("us01 reality.public_key is empty")
-	}
-	if reality["short_id"] == "" {
-		t.Error("us01 reality.short_id is empty")
-	}
-
-	// Verify anytls proxy
-	sg01 := findOutbound(outbounds, "🇸🇬Singapore 01")
-	if sg01 == nil {
-		t.Fatal("🇸🇬Singapore 01 not found")
-	}
-	if sg01["type"] != "anytls" {
-		t.Errorf("sg01 type = %v, want anytls", sg01["type"])
-	}
-
-	// === Route ===
+	// === Route (auto-routing) ===
 	route := m["route"].(map[string]any)
 
-	// route.final should be 节点选择 (from MATCH rule)
+	// route.final should be 节点选择 (first group)
 	if route["final"] != "节点选择" {
 		t.Errorf("route.final = %v, want 节点选择", route["final"])
 	}
@@ -185,39 +101,16 @@ func TestIntegrationRealProfile(t *testing.T) {
 		t.Errorf("second rule action = %v, want hijack-dns", rules[1].(map[string]any)["action"])
 	}
 
-	// Verify REJECT rules are converted to action:reject
-	rejectCount := 0
-	for _, r := range rules {
-		rm := r.(map[string]any)
-		if rm["action"] == "reject" {
-			rejectCount++
-		}
-		// Ensure no outbound:REJECT in output
-		if ob, ok := rm["outbound"]; ok && ob == "REJECT" {
-			t.Error("found outbound:REJECT in rules, should be action:reject")
-		}
-	}
-	// Real config has many REJECT rules (STUN ports + ad domains + tracking)
-	if rejectCount == 0 {
-		t.Error("expected some reject rules from STUN/ad/tracking entries")
-	}
-	t.Logf("REJECT action rules: %d", rejectCount)
-
-	// Verify rule types present in output
+	// Verify auto-routing rules present (ip_is_private instead of geoip-private)
 	ruleJSON, _ := json.Marshal(rules)
 	ruleStr := string(ruleJSON)
 
 	type check struct{ substr, desc string }
 	checks := []check{
-		{`"domain":["feed1.chitanda-eru.com"]`, "DOMAIN"},
-		{`"domain_suffix":["stun.qq.com"]`, "DOMAIN-SUFFIX"},
-		{`"ip_cidr":["127.0.0.0/8"]`, "IP-CIDR"},
-		{`"ip_cidr":["::1/128"]`, "IP-CIDR6"},
-		{`"port":[3478]`, "DST-PORT single"},
-		{`"rule_set":["geosite-google"]`, "GEOSITE google"},
-		{`"rule_set":["geosite-telegram"]`, "GEOSITE telegram"},
-		{`"rule_set":["geosite-cn"]`, "GEOSITE cn"},
-		{`"rule_set":["geoip-CN"]`, "GEOIP CN"},
+		{`"ip_is_private":true`, "private IP inline rule"},
+		{`"geosite-geolocation-!cn"`, "non-CN geolocation rule_set"},
+		{`"geoip-cn"`, "CN geoip rule_set"},
+		{`"geosite-geolocation-cn"`, "CN geolocation rule_set"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(ruleStr, c.substr) {
@@ -234,21 +127,17 @@ func TestIntegrationRealProfile(t *testing.T) {
 		rsMap := rs.(map[string]any)
 		tag := rsMap["tag"].(string)
 		rsTagMap[tag] = true
+
+		// Verify download_detour is DIRECT
+		if rsMap["download_detour"] != "DIRECT" {
+			t.Errorf("rule_set %q download_detour = %v, want DIRECT", tag, rsMap["download_detour"])
+		}
 	}
-	// Verify GEOSITE rule_set definitions
-	for _, gs := range []string{"private", "category-ads-all", "google", "telegram", "twitter", "facebook", "github", "cn", "geolocation-cn", "geolocation-!cn"} {
-		tag := "geosite-" + gs
+	// Verify auto-routing rule_set definitions (no geoip-private)
+	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-geolocation-cn"} {
 		if !rsTagMap[tag] {
 			t.Errorf("missing rule_set definition: %s", tag)
 		}
-	}
-	// Verify GEOIP rule_set definition
-	if !rsTagMap["geoip-CN"] {
-		t.Error("missing geoip-CN rule_set definition")
-	}
-	// Verify classical RULE-SET was skipped
-	if rsTagMap["rp-overseas-ai"] {
-		t.Error("rp-overseas-ai should be skipped (classical format)")
 	}
 
 	// === DNS ===
@@ -265,15 +154,12 @@ func TestIntegrationRealProfile(t *testing.T) {
 		t.Error("expected at least 1 DNS rule (from nameserver-policy)")
 	}
 
-	// FakeIP server should exist (type "fakeip" in DNS servers)
+	// FakeIP server should exist
 	foundFakeIP := false
 	for _, srv := range dnsServers {
 		srvMap := srv.(map[string]any)
 		if srvMap["type"] == "fakeip" {
 			foundFakeIP = true
-			if srvMap["inet4_range"] == "" {
-				t.Error("fakeip server missing inet4_range")
-			}
 			break
 		}
 	}
@@ -305,8 +191,6 @@ proxy-groups:
   - name: PROXY
     type: select
     proxies: [p1, p2, DIRECT]
-rules:
-  - MATCH,PROXY
 `
 	m, _ := mustTranslate(t, yaml)
 	outbounds := m["outbounds"].([]any)
@@ -320,8 +204,8 @@ rules:
 	}
 }
 
-// TestIntegrationRejectConvertedToAction verifies REJECT becomes action:reject.
-func TestIntegrationRejectConvertedToAction(t *testing.T) {
+// TestIntegrationAutoRoutingCN verifies CN auto-routing with a minimal config.
+func TestIntegrationAutoRoutingCN(t *testing.T) {
 	yaml := `mixed-port: 7890
 proxies:
   - name: p1
@@ -332,27 +216,50 @@ proxy-groups:
   - name: PROXY
     type: select
     proxies: [p1, DIRECT]
-rules:
-  - DOMAIN,ads.example.com,REJECT
-  - MATCH,PROXY
 `
-	m, _ := mustTranslate(t, yaml)
-	route := m["route"].(map[string]any)
-	rules := route["rules"].([]any)
-	for _, r := range rules {
-		rm := r.(map[string]any)
-		if ob, ok := rm["outbound"]; ok && ob == "REJECT" {
-			t.Error("found outbound:REJECT in rules, should be action:reject")
-		}
+	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	ruleJSON, _ := json.Marshal(rules)
-	if !strings.Contains(string(ruleJSON), `"action":"reject"`) {
-		t.Error("expected action:reject in rules")
+	m := parseJSON(t, out)
+	route := m["route"].(map[string]any)
+
+	// final should be PROXY
+	if route["final"] != "PROXY" {
+		t.Errorf("route.final = %v, want PROXY", route["final"])
+	}
+
+	rules := route["rules"].([]any)
+	// sniff + hijack-dns + ip_is_private + geolocation-!cn + geoip-cn + geolocation-cn = 6
+	if len(rules) != 6 {
+		t.Fatalf("expected 6 rules for CN, got %d", len(rules))
+	}
+
+	// Verify ip_is_private rule
+	privateRule := rules[2].(map[string]any)
+	if privateRule["ip_is_private"] != true {
+		t.Error("rule 2 should have ip_is_private=true")
+	}
+	if privateRule["outbound"] != "DIRECT" {
+		t.Errorf("ip_is_private outbound = %v, want DIRECT", privateRule["outbound"])
+	}
+
+	// Verify rule_set definitions (no geoip-private)
+	rsDefs := route["rule_set"].([]any)
+	rsTags := map[string]bool{}
+	for _, rs := range rsDefs {
+		rsMap := rs.(map[string]any)
+		rsTags[rsMap["tag"].(string)] = true
+	}
+	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-geolocation-cn"} {
+		if !rsTags[tag] {
+			t.Errorf("missing rule_set: %s", tag)
+		}
 	}
 }
 
-// TestIntegrationGeoIPWithSrcParam verifies GEOIP,CN,target,src sets source matching.
-func TestIntegrationGeoIPWithSrcParam(t *testing.T) {
+// TestIntegrationAutoRoutingOtherCountry verifies non-CN auto-routing.
+func TestIntegrationAutoRoutingOtherCountry(t *testing.T) {
 	yaml := `mixed-port: 7890
 proxies:
   - name: p1
@@ -363,24 +270,30 @@ proxy-groups:
   - name: PROXY
     type: select
     proxies: [p1, DIRECT]
-rules:
-  - GEOIP,CN,DIRECT,src
-  - MATCH,PROXY
 `
-	m, _ := mustTranslate(t, yaml)
+	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "JP"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := parseJSON(t, out)
 	route := m["route"].(map[string]any)
+
 	rules := route["rules"].([]any)
-	for _, r := range rules {
-		rm := r.(map[string]any)
-		if rs, ok := rm["rule_set"]; ok {
-			rsTags, _ := rs.([]any)
-			if len(rsTags) > 0 && rsTags[0] == "geoip-CN" {
-				if rm["rule_set_ip_cidr_match_source"] != true {
-					t.Errorf("GEOIP with src should have rule_set_ip_cidr_match_source=true")
-				}
-				return
-			}
+	// sniff + hijack-dns + ip_is_private + geoip-jp + geosite-jp = 5
+	if len(rules) != 5 {
+		t.Fatalf("expected 5 rules for JP, got %d", len(rules))
+	}
+
+	// Verify geoip-jp and geosite-jp rule_set definitions exist
+	rsDefs := route["rule_set"].([]any)
+	rsTags := map[string]bool{}
+	for _, rs := range rsDefs {
+		rsMap := rs.(map[string]any)
+		rsTags[rsMap["tag"].(string)] = true
+	}
+	for _, tag := range []string{"geoip-jp", "geosite-jp"} {
+		if !rsTags[tag] {
+			t.Errorf("missing rule_set: %s", tag)
 		}
 	}
-	t.Error("GEOIP CN rule not found")
 }

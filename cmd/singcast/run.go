@@ -61,12 +61,19 @@ func runCommand() *cli.Command {
 				Usage: "home directory",
 				Value: defaultHomeDir(),
 			},
+			&cli.StringFlag{
+				Name:    "rule-set-proxy",
+				Aliases: []string{"p"},
+				Usage:   "URL prefix for rule-set downloads (e.g. https://gh-proxy.org)",
+				Sources: cli.EnvVars("SINGCAST_RULE_SET_PROXY"),
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			homeDir := cmd.String("home")
 			configPath := cmd.String("config")
 			daemon := cmd.Bool("daemon")
 			apiAddr := cmd.String("api")
+				proxyPrefix := cmd.String("rule-set-proxy")
 
 			if err := os.MkdirAll(homeDir, 0o700); err != nil {
 				return fmt.Errorf("create home dir: %w", err)
@@ -85,7 +92,8 @@ func runCommand() *cli.Command {
 			// Translate YAML to sing-box JSON if needed
 			var jsonContent string
 			if translator.DetectFormat(data) == translator.FormatYAML {
-				result, warns, err := translator.Translate(data)
+				opts := &translator.Options{RuleSetURLPrefix: proxyPrefix}
+				result, warns, err := translator.TranslateWithOptions(data, opts)
 				if err != nil {
 					return fmt.Errorf("translate config: %w", err)
 				}
@@ -110,7 +118,7 @@ func runCommand() *cli.Command {
 			maxLevel := parseConfigLogLevel(jsonContent)
 
 			if daemon {
-				return startDaemon(homeDir, outPath)
+				return startDaemon(homeDir, outPath, proxyPrefix, apiAddr)
 			}
 			return runForeground(homeDir, outPath, maxLevel, jsonContent)
 		},

@@ -27,6 +27,12 @@ func convertCommand() *cli.Command {
 				Aliases: []string{"o"},
 				Usage:   "output file path (default: stdout)",
 			},
+			&cli.StringFlag{
+				Name:    "rule-set-proxy",
+				Aliases: []string{"p"},
+				Usage:   "URL prefix for rule-set downloads (e.g. https://gh-proxy.org)",
+				Sources: cli.EnvVars("SINGCAST_RULE_SET_PROXY"),
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			data, err := os.ReadFile(cmd.String("config"))
@@ -41,7 +47,8 @@ func convertCommand() *cli.Command {
 			if translator.DetectFormat(data) == translator.FormatJSON {
 				result = string(data)
 			} else {
-				translated, warnings, err := translator.Translate(data)
+				opts := &translator.Options{RuleSetURLPrefix: cmd.String("rule-set-proxy")}
+				translated, warnings, err := translator.TranslateWithOptions(data, opts)
 				if err != nil {
 					return fmt.Errorf("translate: %w", err)
 				}

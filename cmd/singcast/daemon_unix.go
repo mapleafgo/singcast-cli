@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-func startDaemon(homeDir, configPath string) error {
+func startDaemon(homeDir, configPath, ruleSetProxy, apiAddr string) error {
 	logPath := filepath.Join(homeDir, "singcast.log")
 	pidPath := filepath.Join(homeDir, "singcast.pid")
 
@@ -42,7 +42,15 @@ func startDaemon(homeDir, configPath string) error {
 		Files: []uintptr{os.Stdin.Fd(), logFile.Fd(), logFile.Fd()},
 	}
 
-	pid, err := syscall.ForkExec(self, []string{"singcast", "run", "-c", configPath, "--home", homeDir}, procAttr)
+	args := []string{"singcast", "run", "-c", configPath, "--home", homeDir}
+	if ruleSetProxy != "" {
+		args = append(args, "--rule-set-proxy", ruleSetProxy)
+	}
+	if apiAddr != "" {
+		args = append(args, "--api", apiAddr)
+	}
+
+	pid, err := syscall.ForkExec(self, args, procAttr)
 	if err != nil {
 		return fmt.Errorf("fork daemon: %w", err)
 	}

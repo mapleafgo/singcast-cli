@@ -38,6 +38,7 @@ type Service struct {
 	handler       *ClientHandler
 	homeDir       string
 	configPath    string
+	ruleSetProxy  string
 	started       bool
 }
 
@@ -94,17 +95,22 @@ func Init(homeDir string) error {
 }
 
 // Start starts the singleton service with the given config path.
-func Start(configPath string) error {
+// ruleSetProxy is an optional URL prefix for rule_set downloads (empty = direct).
+func Start(configPath string, ruleSetProxy ...string) error {
 	mu.Lock()
 	svc := instance
 	mu.Unlock()
 	if svc == nil {
 		return fmt.Errorf("core not initialized")
 	}
-	return svc.start(configPath)
+	var proxy string
+	if len(ruleSetProxy) > 0 {
+		proxy = ruleSetProxy[0]
+	}
+	return svc.start(configPath, proxy)
 }
 
-func (s *Service) start(configPath string) error {
+func (s *Service) start(configPath string, ruleSetProxy string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -113,6 +119,7 @@ func (s *Service) start(configPath string) error {
 	}
 
 	s.configPath = configPath
+	s.ruleSetProxy = ruleSetProxy
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -122,7 +129,8 @@ func (s *Service) start(configPath string) error {
 	// Translate YAML to sing-box JSON if needed
 	var jsonContent string
 	if translator.DetectFormat(data) == translator.FormatYAML {
-		result, _, err := translator.Translate(data)
+		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
+		result, _, err := translator.TranslateWithOptions(data, opts)
 		if err != nil {
 			return fmt.Errorf("translate config: %w", err)
 		}
@@ -227,11 +235,12 @@ func ReloadConfig() error {
 func (s *Service) ReloadConfig() error {
 	s.mu.Lock()
 	path := s.configPath
+	proxy := s.ruleSetProxy
 	s.mu.Unlock()
 	if path == "" {
 		return fmt.Errorf("no config path set")
 	}
-	return s.start(path)
+	return s.start(path, proxy)
 }
 
 // CheckConfig validates a sing-box JSON config string.

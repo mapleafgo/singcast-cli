@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func startDaemon(homeDir, configPath string) error {
+func startDaemon(homeDir, configPath, ruleSetProxy, apiAddr string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get executable: %w", err)
@@ -21,7 +21,15 @@ func startDaemon(homeDir, configPath string) error {
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(self, "run", "-c", configPath, "--home", homeDir)
+	args := []string{"run", "-c", configPath, "--home", homeDir}
+	if ruleSetProxy != "" {
+		args = append(args, "--rule-set-proxy", ruleSetProxy)
+	}
+	if apiAddr != "" {
+		args = append(args, "--api", apiAddr)
+	}
+
+	cmd := exec.Command(self, args...)
 	cmd.Dir = homeDir
 	cmd.Stdin = nil
 	cmd.Stdout = logFile

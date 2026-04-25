@@ -7,9 +7,20 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// Options controls translation behavior.
+type Options struct {
+	Country          string // override auto-detected country code (e.g. "US", "JP")
+	RuleSetURLPrefix string // URL prefix for rule_set downloads (e.g. "https://gh-proxy.org"), empty = direct
+}
+
 // Translate translates a mihomo YAML config to a sing-box JSON config string.
 // Returns the JSON string, a list of warnings, and any fatal error.
 func Translate(data []byte) (string, []string, error) {
+	return TranslateWithOptions(data, nil)
+}
+
+// TranslateWithOptions translates with additional configuration options.
+func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) {
 	// Detect format
 	if DetectFormat(data) == FormatJSON {
 		// Already sing-box JSON, pass through
@@ -28,9 +39,10 @@ func Translate(data []byte) (string, []string, error) {
 			Outbounds: []map[string]any{},
 			Route:     &singboxRoute{},
 		},
-		proxyTags:     make(map[string]bool),
-		groupTags:     make(map[string]bool),
-		ruleSetDefs:   make(map[string]map[string]any),
+		proxyTags:   make(map[string]bool),
+		groupTags:   make(map[string]bool),
+		ruleSetDefs: make(map[string]map[string]any),
+		opts:        opts,
 	}
 
 	// Step 1-2: Global config → inbounds + log
@@ -46,7 +58,7 @@ func Translate(data []byte) (string, []string, error) {
 	t.config.Outbounds = append(t.config.Outbounds, proxyOutbounds...)
 	t.config.Outbounds = append(t.config.Outbounds, groupOutbounds...)
 
-	// Step 5: Translate rules → route.rules + route.rule_set
+	// Step 5: Auto-routing (serenity-style, based on detected country)
 	translateRules(cfg, t)
 
 	// Step 6: Translate DNS
@@ -58,13 +70,10 @@ func Translate(data []byte) (string, []string, error) {
 	// Step 8: Translate experimental
 	translateExperimental(cfg, t.config)
 
-	// Step 9: Translate providers → rule_set
-	translateProviders(cfg, t)
-
-	// Step 10: Assemble (inject builtins, default rules, convert REJECT, rule_set defs)
+	// Step 9: Assemble (inject builtins, default rules, convert REJECT, rule_set defs)
 	assemble(t)
 
-	// Step 11: Validate (after assemble so REJECT is already converted to action)
+	// Step 10: Validate (after assemble so REJECT is already converted to action)
 	if err := validate(t); err != nil {
 		return "", t.warnings, err
 	}

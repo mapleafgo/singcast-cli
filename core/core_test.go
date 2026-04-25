@@ -155,13 +155,18 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 	}
 }
 
-// TestNoOutboundReject verifies no outbound:REJECT remains in rules.
-func TestNoOutboundReject(t *testing.T) {
+// TestAutoRoutingSTUNReject verifies the auto-routing STUN block uses action:reject.
+func TestAutoRoutingSTUNReject(t *testing.T) {
 	yaml := `mixed-port: 1080
-rules:
-  - DOMAIN,ads.example.com,REJECT
-  - DST-PORT,443,REJECT
-  - MATCH,DIRECT
+proxies:
+  - name: p1
+    type: socks5
+    server: 1.2.3.4
+    port: 1080
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [p1, DIRECT]
 `
 	jsonStr := mustTranslateYAML(t, yaml)
 	m := parseJSONMap(t, jsonStr)
@@ -174,7 +179,7 @@ rules:
 		}
 	}
 	if !strings.Contains(jsonStr, `"action": "reject"`) {
-		t.Error("expected action:reject in rules for REJECT targets")
+		t.Error("expected action:reject in auto-routing STUN block")
 	}
 }
 

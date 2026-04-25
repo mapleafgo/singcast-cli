@@ -41,8 +41,8 @@ func CoreInit(homeDir *C.char) *C.char {
 }
 
 //export CoreStart
-func CoreStart(configPath *C.char) *C.char {
-	return resultJSON(core.Start(goString(configPath)))
+func CoreStart(configPath *C.char, ruleSetProxy *C.char) *C.char {
+	return resultJSON(core.Start(goString(configPath), goString(ruleSetProxy)))
 }
 
 //export CoreStop
@@ -139,8 +139,9 @@ func CoreSetCallback(cb unsafe.Pointer) {
 }
 
 //export CoreTranslateConfig
-func CoreTranslateConfig(yamlContent *C.char) *C.char {
-	jsonStr, warnings, err := translator.Translate([]byte(goString(yamlContent)))
+func CoreTranslateConfig(yamlContent *C.char, ruleSetProxy *C.char) *C.char {
+	opts := &translator.Options{RuleSetURLPrefix: goString(ruleSetProxy)}
+	jsonStr, warnings, err := translator.TranslateWithOptions([]byte(goString(yamlContent)), opts)
 	if err != nil {
 		return cString(mustMarshal(map[string]string{"error": err.Error()}))
 	}
