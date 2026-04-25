@@ -97,7 +97,7 @@ tasks:
   ffi-windows-arm64:
     desc: Build FFI shared library for Windows arm64
     cmds:
-      - GOOS=windows GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-arm64.dll ./cmd/lib
+      - CC="clang --target=arm64-windows-gnu" GOOS=windows GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-arm64.dll ./cmd/lib
 
   ffi-android-arm64:
     desc: Build FFI shared library for Android arm64
