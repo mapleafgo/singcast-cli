@@ -170,6 +170,12 @@ func (s *Singcast) SetPlatformIO(pio libbox.PlatformInterface) {
 	core.SetPlatformIO(pio)
 }
 
+// SetTunFd stores a TUN file descriptor for mobile platforms.
+// Call after creating the TUN interface and before StartWithContent.
+func (s *Singcast) SetTunFd(fd int32) {
+	core.SetTunFd(fd)
+}
+
 // StartWithContent starts the service with raw YAML or JSON content.
 func (s *Singcast) StartWithContent(content, ruleSetProxy string) error {
 	return core.StartWithContent(content, ruleSetProxy)

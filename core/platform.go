@@ -14,6 +14,7 @@ import (
 type PlatformIO struct {
 	mu       sync.RWMutex
 	delegate libbox.PlatformInterface
+	tunFd    int32
 }
 
 // SetDelegate sets the platform interface delegate.
@@ -22,6 +23,15 @@ func (p *PlatformIO) SetDelegate(d libbox.PlatformInterface) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.delegate = d
+}
+
+// SetTunFd stores a TUN file descriptor returned by the platform's
+// VpnService (Android) or NetworkExtension (iOS). When set, OpenTun
+// returns this fd instead of delegating or failing.
+func (p *PlatformIO) SetTunFd(fd int32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tunFd = fd
 }
 
 // Delegate returns the current delegate, or nil if none is set.
@@ -55,6 +65,12 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	if d := p.Delegate(); d != nil {
 		return d.OpenTun(options)
+	}
+	p.mu.RLock()
+	fd := p.tunFd
+	p.mu.RUnlock()
+	if fd != 0 {
+		return fd, nil
 	}
 	return 0, os.ErrInvalid
 }

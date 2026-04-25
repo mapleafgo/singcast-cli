@@ -300,6 +300,17 @@ func SetPlatformIO(pio libbox.PlatformInterface) {
 	}
 }
 
+// SetTunFd stores a TUN file descriptor for mobile platforms.
+// Call this after creating the TUN interface (VpnService/NetworkExtension)
+// and before Start/StartWithContent.
+func SetTunFd(fd int32) {
+	mu.Lock()
+	defer mu.Unlock()
+	if instance != nil && instance.platformIO != nil {
+		instance.platformIO.SetTunFd(fd)
+	}
+}
+
 // StartWithContent starts the service with raw YAML or JSON content.
 // No file is involved; the content is translated and used directly.
 func StartWithContent(content, ruleSetProxy string) error {
