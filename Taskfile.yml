@@ -1,0 +1,172 @@
+version: '3'
+
+vars:
+  NAME: singcast
+  CLI_NAME: singcast
+  BINDIR: bin
+  VERSION:
+    sh: git describe --tags 2>/dev/null || echo "dev"
+  LDFLAGS: >-
+    -w -s
+    -X github.com/mapleafgo/singcast/core.Version={{.VERSION}}
+
+env:
+  CGO_ENABLED: 1
+
+tasks:
+  default:
+    desc: Build CLI for current platform
+    cmds:
+      - task: cli
+
+  # ── CLI ──────────────────────────────────────────────
+
+  cli:
+    desc: Build singcast CLI binary for current platform
+    cmds:
+      - go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}} ./cmd/singcast
+
+  cli-linux-amd64:
+    desc: Build CLI for Linux amd64
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-linux-amd64 ./cmd/singcast
+
+  cli-linux-arm64:
+    desc: Build CLI for Linux arm64
+    cmds:
+      - GOOS=linux GOARCH=arm64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-linux-arm64 ./cmd/singcast
+
+  cli-darwin-amd64:
+    desc: Build CLI for macOS amd64
+    cmds:
+      - GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-darwin-amd64 ./cmd/singcast
+
+  cli-darwin-arm64:
+    desc: Build CLI for macOS arm64
+    cmds:
+      - GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-darwin-arm64 ./cmd/singcast
+
+  cli-windows-amd64:
+    desc: Build CLI for Windows amd64
+    cmds:
+      - GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-windows-amd64.exe ./cmd/singcast
+
+  cli-windows-arm64:
+    desc: Build CLI for Windows arm64
+    cmds:
+      - GOOS=windows GOARCH=arm64 go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-windows-arm64.exe ./cmd/singcast
+
+  cli-all:
+    desc: Build CLI for all platforms
+    cmds:
+      - task: cli-linux-amd64
+      - task: cli-linux-arm64
+      - task: cli-darwin-amd64
+      - task: cli-darwin-arm64
+      - task: cli-windows-amd64
+      - task: cli-windows-arm64
+
+  # ── FFI Shared Library ───────────────────────────────
+
+  ffi-linux-amd64:
+    desc: Build FFI shared library for Linux amd64
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-amd64.so ./cffi
+
+  ffi-linux-arm64:
+    desc: Build FFI shared library for Linux arm64
+    cmds:
+      - GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-arm64.so ./cffi
+
+  ffi-darwin-amd64:
+    desc: Build FFI shared library for macOS amd64
+    cmds:
+      - GOOS=darwin GOARCH=amd64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-amd64.dylib ./cffi
+
+  ffi-darwin-arm64:
+    desc: Build FFI shared library for macOS arm64
+    cmds:
+      - GOOS=darwin GOARCH=arm64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-arm64.dylib ./cffi
+
+  ffi-windows-amd64:
+    desc: Build FFI shared library for Windows amd64
+    cmds:
+      - GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-amd64.dll ./cffi
+
+  ffi-windows-arm64:
+    desc: Build FFI shared library for Windows arm64
+    cmds:
+      - GOOS=windows GOARCH=arm64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-arm64.dll ./cffi
+
+  ffi-android-arm64:
+    desc: Build FFI shared library for Android arm64
+    cmds:
+      - GOOS=android GOARCH=arm64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.so ./cffi
+
+  ffi-android-amd64:
+    desc: Build FFI shared library for Android amd64
+    cmds:
+      - GOOS=android GOARCH=amd64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.so ./cffi
+
+  ffi-ios-arm64:
+    desc: Build FFI shared library for iOS arm64
+    cmds:
+      - GOOS=ios GOARCH=arm64 go build -buildmode=c-shared -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-ios-arm64.dylib ./cffi
+
+  ffi-all:
+    desc: Build FFI shared libraries for all platforms
+    cmds:
+      - task: ffi-linux-amd64
+      - task: ffi-linux-arm64
+      - task: ffi-darwin-amd64
+      - task: ffi-darwin-arm64
+      - task: ffi-windows-amd64
+      - task: ffi-windows-arm64
+      - task: ffi-android-amd64
+      - task: ffi-android-arm64
+      - task: ffi-ios-arm64
+
+  # ── Mobile SDK ───────────────────────────────────────
+
+  mobile-android-arm64:
+    desc: Build Android AAR for arm64 (gomobile)
+    cmds:
+      - gomobile bind -target=android/arm64 -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.aar ./cffi
+
+  mobile-android-amd64:
+    desc: Build Android AAR for amd64 (gomobile)
+    cmds:
+      - gomobile bind -target=android/amd64 -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.aar ./cffi
+
+  mobile-ios-arm64:
+    desc: Build iOS xcframework for arm64 (gomobile)
+    cmds:
+      - gomobile bind -target=ios/arm64 -o {{.BINDIR}}/{{.NAME}}-ios-arm64.xcframework ./cffi
+
+  mobile-all:
+    desc: Build all mobile SDK packages
+    cmds:
+      - task: mobile-android-arm64
+      - task: mobile-android-amd64
+      - task: mobile-ios-arm64
+
+  # ── Release ──────────────────────────────────────────
+
+  release:
+    desc: Build all release artifacts (CLI + FFI + mobile)
+    cmds:
+      - task: cli-all
+      - task: ffi-all
+      - task: mobile-all
+
+  # ── Development ──────────────────────────────────────
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./translator/... ./core/...
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.BINDIR}}
