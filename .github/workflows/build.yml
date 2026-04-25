@@ -191,7 +191,7 @@ jobs:
           gomobile init
           mkdir -p build
           gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
-            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
+            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s -checklinkname=0" \
             -o build/libsingcast-${{ matrix.goarch }}.aar \
             -target=${{ matrix.target }} \
             -androidapi 29 \
