@@ -152,7 +152,7 @@ jobs:
           go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/${{ matrix.prefix }}singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
-            ./cmd/cffi
+            ./cmd/lib
       - name: Package
         shell: bash
         run: |
