@@ -76,7 +76,7 @@ task ffi-ios-arm64
 task all
 ```
 
-Build tags: `with_clash_api,with_utls,with_quic,with_v2ray_api`
+Build tags: `with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
 
 ## FFI Interface
 
@@ -102,6 +102,63 @@ All functions return JSON strings. Exported as C-compatible symbols.
 | `CoreCloseAllConnections()` | Close all active connections |
 | `CoreSetCallback(cb)` | Set event callback |
 | `CoreGetVersion()` | Get version info |
+
+## Mobile SDK
+
+Built with `gomobile bind` — generates AAR (Android) and xcframework (iOS).
+
+```bash
+task mobile-android-arm64   # Android AAR
+task mobile-ios-arm64       # iOS xcframework
+task mobile-all             # All mobile targets
+```
+
+### API (gomobile)
+
+| Method | Description |
+|--------|-------------|
+| `Init(homeDir)` | Initialize the core runtime |
+| `SetTunFd(fd)` | Set TUN fd from VpnService/NetworkExtension |
+| `StartWithContent(content, ruleSetProxy)` | Start with YAML/JSON content |
+| `Start(configPath, ruleSetProxy)` | Start with config file |
+| `Stop()` | Stop the service |
+| `Close()` | Release all resources |
+| `TranslateConfig(yaml, ruleSetProxy)` | Translate YAML to sing-box JSON |
+| `SelectProxy(group, tag)` | Select proxy node |
+| `SetMode(mode)` | Set routing mode |
+| `QueryProxies()` | Query proxy groups |
+| `QueryTraffic()` | Query traffic stats |
+| `QueryLogs()` | Query recent logs |
+| `QueryConnections()` | Query active connections |
+| `TestDelay(name)` | Test proxy delay |
+| `SetOnEvent(fn)` | Set event callback |
+| `Version()` | Get version info |
+
+### Mobile TUN Integration
+
+**Android (Kotlin):**
+```kotlin
+val singcast = Singcast()
+singcast.init(homeDir)
+
+// When user connects — start VpnService and pass the TUN fd
+val fd = vpnService.Builder()
+    .addAddress("172.18.0.1", 30)
+    .establish().fileDescriptor
+singcast.setTunFd(fd.toInt())
+singcast.startWithContent(yamlContent, "")
+```
+
+**iOS (Swift):**
+```swift
+let singcast = Singcast()
+singcast.init(homeDir)
+
+// When user connects — extract fd from NEPacketTunnelProvider
+let fd = tunnelFileDescriptor  // from NetworkExtension
+singcast.setTunFd(fd)
+singcast.startWithContent(yamlContent, "")
+```
 
 ## License
 

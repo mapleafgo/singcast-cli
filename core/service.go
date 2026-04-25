@@ -290,16 +290,6 @@ func (h *serverHandler) GetSystemProxyStatus() (*libbox.SystemProxyStatus, error
 func (h *serverHandler) SetSystemProxyEnabled(enabled bool) error { return nil }
 func (h *serverHandler) WriteDebugMessage(message string)         {}
 
-// SetPlatformIO allows mobile callers to inject a platform-specific
-// PlatformInterface at any time after Init.
-func SetPlatformIO(pio libbox.PlatformInterface) {
-	mu.Lock()
-	defer mu.Unlock()
-	if instance != nil && instance.platformIO != nil {
-		instance.platformIO.SetDelegate(pio)
-	}
-}
-
 // SetTunFd stores a TUN file descriptor for mobile platforms.
 // Call this after creating the TUN interface (VpnService/NetworkExtension)
 // and before Start/StartWithContent.

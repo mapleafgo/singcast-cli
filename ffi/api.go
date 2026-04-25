@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/sagernet/sing-box/experimental/libbox"
-
 	"github.com/mapleafgo/singcast/core"
 	"github.com/mapleafgo/singcast/translator"
 	_ "golang.org/x/mobile/bind" // retained for gomobile bind
@@ -162,12 +160,6 @@ func (s *Singcast) Version() string {
 // SetOnEvent sets the event callback.
 func (s *Singcast) SetOnEvent(fn func(eventType int, jsonPayload string)) {
 	core.SetOnEvent(fn)
-}
-
-// SetPlatformIO injects a platform-specific PlatformInterface.
-// Mobile apps call this before Start to provide TUN support.
-func (s *Singcast) SetPlatformIO(pio libbox.PlatformInterface) {
-	core.SetPlatformIO(pio)
 }
 
 // SetTunFd stores a TUN file descriptor for mobile platforms.

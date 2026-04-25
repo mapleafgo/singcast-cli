@@ -9,63 +9,36 @@ import (
 	"github.com/sagernet/sing-box/experimental/libbox"
 )
 
-// PlatformIO implements libbox.PlatformInterface for desktop CLI usage.
-// It delegates to an optional PlatformInterface set by mobile callers.
+// PlatformIO implements libbox.PlatformInterface.
+// On desktop, it provides default implementations for all methods.
+// On mobile, callers can set a TUN fd via SetTunFd before starting
+// a configuration that contains a TUN inbound.
 type PlatformIO struct {
-	mu       sync.RWMutex
-	delegate libbox.PlatformInterface
-	tunFd    int32
+	mu    sync.RWMutex
+	tunFd int32
 }
 
-// SetDelegate sets the platform interface delegate.
-// It is safe to call from any goroutine.
-func (p *PlatformIO) SetDelegate(d libbox.PlatformInterface) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.delegate = d
-}
-
-// SetTunFd stores a TUN file descriptor returned by the platform's
-// VpnService (Android) or NetworkExtension (iOS). When set, OpenTun
-// returns this fd instead of delegating or failing.
+// SetTunFd stores a TUN file descriptor from VpnService (Android)
+// or NetworkExtension (iOS). OpenTun returns this fd when set.
 func (p *PlatformIO) SetTunFd(fd int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.tunFd = fd
 }
 
-// Delegate returns the current delegate, or nil if none is set.
-func (p *PlatformIO) Delegate() libbox.PlatformInterface {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.delegate
-}
-
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
-	if d := p.Delegate(); d != nil {
-		return d.LocalDNSTransport()
-	}
 	return nil
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
-	if d := p.Delegate(); d != nil {
-		return d.UsePlatformAutoDetectInterfaceControl()
-	}
 	return true
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
-	if d := p.Delegate(); d != nil {
-		return d.AutoDetectInterfaceControl(fd)
-	}
 	return nil
 }
 
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
-	if d := p.Delegate(); d != nil {
-		return d.OpenTun(options)
-	}
 	p.mu.RLock()
 	fd := p.tunFd
 	p.mu.RUnlock()
@@ -80,16 +53,10 @@ func (p *PlatformIO) UseProcFS() bool {
 }
 
 func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string, sourcePort int32, destinationAddress string, destinationPort int32) (*libbox.ConnectionOwner, error) {
-	if d := p.Delegate(); d != nil {
-		return d.FindConnectionOwner(ipProtocol, sourceAddress, sourcePort, destinationAddress, destinationPort)
-	}
 	return nil, os.ErrInvalid
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	if d := p.Delegate(); d != nil {
-		return d.StartDefaultInterfaceMonitor(listener)
-	}
 	conn, err := net.Dial("udp4", "8.8.8.8:53")
 	if err != nil {
 		return err
@@ -126,16 +93,10 @@ func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	if d := p.Delegate(); d != nil {
-		return d.CloseDefaultInterfaceMonitor(listener)
-	}
 	return nil
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	if d := p.Delegate(); d != nil {
-		return d.GetInterfaces()
-	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -166,43 +127,24 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
-	if d := p.Delegate(); d != nil {
-		return d.UnderNetworkExtension()
-	}
 	return false
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
-	if d := p.Delegate(); d != nil {
-		return d.IncludeAllNetworks()
-	}
 	return false
 }
 
 func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState {
-	if d := p.Delegate(); d != nil {
-		return d.ReadWIFIState()
-	}
 	return nil
 }
 
 func (p *PlatformIO) SystemCertificates() libbox.StringIterator {
-	if d := p.Delegate(); d != nil {
-		return d.SystemCertificates()
-	}
 	return nil
 }
 
-func (p *PlatformIO) ClearDNSCache() {
-	if d := p.Delegate(); d != nil {
-		d.ClearDNSCache()
-	}
-}
+func (p *PlatformIO) ClearDNSCache() {}
 
 func (p *PlatformIO) SendNotification(notification *libbox.Notification) error {
-	if d := p.Delegate(); d != nil {
-		return d.SendNotification(notification)
-	}
 	return nil
 }
 

@@ -76,7 +76,7 @@ task ffi-ios-arm64
 task all
 ```
 
-构建标签：`with_clash_api,with_utls,with_quic,with_v2ray_api`
+构建标签：`with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
 
 ## FFI 接口
 
@@ -102,6 +102,63 @@ task all
 | `CoreCloseAllConnections()` | 关闭所有活跃连接 |
 | `CoreSetCallback(cb)` | 设置事件回调 |
 | `CoreGetVersion()` | 获取版本信息 |
+
+## 移动端 SDK
+
+通过 `gomobile bind` 构建，生成 AAR（Android）和 xcframework（iOS）。
+
+```bash
+task mobile-android-arm64   # Android AAR
+task mobile-ios-arm64       # iOS xcframework
+task mobile-all             # 所有移动端目标
+```
+
+### API（gomobile）
+
+| 方法 | 说明 |
+|------|------|
+| `Init(homeDir)` | 初始化核心运行时 |
+| `SetTunFd(fd)` | 设置来自 VpnService/NetworkExtension 的 TUN fd |
+| `StartWithContent(content, ruleSetProxy)` | 使用 YAML/JSON 内容启动 |
+| `Start(configPath, ruleSetProxy)` | 使用配置文件启动 |
+| `Stop()` | 停止服务 |
+| `Close()` | 释放所有资源 |
+| `TranslateConfig(yaml, ruleSetProxy)` | 将 YAML 翻译为 sing-box JSON |
+| `SelectProxy(group, tag)` | 选择代理节点 |
+| `SetMode(mode)` | 设置路由模式 |
+| `QueryProxies()` | 查询代理组 |
+| `QueryTraffic()` | 查询流量统计 |
+| `QueryLogs()` | 查询最近日志 |
+| `QueryConnections()` | 查询活跃连接 |
+| `TestDelay(name)` | 测试代理延迟 |
+| `SetOnEvent(fn)` | 设置事件回调 |
+| `Version()` | 获取版本信息 |
+
+### 移动端 TUN 集成
+
+**Android（Kotlin）：**
+```kotlin
+val singcast = Singcast()
+singcast.init(homeDir)
+
+// 用户点击连接时 — 启动 VpnService 并传入 TUN fd
+val fd = vpnService.Builder()
+    .addAddress("172.18.0.1", 30)
+    .establish().fileDescriptor
+singcast.setTunFd(fd.toInt())
+singcast.startWithContent(yamlContent, "")
+```
+
+**iOS（Swift）：**
+```swift
+let singcast = Singcast()
+singcast.init(homeDir)
+
+// 用户点击连接时 — 从 NEPacketTunnelProvider 提取 fd
+let fd = tunnelFileDescriptor  // 来自 NetworkExtension
+singcast.setTunFd(fd)
+singcast.startWithContent(yamlContent, "")
+```
 
 ## 许可证
 
