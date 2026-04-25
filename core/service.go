@@ -75,10 +75,13 @@ func Init(homeDir string) error {
 	handler := NewClientHandler(nil)
 	platformIO := &PlatformIO{}
 
-	// Create the CommandServer
+	// Create and start the CommandServer
 	commandServer, err := libbox.NewCommandServer(&serverHandler{}, platformIO)
 	if err != nil {
 		return fmt.Errorf("create command server: %w", err)
+	}
+	if err := commandServer.Start(); err != nil {
+		return fmt.Errorf("start command server: %w", err)
 	}
 
 	instance = &Service{

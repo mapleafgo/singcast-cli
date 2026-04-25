@@ -12,7 +12,29 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mapleafgo/singcast/core"
+	"github.com/mapleafgo/singcast/translator"
 )
+
+func parseLogLevel(s string) int32 {
+	switch s {
+	case "panic":
+		return 0
+	case "fatal":
+		return 1
+	case "error":
+		return 2
+	case "warn", "warning":
+		return 3
+	case "info":
+		return 4
+	case "debug":
+		return 5
+	case "trace":
+		return 6
+	default:
+		return 4
+	}
+}
 
 func runCommand() *cli.Command {
 	return &cli.Command{
@@ -59,7 +81,23 @@ func runCommand() *cli.Command {
 			}
 
 			outPath := filepath.Join(homeDir, "config.json")
-			if err := os.WriteFile(outPath, data, 0o600); err != nil {
+
+			// Translate YAML to sing-box JSON if needed
+			var jsonContent string
+			if translator.DetectFormat(data) == translator.FormatYAML {
+				result, warns, err := translator.Translate(data)
+				if err != nil {
+					return fmt.Errorf("translate config: %w", err)
+				}
+				for _, w := range warns {
+					fmt.Fprintf(os.Stderr, "WARN: %s\n", w)
+				}
+				jsonContent = result
+			} else {
+				jsonContent = string(data)
+			}
+
+			if err := os.WriteFile(outPath, []byte(jsonContent), 0o600); err != nil {
 				return fmt.Errorf("write config: %w", err)
 			}
 
@@ -69,24 +107,56 @@ func runCommand() *cli.Command {
 				}
 			}
 
+			maxLevel := parseConfigLogLevel(jsonContent)
+
 			if daemon {
 				return startDaemon(homeDir, outPath)
 			}
-			return runForeground(homeDir, outPath)
+			return runForeground(homeDir, outPath, maxLevel, jsonContent)
 		},
 	}
 }
 
-func runForeground(homeDir, configPath string) error {
+// parseConfigLogLevel parses the log.level field from sing-box JSON config string.
+func parseConfigLogLevel(jsonContent string) int32 {
+	var cfg struct {
+		Log struct {
+			Level string `json:"level"`
+		} `json:"log"`
+	}
+	if json.Unmarshal([]byte(jsonContent), &cfg) != nil {
+		return 4
+	}
+	return parseLogLevel(cfg.Log.Level)
+}
+
+func runForeground(homeDir, configPath string, maxLevel int32, jsonContent string) error {
 	if err := core.Init(homeDir); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
 	defer core.Close()
 
+	core.SetOnEvent(func(eventType int, jsonPayload string) {
+		if eventType != core.EventLogs {
+			return
+		}
+		var entries []core.LogEntry
+		if json.Unmarshal([]byte(jsonPayload), &entries) != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.Level > maxLevel {
+				continue
+			}
+			fmt.Println(e.Message)
+		}
+	})
+
 	if err := core.Start(configPath); err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
 
+	printListeningPorts(jsonContent)
 	fmt.Println("singcast started, press Ctrl+C to stop")
 
 	sigCh := make(chan os.Signal, 2)
@@ -108,6 +178,29 @@ func runForeground(homeDir, configPath string) error {
 
 	core.Stop()
 	return nil
+}
+
+func printListeningPorts(jsonContent string) {
+	var cfg struct {
+		Inbounds []struct {
+			Type       string `json:"type"`
+			Tag        string `json:"tag"`
+			Listen     string `json:"listen"`
+			ListenPort uint16 `json:"listen_port"`
+		} `json:"inbounds"`
+	}
+	if json.Unmarshal([]byte(jsonContent), &cfg) != nil {
+		return
+	}
+	for _, in := range cfg.Inbounds {
+		addr := in.Listen
+		if addr == "" {
+			addr = "0.0.0.0"
+		}
+		if in.ListenPort > 0 {
+			fmt.Printf("%s(%s) listening on %s:%d\n", in.Tag, in.Type, addr, in.ListenPort)
+		}
+	}
 }
 
 func overrideAPI(configPath, addr string) error {
