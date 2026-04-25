@@ -123,11 +123,6 @@ jobs:
             goarch: amd64
             ext: .dll
             prefix: ""
-          - os: windows-latest
-            goos: windows
-            goarch: arm64
-            ext: .dll
-            prefix: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -148,9 +143,6 @@ jobs:
           mkdir -p build
           if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
-          fi
-          if [ "$GOOS" = "windows" ] && [ "$GOARCH" = "arm64" ]; then
-            export CC="clang --target=arm64-windows-gnu"
           fi
           go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
@@ -194,7 +186,8 @@ jobs:
         env:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
+          go mod download
+          go install golang.org/x/mobile/cmd/gomobile
           gomobile init
           mkdir -p build
           gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
@@ -229,7 +222,8 @@ jobs:
         env:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
+          go mod download
+          go install golang.org/x/mobile/cmd/gomobile
           gomobile init
           mkdir -p build
           gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
