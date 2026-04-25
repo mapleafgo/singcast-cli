@@ -187,7 +187,7 @@ jobs:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
         run: |
           go mod download
-          go install golang.org/x/mobile/cmd/gomobile
+          go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
           gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
@@ -223,7 +223,7 @@ jobs:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
         run: |
           go mod download
-          go install golang.org/x/mobile/cmd/gomobile
+          go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
           mkdir -p build
           gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \

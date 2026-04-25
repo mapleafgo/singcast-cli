@@ -6,6 +6,7 @@ require (
 	github.com/sagernet/sing-box v1.13.11
 	github.com/urfave/cli/v3 v3.8.0
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
 )
 
 require (
@@ -138,7 +139,6 @@ require (
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
-	golang.org/x/image v0.39.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect

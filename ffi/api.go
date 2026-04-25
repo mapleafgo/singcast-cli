@@ -8,6 +8,7 @@ import (
 
 	"github.com/mapleafgo/singcast/core"
 	"github.com/mapleafgo/singcast/translator"
+	_ "golang.org/x/mobile/bind" // retained for gomobile bind
 )
 
 var errNotInit = errors.New("core not initialized")
