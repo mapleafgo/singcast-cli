@@ -72,47 +72,47 @@ tasks:
   ffi-linux-amd64:
     desc: Build FFI shared library for Linux amd64
     cmds:
-      - GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-amd64.so ./ffi
+      - GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-amd64.so ./cmd/cffi
 
   ffi-linux-arm64:
     desc: Build FFI shared library for Linux arm64
     cmds:
-      - GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-arm64.so ./ffi
+      - GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-linux-arm64.so ./cmd/cffi
 
   ffi-darwin-amd64:
     desc: Build FFI shared library for macOS amd64
     cmds:
-      - GOOS=darwin GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-amd64.dylib ./ffi
+      - GOOS=darwin GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-amd64.dylib ./cmd/cffi
 
   ffi-darwin-arm64:
     desc: Build FFI shared library for macOS arm64
     cmds:
-      - GOOS=darwin GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-arm64.dylib ./ffi
+      - GOOS=darwin GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-arm64.dylib ./cmd/cffi
 
   ffi-windows-amd64:
     desc: Build FFI shared library for Windows amd64
     cmds:
-      - GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-amd64.dll ./ffi
+      - GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-amd64.dll ./cmd/cffi
 
   ffi-windows-arm64:
     desc: Build FFI shared library for Windows arm64
     cmds:
-      - GOOS=windows GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-arm64.dll ./ffi
+      - GOOS=windows GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.NAME}}-windows-arm64.dll ./cmd/cffi
 
   ffi-android-arm64:
     desc: Build FFI shared library for Android arm64
     cmds:
-      - GOOS=android GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.so ./ffi
+      - GOOS=android GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.so ./cmd/cffi
 
   ffi-android-amd64:
     desc: Build FFI shared library for Android amd64
     cmds:
-      - GOOS=android GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.so ./ffi
+      - GOOS=android GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.so ./cmd/cffi
 
   ffi-ios-arm64:
     desc: Build FFI shared library for iOS arm64
     cmds:
-      - GOOS=ios GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-ios-arm64.dylib ./ffi
+      - GOOS=ios GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-ios-arm64.dylib ./cmd/cffi
 
   ffi-all:
     desc: Build FFI shared libraries for all platforms
@@ -165,7 +165,7 @@ tasks:
   test:
     desc: Run tests
     cmds:
-      - go test ./translator/... ./core/...
+      - go test -tags '{{.BUILDTAGS}}' ./translator/... ./core/...
 
   clean:
     desc: Remove build artifacts

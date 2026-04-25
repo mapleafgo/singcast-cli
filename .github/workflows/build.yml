@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: go test ./translator/...
+      - run: go test -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" ./...
 
   # ── CLI 二进制 ──────────────────────────────────────────
 
@@ -69,6 +69,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Build
+        shell: bash
         env:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
           CGO_ENABLED: 0
@@ -79,6 +80,7 @@ jobs:
             -o build/singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
             ./cmd/singcast
       - name: Package
+        shell: bash
         run: |
           cd build
           tar -czf singcast-${{ needs.get-release.outputs.tag_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz *
@@ -136,6 +138,7 @@ jobs:
         if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build
+        shell: bash
         env:
           VERSION: ${{ needs.get-release.outputs.tag_name }}
           CGO_ENABLED: 1
@@ -149,8 +152,9 @@ jobs:
           go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_v2ray_api" \
             -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
             -o build/${{ matrix.prefix }}singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
-            ./ffi
+            ./cmd/cffi
       - name: Package
+        shell: bash
         run: |
           cd build
           tar -czf libsingcast-${{ needs.get-release.outputs.tag_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz *
