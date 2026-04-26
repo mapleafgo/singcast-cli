@@ -219,8 +219,18 @@ func (s *Service) ReloadConfig() error {
 }
 
 // CheckConfig validates a sing-box JSON config string.
-func CheckConfig(jsonContent string) error {
-	return libbox.CheckConfig(jsonContent)
+// CheckConfig validates a config string (Clash YAML or sing-box JSON).
+// YAML content is translated to sing-box JSON before validation.
+func CheckConfig(content string) error {
+	data := []byte(content)
+	if translator.DetectFormat(data) == translator.FormatYAML {
+		result, _, err := translator.TranslateWithOptions(data, nil)
+		if err != nil {
+			return fmt.Errorf("translate config: %w", err)
+		}
+		return libbox.CheckConfig(result)
+	}
+	return libbox.CheckConfig(content)
 }
 
 // SetOnEvent sets the event callback on the singleton service.

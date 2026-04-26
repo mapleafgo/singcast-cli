@@ -43,8 +43,8 @@ func CoreClose() {
 }
 
 //export CoreCheckConfig
-func CoreCheckConfig(jsonContent *C.char) *C.char {
-	return resultJSON(api.CheckConfig(goString(jsonContent)))
+func CoreCheckConfig(content *C.char) *C.char {
+	return resultJSON(api.CheckConfig(goString(content)))
 }
 
 //export CoreReloadConfig
@@ -107,7 +107,8 @@ func CoreSetCallback(cb unsafe.Pointer) {
 	setCallback(cb)
 }
 
-//export CoreTranslateConfig
-func CoreTranslateConfig(yamlContent *C.char, ruleSetProxy *C.char) *C.char {
-	return cString(api.TranslateConfig(goString(yamlContent), goString(ruleSetProxy)))
+//export CoreStartWithContent
+func CoreStartWithContent(content *C.char, ruleSetProxy *C.char) *C.char {
+	return resultJSON(api.StartWithContent(goString(content), goString(ruleSetProxy)))
 }
+

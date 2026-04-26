@@ -3,11 +3,9 @@
 package ffi
 
 import (
-	"encoding/json"
 	"errors"
 
 	"github.com/mapleafgo/singcast/core"
-	"github.com/mapleafgo/singcast/translator"
 	_ "golang.org/x/mobile/bind" // retained for gomobile bind
 )
 
@@ -18,14 +16,6 @@ type Singcast struct{}
 
 // New creates a new Singcast instance.
 func New() *Singcast { return &Singcast{} }
-
-func mustMarshal(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
-}
 
 // Init initializes the core runtime.
 func (s *Singcast) Init(homeDir string) error {
@@ -52,23 +42,9 @@ func (s *Singcast) ReloadConfig() error {
 	return core.ReloadConfig()
 }
 
-// CheckConfig validates a sing-box JSON config string.
-func (s *Singcast) CheckConfig(jsonContent string) error {
-	return core.CheckConfig(jsonContent)
-}
-
-// TranslateConfig translates a Mihomo YAML config to sing-box JSON.
-// Returns a JSON string with "config" and "warnings" fields, or "error".
-func (s *Singcast) TranslateConfig(yamlContent, ruleSetProxy string) string {
-	opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-	jsonStr, warnings, err := translator.TranslateWithOptions([]byte(yamlContent), opts)
-	if err != nil {
-		return mustMarshal(map[string]string{"error": err.Error()})
-	}
-	return mustMarshal(map[string]any{
-		"config":   jsonStr,
-		"warnings": warnings,
-	})
+// CheckConfig validates a config string (Clash YAML or sing-box JSON).
+func (s *Singcast) CheckConfig(content string) error {
+	return core.CheckConfig(content)
 }
 
 // SelectProxy selects a proxy in the given group.

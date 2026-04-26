@@ -82,26 +82,26 @@ task all
 
 所有函数返回 JSON 字符串，以 C 兼容符号导出。
 
-| 函数 | 说明 |
-|------|------|
-| `CoreInit(homeDir)` | 初始化核心运行时 |
-| `CoreStart(configPath, ruleSetProxy)` | 启动代理服务 |
-| `CoreStop()` | 停止服务 |
-| `CoreClose()` | 关闭并释放资源 |
-| `CoreReloadConfig()` | 从上次路径重载配置 |
-| `CoreCheckConfig(jsonContent)` | 校验 sing-box JSON 配置 |
-| `CoreTranslateConfig(yaml, ruleSetProxy)` | 将 YAML 翻译为 sing-box JSON |
-| `CoreQueryProxies()` | 查询代理组和节点 |
-| `CoreQueryTraffic()` | 查询实时流量统计 |
-| `CoreQueryLogs()` | 查询最近日志 |
-| `CoreQueryConnections()` | 查询活跃连接 |
-| `CoreSelectProxy(group, tag)` | 选择代理组中的节点 |
-| `CoreTestDelay(name, url)` | 测试代理延迟 |
-| `CoreSetMode(mode)` | 设置路由模式（rule/global/direct） |
-| `CoreCloseConnection(id)` | 按 ID 关闭连接 |
-| `CoreCloseAllConnections()` | 关闭所有活跃连接 |
-| `CoreSetCallback(cb)` | 设置事件回调 |
-| `CoreGetVersion()` | 获取版本信息 |
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CoreInit` | `homeDir: string` | 初始化核心运行时 |
+| `CoreStart` | `configPath: string, ruleSetProxy: string` | 使用配置文件启动。`ruleSetProxy` 为规则集下载代理 URL 前缀（空 = 直连） |
+| `CoreStartWithContent` | `content: string, ruleSetProxy: string` | 使用内容启动。支持 Clash YAML 或 sing-box JSON |
+| `CoreStop` | | 停止服务 |
+| `CoreClose` | | 关闭并释放资源 |
+| `CoreReloadConfig` | | 从上次使用的路径重载配置 |
+| `CoreCheckConfig` | `content: string` | 校验 Clash YAML 或 sing-box JSON |
+| `CoreQueryProxies` | | 查询代理组和节点（JSON） |
+| `CoreQueryTraffic` | | 查询实时流量统计（JSON） |
+| `CoreQueryLogs` | | 查询最近日志（JSON） |
+| `CoreQueryConnections` | | 查询活跃连接（JSON） |
+| `CoreSelectProxy` | `group: string, tag: string` | 选择代理组中的节点 |
+| `CoreTestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
+| `CoreSetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
+| `CoreCloseConnection` | `id: string` | 按 ID 关闭连接 |
+| `CoreCloseAllConnections` | | 关闭所有活跃连接 |
+| `CoreSetCallback` | `cb: pointer` | 设置事件回调（C 函数指针） |
+| `CoreGetVersion` | | 获取版本信息（JSON） |
 
 ## 移动端 SDK
 
@@ -115,24 +115,27 @@ task mobile-all             # 所有移动端目标
 
 ### API（gomobile）
 
-| 方法 | 说明 |
-|------|------|
-| `Init(homeDir)` | 初始化核心运行时 |
-| `SetTunFd(fd)` | 设置来自 VpnService/NetworkExtension 的 TUN fd |
-| `StartWithContent(content, ruleSetProxy)` | 使用 YAML/JSON 内容启动 |
-| `Start(configPath, ruleSetProxy)` | 使用配置文件启动 |
-| `Stop()` | 停止服务 |
-| `Close()` | 释放所有资源 |
-| `TranslateConfig(yaml, ruleSetProxy)` | 将 YAML 翻译为 sing-box JSON |
-| `SelectProxy(group, tag)` | 选择代理节点 |
-| `SetMode(mode)` | 设置路由模式 |
-| `QueryProxies()` | 查询代理组 |
-| `QueryTraffic()` | 查询流量统计 |
-| `QueryLogs()` | 查询最近日志 |
-| `QueryConnections()` | 查询活跃连接 |
-| `TestDelay(name)` | 测试代理延迟 |
-| `SetOnEvent(fn)` | 设置事件回调 |
-| `Version()` | 获取版本信息 |
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `Init` | `homeDir: string` | 初始化核心运行时 |
+| `SetTunFd` | `fd: int32` | 设置来自 VpnService/NetworkExtension 的 TUN fd |
+| `CheckConfig` | `content: string` | 校验 Clash YAML 或 sing-box JSON |
+| `StartWithContent` | `content: string, ruleSetProxy: string` | 使用内容启动。支持 Clash YAML 或 sing-box JSON |
+| `Start` | `configPath: string, ruleSetProxy: string` | 使用配置文件启动 |
+| `Stop` | | 停止服务 |
+| `Close` | | 释放所有资源 |
+| `ReloadConfig` | | 从上次使用的路径重载配置 |
+| `CloseConnection` | `id: string` | 按 ID 关闭连接 |
+| `CloseAllConnections` | | 关闭所有活跃连接 |
+| `SelectProxy` | `group: string, tag: string` | 选择代理组中的节点 |
+| `SetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
+| `QueryProxies` | | 查询代理组（JSON） |
+| `QueryTraffic` | | 查询流量统计（JSON） |
+| `QueryLogs` | | 查询最近日志（JSON） |
+| `QueryConnections` | | 查询活跃连接（JSON） |
+| `TestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
+| `SetOnEvent` | `fn: func(eventType int, jsonPayload string)` | 设置事件回调 |
+| `Version` | | 获取版本信息（JSON） |
 
 ### 移动端 TUN 集成
 

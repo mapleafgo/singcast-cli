@@ -82,26 +82,26 @@ Build tags: `with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
 
 All functions return JSON strings. Exported as C-compatible symbols.
 
-| Function | Description |
-|----------|-------------|
-| `CoreInit(homeDir)` | Initialize the core runtime |
-| `CoreStart(configPath, ruleSetProxy)` | Start the proxy service |
-| `CoreStop()` | Stop the service |
-| `CoreClose()` | Shutdown and release resources |
-| `CoreReloadConfig()` | Reload config from last path |
-| `CoreCheckConfig(jsonContent)` | Validate a sing-box JSON config |
-| `CoreTranslateConfig(yaml, ruleSetProxy)` | Translate YAML to sing-box JSON |
-| `CoreQueryProxies()` | Query proxy groups and nodes |
-| `CoreQueryTraffic()` | Query real-time traffic stats |
-| `CoreQueryLogs()` | Query recent log entries |
-| `CoreQueryConnections()` | Query active connections |
-| `CoreSelectProxy(group, tag)` | Select a proxy in a group |
-| `CoreTestDelay(name, url)` | Test proxy delay |
-| `CoreSetMode(mode)` | Set routing mode (rule/global/direct) |
-| `CoreCloseConnection(id)` | Close a connection by ID |
-| `CoreCloseAllConnections()` | Close all active connections |
-| `CoreSetCallback(cb)` | Set event callback |
-| `CoreGetVersion()` | Get version info |
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CoreInit` | `homeDir: string` | Initialize the core runtime |
+| `CoreStart` | `configPath: string, ruleSetProxy: string` | Start with config file. `ruleSetProxy` is URL prefix for rule-set downloads (empty = direct) |
+| `CoreStartWithContent` | `content: string, ruleSetProxy: string` | Start with content. Accepts Clash YAML or sing-box JSON |
+| `CoreStop` | | Stop the service |
+| `CoreClose` | | Shutdown and release resources |
+| `CoreReloadConfig` | | Reload config from last used path |
+| `CoreCheckConfig` | `content: string` | Validate Clash YAML or sing-box JSON |
+| `CoreQueryProxies` | | Query proxy groups and nodes (JSON) |
+| `CoreQueryTraffic` | | Query real-time traffic stats (JSON) |
+| `CoreQueryLogs` | | Query recent log entries (JSON) |
+| `CoreQueryConnections` | | Query active connections (JSON) |
+| `CoreSelectProxy` | `group: string, tag: string` | Select a proxy node in a group |
+| `CoreTestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
+| `CoreSetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
+| `CoreCloseConnection` | `id: string` | Close a connection by ID |
+| `CoreCloseAllConnections` | | Close all active connections |
+| `CoreSetCallback` | `cb: pointer` | Set event callback (C function pointer) |
+| `CoreGetVersion` | | Get version info (JSON) |
 
 ## Mobile SDK
 
@@ -115,24 +115,27 @@ task mobile-all             # All mobile targets
 
 ### API (gomobile)
 
-| Method | Description |
-|--------|-------------|
-| `Init(homeDir)` | Initialize the core runtime |
-| `SetTunFd(fd)` | Set TUN fd from VpnService/NetworkExtension |
-| `StartWithContent(content, ruleSetProxy)` | Start with YAML/JSON content |
-| `Start(configPath, ruleSetProxy)` | Start with config file |
-| `Stop()` | Stop the service |
-| `Close()` | Release all resources |
-| `TranslateConfig(yaml, ruleSetProxy)` | Translate YAML to sing-box JSON |
-| `SelectProxy(group, tag)` | Select proxy node |
-| `SetMode(mode)` | Set routing mode |
-| `QueryProxies()` | Query proxy groups |
-| `QueryTraffic()` | Query traffic stats |
-| `QueryLogs()` | Query recent logs |
-| `QueryConnections()` | Query active connections |
-| `TestDelay(name)` | Test proxy delay |
-| `SetOnEvent(fn)` | Set event callback |
-| `Version()` | Get version info |
+| Method | Params | Description |
+|--------|--------|-------------|
+| `Init` | `homeDir: string` | Initialize the core runtime |
+| `SetTunFd` | `fd: int32` | Set TUN fd from VpnService/NetworkExtension |
+| `CheckConfig` | `content: string` | Validate Clash YAML or sing-box JSON |
+| `StartWithContent` | `content: string, ruleSetProxy: string` | Start with content. Accepts Clash YAML or sing-box JSON |
+| `Start` | `configPath: string, ruleSetProxy: string` | Start with config file |
+| `Stop` | | Stop the service |
+| `Close` | | Release all resources |
+| `ReloadConfig` | | Reload config from last used path |
+| `CloseConnection` | `id: string` | Close a connection by ID |
+| `CloseAllConnections` | | Close all active connections |
+| `SelectProxy` | `group: string, tag: string` | Select a proxy node in a group |
+| `SetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
+| `QueryProxies` | | Query proxy groups (JSON) |
+| `QueryTraffic` | | Query traffic stats (JSON) |
+| `QueryLogs` | | Query recent logs (JSON) |
+| `QueryConnections` | | Query active connections (JSON) |
+| `TestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
+| `SetOnEvent` | `fn: func(eventType int, jsonPayload string)` | Set event callback |
+| `Version` | | Get version info (JSON) |
 
 ### Mobile TUN Integration
 
