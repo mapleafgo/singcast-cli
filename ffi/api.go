@@ -22,9 +22,6 @@ type Singcast struct {
 	eventHandler EventHandler
 }
 
-// OnEvent implements EventHandler so gomobile can resolve the interface.
-func (s *Singcast) OnEvent(int, string) {}
-
 // New creates a new Singcast instance.
 func New() *Singcast { return &Singcast{} }
 
