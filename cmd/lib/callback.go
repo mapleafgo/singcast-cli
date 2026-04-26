@@ -16,8 +16,6 @@ import "C"
 import (
 	"sync"
 	"unsafe"
-
-	"github.com/mapleafgo/singcast/ffi"
 )
 
 var (
@@ -25,21 +23,25 @@ var (
 	callbackMu     sync.RWMutex
 )
 
+// cCallbackHandler adapts a C function pointer to ffi.EventHandler.
+type cCallbackHandler struct{}
+
+func (cCallbackHandler) OnEvent(eventType int, jsonPayload string) {
+	callbackMu.RLock()
+	cb := globalCallback
+	callbackMu.RUnlock()
+	if cb != nil {
+		cs := C.CString(jsonPayload)
+		C.callCallback(cb, C.int(eventType), cs)
+		C.free(unsafe.Pointer(cs))
+	}
+}
+
 // setCallback stores the C function pointer and wires it into the event system.
 func setCallback(cb unsafe.Pointer) {
 	callbackMu.Lock()
 	globalCallback = C.CoreCallback(cb)
 	callbackMu.Unlock()
 
-	api := ffi.New()
-	api.SetOnEvent(func(eventType int, jsonPayload string) {
-		callbackMu.RLock()
-		cb := globalCallback
-		callbackMu.RUnlock()
-		if cb != nil {
-			cs := C.CString(jsonPayload)
-			C.callCallback(cb, C.int(eventType), cs)
-			C.free(unsafe.Pointer(cs))
-		}
-	})
+	api.SetOnEvent(cCallbackHandler{})
 }

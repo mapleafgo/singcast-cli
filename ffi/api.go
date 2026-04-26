@@ -11,8 +11,19 @@ import (
 
 var errNotInit = errors.New("core not initialized")
 
+// EventHandler receives event callbacks from the core runtime.
+// Implement this interface on the mobile side and pass it to SetOnEvent.
+type EventHandler interface {
+	OnEvent(eventType int, jsonPayload string)
+}
+
 // Singcast is the primary API object.
-type Singcast struct{}
+type Singcast struct {
+	eventHandler EventHandler
+}
+
+// OnEvent implements EventHandler so gomobile can resolve the interface.
+func (s *Singcast) OnEvent(int, string) {}
 
 // New creates a new Singcast instance.
 func New() *Singcast { return &Singcast{} }
@@ -133,9 +144,15 @@ func (s *Singcast) Version() string {
 	return core.VersionJSON()
 }
 
-// SetOnEvent sets the event callback.
-func (s *Singcast) SetOnEvent(fn func(eventType int, jsonPayload string)) {
-	core.SetOnEvent(fn)
+// SetOnEvent sets the event handler.
+// Mobile apps should implement the EventHandler interface and pass it here.
+func (s *Singcast) SetOnEvent(handler EventHandler) {
+	s.eventHandler = handler
+	core.SetOnEvent(func(eventType int, jsonPayload string) {
+		if handler != nil {
+			handler.OnEvent(eventType, jsonPayload)
+		}
+	})
 }
 
 // SetTunFd stores a TUN file descriptor for mobile platforms.
