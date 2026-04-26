@@ -100,8 +100,129 @@ task all
 | `CoreSetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
 | `CoreCloseConnection` | `id: string` | 按 ID 关闭连接 |
 | `CoreCloseAllConnections` | | 关闭所有活跃连接 |
-| `CoreSetCallback` | `cb: pointer` | 设置事件回调（C 函数指针） |
+| `CoreSetCallback` | `cb: pointer` | 设置事件回调（C 函数指针 `void (*)(int eventType, const char* jsonPayload)`） |
 | `CoreGetVersion` | | 获取版本信息（JSON） |
+
+### 事件回调
+
+回调函数接收 `(eventType, jsonPayload)` 两个参数。事件类型：
+
+| 类型 | 值 | 触发时机 | 载荷格式 |
+|------|----|----------|----------|
+| `EventTraffic` | `0` | 实时流量更新 | [TrafficSnapshot](#trafficsnapshot) |
+| `EventLogs` | `1` | 新日志或日志清空 | [`LogEntry[]`](#logentry) |
+| `EventConnections` | `2` | 连接建立/关闭 | [ConnectionEvent](#connectionevent) |
+| `EventProxyUpdate` | `3` | 代理组状态变化 | [`ProxyGroup[]`](#proxygroup) |
+| `EventModeUpdate` | `4` | Clash 路由模式变化 | [ModeUpdate](#modeupdate) |
+
+#### TrafficSnapshot
+
+```json
+{
+  "up": 1024,
+  "down": 4096,
+  "up_total": 1048576,
+  "down_total": 4194304,
+  "memory": 33554432,
+  "goroutines": 42,
+  "connections_in": 10,
+  "connections_out": 15
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `up` | int64 | 上传速度（字节/秒） |
+| `down` | int64 | 下载速度（字节/秒） |
+| `up_total` | int64 | 累计上传字节 |
+| `down_total` | int64 | 累计下载字节 |
+| `memory` | int64 | 内存占用（字节） |
+| `goroutines` | int32 | 协程数量 |
+| `connections_in` | int32 | 入站连接数 |
+| `connections_out` | int32 | 出站连接数 |
+
+#### LogEntry
+
+```json
+[
+  { "level": 2, "message": "[TCP] 192.168.1.1:12345 -> example.com:443" }
+]
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `level` | int32 | 日志级别（0=panic, 1=fatal, 2=error, 3=warn, 4=info, 5=debug, 6=trace） |
+| `message` | string | 日志内容 |
+
+#### ConnectionEvent
+
+```json
+{
+  "reset": false,
+  "items": [
+    { "event_type": 0, "id": "abc123" }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `reset` | bool | 为 `true` 时表示用 `items` 替换所有已追踪连接 |
+| `items` | array | 连接事件列表 |
+| `items[].event_type` | int32 | `0` = 新建连接，`1` = 关闭连接 |
+| `items[].id` | string | 连接 ID |
+
+#### ProxyGroup
+
+```json
+[
+  {
+    "tag": "PROXY",
+    "type": "Selector",
+    "selectable": true,
+    "selected": "hk-node-01",
+    "items": [
+      { "tag": "hk-node-01", "type": "vless", "delay": 120 },
+      { "tag": "us-node-01", "type": "vmess", "delay": 230 }
+    ]
+  }
+]
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `tag` | string | 代理组名称 |
+| `type` | string | 组类型（Selector、URLTest 等） |
+| `selectable` | bool | 是否支持手动选择节点 |
+| `selected` | string | 当前选中的代理节点 tag |
+| `items` | array | 组内代理节点列表 |
+| `items[].tag` | string | 节点 tag |
+| `items[].type` | string | 协议类型（vless、vmess、trojan 等） |
+| `items[].delay` | int32 | 最近一次 URL 测试延迟（毫秒，0 = 未测试） |
+
+#### ModeUpdate
+
+初始化模式（来自 `InitializeClashMode`）：
+
+```json
+{
+  "modes": ["Rule", "Global", "Direct"],
+  "current_mode": "Rule"
+}
+```
+
+模式切换（来自 `UpdateClashMode`）：
+
+```json
+{
+  "current_mode": "Global"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `modes` | string[] | 可用模式列表（仅在初始化回调中存在） |
+| `current_mode` | string | 当前激活的模式 |
 
 ## 移动端 SDK
 
@@ -134,7 +255,7 @@ task mobile-all             # 所有移动端目标
 | `QueryLogs` | | 查询最近日志（JSON） |
 | `QueryConnections` | | 查询活跃连接（JSON） |
 | `TestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
-| `SetOnEvent` | `fn: func(eventType int, jsonPayload string)` | 设置事件回调 |
+| `SetOnEvent` | `handler: EventHandler` | 设置事件处理器。需实现 `EventHandler` 接口：`void OnEvent(int eventType, String jsonPayload)` |
 | `Version` | | 获取版本信息（JSON） |
 
 ### 移动端 TUN 集成

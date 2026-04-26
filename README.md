@@ -100,8 +100,129 @@ All functions return JSON strings. Exported as C-compatible symbols.
 | `CoreSetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
 | `CoreCloseConnection` | `id: string` | Close a connection by ID |
 | `CoreCloseAllConnections` | | Close all active connections |
-| `CoreSetCallback` | `cb: pointer` | Set event callback (C function pointer) |
+| `CoreSetCallback` | `cb: pointer` | Set event callback (C function pointer `void (*)(int eventType, const char* jsonPayload)`) |
 | `CoreGetVersion` | | Get version info (JSON) |
+
+### Event Callback
+
+The callback receives `(eventType, jsonPayload)`. Event types:
+
+| Type | Value | Trigger | Payload |
+|------|-------|---------|---------|
+| `EventTraffic` | `0` | Real-time traffic update | [TrafficSnapshot](#trafficsnapshot) |
+| `EventLogs` | `1` | New log entries or buffer cleared | [`LogEntry[]`](#logentry) |
+| `EventConnections` | `2` | Connection open/close | [ConnectionEvent](#connectionevent) |
+| `EventProxyUpdate` | `3` | Proxy group state changed | [`ProxyGroup[]`](#proxygroup) |
+| `EventModeUpdate` | `4` | Clash routing mode changed | [ModeUpdate](#modeupdate) |
+
+#### TrafficSnapshot
+
+```json
+{
+  "up": 1024,
+  "down": 4096,
+  "up_total": 1048576,
+  "down_total": 4194304,
+  "memory": 33554432,
+  "goroutines": 42,
+  "connections_in": 10,
+  "connections_out": 15
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `up` | int64 | Upload speed (bytes/s) |
+| `down` | int64 | Download speed (bytes/s) |
+| `up_total` | int64 | Total uploaded bytes |
+| `down_total` | int64 | Total downloaded bytes |
+| `memory` | int64 | Memory usage (bytes) |
+| `goroutines` | int32 | Number of goroutines |
+| `connections_in` | int32 | Inbound connections |
+| `connections_out` | int32 | Outbound connections |
+
+#### LogEntry
+
+```json
+[
+  { "level": 2, "message": "[TCP] 192.168.1.1:12345 -> example.com:443" }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `level` | int32 | Log level (0=panic, 1=fatal, 2=error, 3=warn, 4=info, 5=debug, 6=trace) |
+| `message` | string | Log message |
+
+#### ConnectionEvent
+
+```json
+{
+  "reset": false,
+  "items": [
+    { "event_type": 0, "id": "abc123" }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reset` | bool | If `true`, replace all tracked connections with `items` |
+| `items` | array | List of connection events |
+| `items[].event_type` | int32 | `0` = new connection, `1` = closed |
+| `items[].id` | string | Connection ID |
+
+#### ProxyGroup
+
+```json
+[
+  {
+    "tag": "PROXY",
+    "type": "Selector",
+    "selectable": true,
+    "selected": "hk-node-01",
+    "items": [
+      { "tag": "hk-node-01", "type": "vless", "delay": 120 },
+      { "tag": "us-node-01", "type": "vmess", "delay": 230 }
+    ]
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | string | Group name |
+| `type` | string | Group type (Selector, URLTest, etc.) |
+| `selectable` | bool | Whether the group supports manual selection |
+| `selected` | string | Currently selected proxy tag |
+| `items` | array | Proxy nodes in this group |
+| `items[].tag` | string | Proxy node tag |
+| `items[].type` | string | Protocol type (vless, vmess, trojan, etc.) |
+| `items[].delay` | int32 | Latest URL test delay in ms (0 = not tested) |
+
+#### ModeUpdate
+
+Initial mode (from `InitializeClashMode`):
+
+```json
+{
+  "modes": ["Rule", "Global", "Direct"],
+  "current_mode": "Rule"
+}
+```
+
+Mode changed (from `UpdateClashMode`):
+
+```json
+{
+  "current_mode": "Global"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `modes` | string[] | Available modes (only present on initial callback) |
+| `current_mode` | string | Current active mode |
 
 ## Mobile SDK
 
@@ -134,7 +255,7 @@ task mobile-all             # All mobile targets
 | `QueryLogs` | | Query recent logs (JSON) |
 | `QueryConnections` | | Query active connections (JSON) |
 | `TestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
-| `SetOnEvent` | `fn: func(eventType int, jsonPayload string)` | Set event callback |
+| `SetOnEvent` | `handler: EventHandler` | Set event handler. Implement the `EventHandler` interface: `void OnEvent(int eventType, String jsonPayload)` |
 | `Version` | | Get version info (JSON) |
 
 ### Mobile TUN Integration
