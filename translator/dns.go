@@ -37,23 +37,25 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	// default-nameserver and proxy-server-nameserver use plain/China DNS — no detour needed.
 	// nameserver and fallback may use foreign DoH (Cloudflare, Google) — set detour so they
 	// route through the proxy, ensuring they work in GFW environments.
-	defaultServerTags := buildDNSServerEntries(dns.DefaultNameserver, "def-", "", result)
-	nameserverTags := buildDNSServerEntries(dns.NameServer, "ns-", detour, result)
-	fallbackTags := buildDNSServerEntries(dns.Fallback, "fb-", detour, result)
-	psnTags := buildDNSServerEntries(dns.ProxyServerNameserver, "psn-", "", result)
+	warn := t.warn
+	defaultServerTags := buildDNSServerEntries(dns.DefaultNameserver, "def-", "", result, warn)
+	nameserverTags := buildDNSServerEntries(dns.NameServer, "ns-", detour, result, warn)
+	fallbackTags := buildDNSServerEntries(dns.Fallback, "fb-", detour, result, warn)
+	psnTags := buildDNSServerEntries(dns.ProxyServerNameserver, "psn-", "", result, warn)
 
 	// Determine best domain_resolver: prefer proxy-server-nameserver, fallback to default-nameserver
 	domainResolverTags := defaultServerTags
 	if len(psnTags) > 0 {
 		domainResolverTags = psnTags
 	}
-	_ = buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result)
+	_ = buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result, warn)
 
 	// Set route.default_domain_resolver: used by sing-box to resolve outbound (proxy) server domains.
 	// This is the official sing-box mechanism for the DNS chicken-and-egg problem.
-	// Points to a plain UDP DNS server (IP-based, no domain to resolve itself).
+	// Prefer a plain UDP DNS server (IP-based, no domain to resolve itself).
 	if len(defaultServerTags) > 0 {
-		t.config.Route.DefaultDomainResolver = defaultServerTags[0]
+		tag := preferUDPServer(defaultServerTags, result)
+		t.config.Route.DefaultDomainResolver = tag
 	} else {
 		t.warn("no default-nameserver configured; proxy server domains may not resolve correctly")
 	}
@@ -183,7 +185,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		if len(urls) > 1 {
 			t.warn("nameserver-policy \"" + pattern + "\" has " + strconv.Itoa(len(urls)) + " URLs, only the first is used")
 		}
-		srv := parseDNSServer(urls[0], policyTag, "")
+		srv := parseDNSServer(urls[0], policyTag, "", warn)
 		if srv == nil {
 			continue
 		}
@@ -271,7 +273,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 
 // parseDNSServer parses a mihomo DNS URL string into a sing-box DNS server object.
 // defaultDetour is the proxy group tag to use for detour if "#proxy" is in params.
-func parseDNSServer(rawURL string, tag string, defaultDetour string) map[string]any {
+func parseDNSServer(rawURL string, tag string, defaultDetour string, warn func(string)) map[string]any {
 	s := strings.TrimSpace(rawURL)
 	if s == "" {
 		return nil
@@ -314,8 +316,11 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string) map[string]
 	}
 
 	// Determine server type
-	dnsType := schemeToDNSType(scheme, params)
+	dnsType, degraded := schemeToDNSType(scheme, params)
 	srv["type"] = dnsType
+	if degraded {
+		warn("DNS server \"" + host + "\": sing-box has no plain HTTP DNS type, \"http://\" degraded to \"https\"")
+	}
 
 	// Set server address
 	srv["server"] = host
@@ -356,26 +361,28 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string) map[string]
 }
 
 // schemeToDNSType maps URL scheme to sing-box DNS server type.
-func schemeToDNSType(scheme string, params map[string]string) string {
-	// Check for h3 override parameter
-	if _, ok := params["h3"]; ok {
-		return "h3"
+// Returns the type and true if the mapping was a degradation.
+func schemeToDNSType(scheme string, params map[string]string) (string, bool) {
+	// Check for h3 override parameter (#h3 or #h3=true enables, #h3=false disables)
+	if h3Val, ok := params["h3"]; ok && h3Val != "false" {
+		return "h3", false
 	}
 
 	switch strings.ToLower(scheme) {
-	case "https", "http":
-		// sing-box has no plain HTTP DNS type; http:// is treated as https://
-		return "https"
+	case "https":
+		return "https", false
+	case "http":
+		// sing-box has no plain HTTP DNS type; degrade to https
+		return "https", true
 	case "tls":
-		return "tls"
+		return "tls", false
 	case "quic":
-		// sing-box has no quic DNS type; quic:// is treated as h3
-		return "h3"
+		return "quic", false
 	case "h3":
-		return "h3"
+		return "h3", false
 	default:
 		// Plain IP or host:port → UDP
-		return "udp"
+		return "udp", false
 	}
 }
 
@@ -556,17 +563,30 @@ func normalizeFakeIPRange6(ipRange string) string {
 	return ipNet.String()
 }
 
-func buildDNSServerEntries(servers []string, prefix string, detour string, result *singboxDNS) []string {
+func buildDNSServerEntries(servers []string, prefix string, detour string, result *singboxDNS, warn func(string)) []string {
 	var tags []string
 	for i, ns := range servers {
 		tag := prefix + strconv.Itoa(i)
-		srv := parseDNSServer(ns, tag, detour)
+		srv := parseDNSServer(ns, tag, detour, warn)
 		if srv != nil {
 			result.Servers = append(result.Servers, srv)
 			tags = append(tags, tag)
 		}
 	}
 	return tags
+}
+
+// preferUDPServer returns the tag of the first UDP-type DNS server from candidates,
+// falling back to the first candidate if none is UDP.
+func preferUDPServer(candidates []string, result *singboxDNS) string {
+	for _, tag := range candidates {
+		for _, srv := range result.Servers {
+			if srv["tag"] == tag && srv["type"] == "udp" {
+				return tag
+			}
+		}
+	}
+	return candidates[0]
 }
 
 // policyToURLs extracts DNS server URL strings from a nameserver-policy value.

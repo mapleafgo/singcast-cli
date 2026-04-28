@@ -65,7 +65,7 @@ func TestTranslateDNSDisabled(t *testing.T) {
 }
 
 func TestParseDNSServerUDP(t *testing.T) {
-	srv := parseDNSServer("8.8.8.8", "test-udp", "")
+	srv := parseDNSServer("8.8.8.8", "test-udp", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -84,7 +84,7 @@ func TestParseDNSServerUDP(t *testing.T) {
 }
 
 func TestParseDNSServerHTTPS(t *testing.T) {
-	srv := parseDNSServer("https://dns.google/dns-query", "test-https", "")
+	srv := parseDNSServer("https://dns.google/dns-query", "test-https", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -103,7 +103,7 @@ func TestParseDNSServerHTTPS(t *testing.T) {
 }
 
 func TestParseDNSServerTLS(t *testing.T) {
-	srv := parseDNSServer("tls://dns.google:853", "test-tls", "")
+	srv := parseDNSServer("tls://dns.google:853", "test-tls", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -119,7 +119,7 @@ func TestParseDNSServerTLS(t *testing.T) {
 }
 
 func TestParseDNSServerDHCP(t *testing.T) {
-	srv := parseDNSServer("dhcp://eth0", "test-dhcp", "")
+	srv := parseDNSServer("dhcp://eth0", "test-dhcp", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -135,7 +135,7 @@ func TestParseDNSServerDHCP(t *testing.T) {
 }
 
 func TestParseDNSServerSystem(t *testing.T) {
-	srv := parseDNSServer("system", "test-sys", "")
+	srv := parseDNSServer("system", "test-sys", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -148,7 +148,7 @@ func TestParseDNSServerSystem(t *testing.T) {
 }
 
 func TestParseDNSServerRcode(t *testing.T) {
-	srv := parseDNSServer("rcode://success", "test-rcode", "")
+	srv := parseDNSServer("rcode://success", "test-rcode", "", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
@@ -161,7 +161,7 @@ func TestParseDNSServerRcode(t *testing.T) {
 }
 
 func TestParseDNSServerFragment(t *testing.T) {
-	srv := parseDNSServer("https://dns.google#proxy&skip-cert-verify", "test-frag", "my-proxy")
+	srv := parseDNSServer("https://dns.google#proxy&skip-cert-verify", "test-frag", "my-proxy", nil)
 	if srv == nil {
 		t.Fatal("expected non-nil server")
 	}
