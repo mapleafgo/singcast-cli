@@ -104,7 +104,7 @@ func ApplyCommonFields(src map[string]any, dst map[string]any) {
 	if iface := GetStr(src, "interface-name"); iface != "" {
 		dst["bind_interface"] = iface
 	}
-	if mark := GetInt(src, "routing-mark"); mark != 0 {
+	if mark := GetInt(src, "routing-mark"); mark > 0 {
 		dst["routing_mark"] = mark
 	}
 	if tfo := GetBool(src, "tfo"); tfo {

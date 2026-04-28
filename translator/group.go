@@ -101,11 +101,12 @@ func translateURLTestGroup(name string, proxies []string, g map[string]any) map[
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
+		"idle_timeout":                proxy.SecondsToDuration(max(interval, 1800)),
 		"interrupt_exist_connections": true,
 	}
 
 	if tol, ok := toInt(g["tolerance"]); ok && tol > 0 {
-		result["tolerance"] = tol
+		result["tolerance"] = min(tol, 65535)
 	}
 
 	return result
@@ -120,7 +121,8 @@ func translateFallbackGroup(name string, proxies []string, g map[string]any) map
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"tolerance":                   180000, // 3 minutes in ms
+		"idle_timeout":                proxy.SecondsToDuration(max(interval, 1800)),
+		"tolerance":                   65535, // uint16 max, approx 65s
 		"interrupt_exist_connections": true,
 	}
 }
@@ -132,7 +134,7 @@ func groupURLDefaults(g map[string]any) (string, int) {
 	}
 	interval := 180
 	if iv, ok := toInt(g["interval"]); ok && iv > 0 {
-		interval = iv
+		interval = min(iv, 86400)
 	}
 	return url, interval
 }

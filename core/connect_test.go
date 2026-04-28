@@ -20,7 +20,7 @@ import (
 	"github.com/mapleafgo/singcast/translator"
 )
 
-const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.clash_for_flutter/profiles/1777039692584.yaml"
+const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.clash_for_flutter/profiles/1777343285557.yaml"
 
 // TestConnectivity_Google starts the service with a real config and verifies
 // that google.com is reachable through the mixed proxy inbound,

@@ -16,7 +16,7 @@ type singboxRoute struct {
 	AutoDetectInterface  bool              `json:"auto_detect_interface"`
 	FindProcess          bool              `json:"find_process,omitempty"`
 	DefaultInterface     string            `json:"default_interface,omitempty"`
-	DefaultMark          int               `json:"default_mark,omitempty"`
+	DefaultMark          uint32            `json:"default_mark,omitempty"`
 	DefaultDomainResolver string           `json:"default_domain_resolver,omitempty"`
 }
 

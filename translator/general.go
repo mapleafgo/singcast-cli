@@ -79,8 +79,8 @@ func translateGeneral(cfg *RawConfig, result *singboxConfig) {
 	if cfg.Interface != "" {
 		result.Route.DefaultInterface = cfg.Interface
 	}
-	if cfg.RoutingMark != 0 {
-		result.Route.DefaultMark = cfg.RoutingMark
+	if cfg.RoutingMark > 0 {
+		result.Route.DefaultMark = uint32(cfg.RoutingMark)
 	}
 }
 

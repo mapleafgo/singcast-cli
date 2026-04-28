@@ -52,7 +52,7 @@ func TranslateHysteria2(m map[string]any, warn func(string)) map[string]any {
 
 	// Hop interval (seconds -> duration string)
 	if hopInterval := GetInt(m, "hop-interval"); hopInterval > 0 {
-		outbound["hop_interval"] = SecondsToDuration(hopInterval)
+		outbound["hop_interval"] = SecondsToDuration(min(hopInterval, 3600))
 	}
 
 	outbound["tls"] = BuildAlwaysOnTLS(m)

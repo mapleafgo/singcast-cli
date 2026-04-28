@@ -58,7 +58,7 @@ func translateWS(m map[string]any, wsOpts map[string]any) map[string]any {
 		transport["headers"] = headers
 	}
 	if maxEarlyData := GetInt(wsOpts, "max-early-data"); maxEarlyData > 0 {
-		transport["max_early_data"] = maxEarlyData
+		transport["max_early_data"] = min(maxEarlyData, 4294967295)
 	}
 
 	return transport

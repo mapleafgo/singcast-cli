@@ -121,8 +121,8 @@ func TestTranslateFallbackGroup(t *testing.T) {
 	if g["type"] != "urltest" {
 		t.Errorf("type = %v, want urltest", g["type"])
 	}
-	if g["tolerance"] != 180000 {
-		t.Errorf("tolerance = %v, want 180000", g["tolerance"])
+	if g["tolerance"] != 65535 {
+		t.Errorf("tolerance = %v, want 65535", g["tolerance"])
 	}
 }
 
