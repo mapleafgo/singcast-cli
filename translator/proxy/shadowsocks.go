@@ -68,6 +68,9 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 	// Password
 	if password := GetStr(m, "password"); password != "" {
 		outbound["password"] = password
+	} else {
+		warn("shadowsocks: missing password, skipping")
+		return nil
 	}
 
 	// Plugin

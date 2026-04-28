@@ -13,7 +13,8 @@ func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
 	if uuid := GetStr(m, "uuid"); uuid != "" {
 		outbound["uuid"] = uuid
 	} else {
-		warn("vmess: missing uuid")
+		warn("vmess: missing uuid, skipping")
+		return nil
 	}
 
 	// AlterId (default 0)

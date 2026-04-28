@@ -13,7 +13,8 @@ func TranslateVLESS(m map[string]any, warn func(string)) map[string]any {
 	if uuid := GetStr(m, "uuid"); uuid != "" {
 		outbound["uuid"] = uuid
 	} else {
-		warn("vless: missing uuid")
+		warn("vless: missing uuid, skipping")
+		return nil
 	}
 
 	// Flow (e.g., xtls-rprx-vision)

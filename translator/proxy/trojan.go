@@ -13,7 +13,8 @@ func TranslateTrojan(m map[string]any, warn func(string)) map[string]any {
 	if password := GetStr(m, "password"); password != "" {
 		outbound["password"] = password
 	} else {
-		warn("trojan: missing password")
+		warn("trojan: missing password, skipping")
+		return nil
 	}
 
 	// TLS — Trojan almost always requires TLS; mihomo auto-enables it

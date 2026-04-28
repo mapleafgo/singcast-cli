@@ -13,7 +13,8 @@ func TranslateAnyTLS(m map[string]any, warn func(string)) map[string]any {
 	if password := GetStr(m, "password"); password != "" {
 		outbound["password"] = password
 	} else {
-		warn("anytls: missing password")
+		warn("anytls: missing password, skipping")
+		return nil
 	}
 
 	// TLS (required for anytls)

@@ -21,14 +21,16 @@ func TranslateTUIC(m map[string]any, warn func(string)) map[string]any {
 	if uuid := GetStr(m, "uuid"); uuid != "" {
 		outbound["uuid"] = uuid
 	} else {
-		warn("tuic: missing uuid")
+		warn("tuic: missing uuid, skipping")
+		return nil
 	}
 
 	// Password (required for v5)
 	if password := GetStr(m, "password"); password != "" {
 		outbound["password"] = password
 	} else {
-		warn("tuic: missing password")
+		warn("tuic: missing password, skipping")
+		return nil
 	}
 
 	// UDP relay mode
