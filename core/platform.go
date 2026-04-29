@@ -4,10 +4,26 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
 )
+
+// SocketProtector protects socket file descriptors from being routed through
+// the VPN tunnel. On Android, this calls VpnService.protect(fd).
+// gomobile cannot export function types, so we use a package-level variable
+// set from the FFI layer.
+var socketProtector func(fd int32) bool
+
+// SetSocketProtector registers a callback that protects socket fds from VPN routing.
+// Call from the mobile app after VPN is established:
+//   Android: calls VpnService.protect(fd)
+//   iOS: no-op (NetworkExtension handles this)
+func SetSocketProtector(fn func(fd int32) bool) {
+	socketProtector = fn
+}
 
 // PlatformIO implements libbox.PlatformInterface.
 // On desktop, it provides default implementations for all methods.
@@ -43,13 +59,23 @@ func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
+	if socketProtector != nil {
+		if !socketProtector(fd) {
+			return fmt.Errorf("protect fd %d failed", fd)
+		}
+	}
 	return nil
 }
 
+// OpenTun returns the external TUN fd (set via SetTunFd) and consumes it.
+// The fd is cleared after retrieval to prevent reuse after sing-box takes ownership.
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
-	p.mu.RLock()
+	p.mu.Lock()
 	fd := p.tunFd
-	p.mu.RUnlock()
+	if fd != 0 {
+		p.tunFd = 0
+	}
+	p.mu.Unlock()
 	if fd != 0 {
 		return fd, nil
 	}
@@ -65,43 +91,56 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	conn, err := net.Dial("udp4", "8.8.8.8:53")
-	if err != nil {
-		return err
-	}
-	localAddr := conn.LocalAddr()
-	conn.Close()
-
-	localUDP, ok := localAddr.(*net.UDPAddr)
-	if !ok {
-		return fmt.Errorf("unexpected local address type: %T", localAddr)
-	}
-
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return err
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := iface.Addrs()
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			if ipNet.Contains(localUDP.IP) {
-				listener.UpdateDefaultInterface(iface.Name, int32(iface.Index), false, false)
-				return nil
-			}
-		}
-	}
+	go detectDefaultInterface(listener)
 	return nil
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
 	return nil
+}
+
+// detectDefaultInterface attempts to find the default network interface by
+// dialing UDP to public DNS servers. Runs asynchronously with retries so
+// that startup is not blocked when the network is unavailable.
+func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
+	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
+	for attempt := 0; attempt < 5; attempt++ {
+		for _, target := range targets {
+			conn, err := net.DialTimeout("udp4", target, 2*time.Second)
+			if err != nil {
+				continue
+			}
+			localAddr := conn.LocalAddr()
+			conn.Close()
+
+			localUDP, ok := localAddr.(*net.UDPAddr)
+			if !ok {
+				continue
+			}
+
+			ifaces, err := net.Interfaces()
+			if err != nil {
+				continue
+			}
+			for _, iface := range ifaces {
+				if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+					continue
+				}
+				addrs, _ := iface.Addrs()
+				for _, addr := range addrs {
+					ipNet, ok := addr.(*net.IPNet)
+					if !ok {
+						continue
+					}
+					if ipNet.Contains(localUDP.IP) {
+						listener.UpdateDefaultInterface(iface.Name, int32(iface.Index), false, false)
+						return
+					}
+				}
+			}
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
@@ -135,11 +174,17 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
-	return false
+	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+		return false
+	}
+	p.mu.RLock()
+	fd := p.tunFd
+	p.mu.RUnlock()
+	return fd != 0
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
-	return false
+	return runtime.GOOS == "ios"
 }
 
 func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState {

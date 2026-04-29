@@ -17,6 +17,13 @@ type EventHandler interface {
 	OnEvent(eventType int, jsonPayload string)
 }
 
+// SocketProtector protects socket file descriptors from VPN routing.
+// On Android, implement this to call VpnService.protect(fd).
+// On iOS, this is not needed (NetworkExtension handles routing).
+type SocketProtector interface {
+	Protect(fd int32) bool
+}
+
 // Singcast is the primary API object.
 type Singcast struct {
 	eventHandler EventHandler
@@ -156,6 +163,18 @@ func (s *Singcast) SetOnEvent(handler EventHandler) {
 // Call after creating the TUN interface and before StartWithContent.
 func (s *Singcast) SetTunFd(fd int32) {
 	core.SetTunFd(fd)
+}
+
+// SetSocketProtector registers a socket protector for VPN bypass.
+// On Android, pass an implementation that calls VpnService.protect(fd).
+// Must be called before StartWithContent when VPN is active.
+func (s *Singcast) SetSocketProtector(p SocketProtector) {
+	core.SetSocketProtector(func(fd int32) bool {
+		if p != nil {
+			return p.Protect(fd)
+		}
+		return false
+	})
 }
 
 // StartWithContent starts the service with raw YAML or JSON content.
