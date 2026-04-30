@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
 	_ "github.com/sagernet/sing-box/include" // register all protocols
@@ -371,7 +372,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	}
 
 	opts := &libbox.CommandClientOptions{
-		StatusInterval: 1000,
+		StatusInterval: int64(time.Second),
 	}
 	opts.AddCommand(libbox.CommandLog)
 	opts.AddCommand(libbox.CommandStatus)
