@@ -30,9 +30,19 @@ func SetSocketProtector(fn func(fd int32) bool) {
 // On mobile, callers can set a TUN fd via SetTunFd before starting
 // a configuration that contains a TUN inbound.
 type PlatformIO struct {
-	mu      sync.RWMutex
-	tunFd   int32
-	vpnMode bool
+	mu          sync.RWMutex
+	tunFd       int32
+	externalTun bool
+}
+
+// externalTunActive reports whether the TUN interface is managed by
+// the platform (Android VpnService / iOS NetworkExtension) rather
+// than by sing-box itself.  The flag persists after OpenTun consumes
+// the fd and is cleared only by ResetTunFd on service stop.
+func (p *PlatformIO) externalTunActive() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.externalTun
 }
 
 // SetTunFd stores a TUN file descriptor from VpnService (Android)
@@ -42,7 +52,7 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	defer p.mu.Unlock()
 	p.tunFd = fd
 	if fd != 0 {
-		p.vpnMode = true
+		p.externalTun = true
 	}
 }
 
@@ -52,7 +62,7 @@ func (p *PlatformIO) ResetTunFd() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.tunFd = 0
-	p.vpnMode = false
+	p.externalTun = false
 }
 
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
@@ -96,10 +106,7 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	p.mu.RLock()
-	vpn := p.vpnMode
-	p.mu.RUnlock()
-	if vpn {
+	if p.externalTunActive() {
 		return nil
 	}
 	go detectDefaultInterface(listener)
@@ -155,10 +162,7 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	p.mu.RLock()
-	vpn := p.vpnMode
-	p.mu.RUnlock()
-	if vpn {
+	if p.externalTunActive() {
 		return &networkInterfaceIterator{}, nil
 	}
 	ifaces, err := net.Interfaces()
@@ -194,10 +198,7 @@ func (p *PlatformIO) UnderNetworkExtension() bool {
 	if runtime.GOOS != "ios" {
 		return false
 	}
-	p.mu.RLock()
-	vpn := p.vpnMode
-	p.mu.RUnlock()
-	return vpn
+	return p.externalTunActive()
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
