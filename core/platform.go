@@ -30,8 +30,9 @@ func SetSocketProtector(fn func(fd int32) bool) {
 // On mobile, callers can set a TUN fd via SetTunFd before starting
 // a configuration that contains a TUN inbound.
 type PlatformIO struct {
-	mu    sync.RWMutex
-	tunFd int32
+	mu      sync.RWMutex
+	tunFd   int32
+	vpnMode bool
 }
 
 // SetTunFd stores a TUN file descriptor from VpnService (Android)
@@ -40,6 +41,9 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.tunFd = fd
+	if fd != 0 {
+		p.vpnMode = true
+	}
 }
 
 // ResetTunFd clears the stored TUN file descriptor. Called when the
@@ -48,6 +52,7 @@ func (p *PlatformIO) ResetTunFd() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.tunFd = 0
+	p.vpnMode = false
 }
 
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
@@ -91,6 +96,12 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	p.mu.RLock()
+	vpn := p.vpnMode
+	p.mu.RUnlock()
+	if vpn {
+		return nil
+	}
 	go detectDefaultInterface(listener)
 	return nil
 }
@@ -178,9 +189,9 @@ func (p *PlatformIO) UnderNetworkExtension() bool {
 		return false
 	}
 	p.mu.RLock()
-	fd := p.tunFd
+	vpn := p.vpnMode
 	p.mu.RUnlock()
-	return fd != 0
+	return vpn
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
