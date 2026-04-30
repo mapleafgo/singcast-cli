@@ -155,6 +155,12 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
+	p.mu.RLock()
+	vpn := p.vpnMode
+	p.mu.RUnlock()
+	if vpn {
+		return &networkInterfaceIterator{}, nil
+	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -185,7 +191,7 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
-	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+	if runtime.GOOS != "ios" {
 		return false
 	}
 	p.mu.RLock()
