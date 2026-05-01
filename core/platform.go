@@ -1,13 +1,13 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
@@ -29,6 +29,22 @@ type ifaceUpdate struct {
 	name      string
 	index     int32
 	expensive bool
+}
+
+// cachedInterfacesJSON stores interface data provided by the mobile platform.
+// On Android, net.Interfaces() fails (netlink permission denied), so the Kotlin
+// side enumerates interfaces via ConnectivityManager and passes JSON here.
+var (
+	cachedInterfacesJSON string
+	cachedInterfacesMu   sync.RWMutex
+)
+
+// SetInterfacesJSON stores interface data from the mobile platform.
+func SetInterfacesJSON(json string) {
+	cachedInterfacesMu.Lock()
+	defer cachedInterfacesMu.Unlock()
+	cachedInterfacesJSON = json
+	slog.Info("set interfaces JSON", "len", len(json))
 }
 
 // UpdateDefaultInterface is called from the mobile side (via FFI) to report
@@ -199,7 +215,44 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 	slog.Warn("detect interface: all attempts failed")
 }
 
+type mobileInterface struct {
+	Name      string   `json:"name"`
+	Index     int32    `json:"index"`
+	MTU       int32    `json:"mtu"`
+	Addresses []string `json:"addresses"`
+	Flags     int32    `json:"flags"`
+	Type      int32    `json:"type"`
+}
+
+func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error) {
+	var ifaces []mobileInterface
+	if err := json.Unmarshal([]byte(jsonStr), &ifaces); err != nil {
+		return nil, fmt.Errorf("parse interfaces JSON: %w", err)
+	}
+	var result []*libbox.NetworkInterface
+	for _, mi := range ifaces {
+		result = append(result, &libbox.NetworkInterface{
+			Index:     mi.Index,
+			MTU:       mi.MTU,
+			Name:      mi.Name,
+			Addresses: &stringIterator{items: mi.Addresses},
+			Flags:     mi.Flags,
+			Type:      mi.Type,
+		})
+	}
+	slog.Info("parsed mobile interfaces", "count", len(result))
+	return &networkInterfaceIterator{items: result}, nil
+}
+
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
+	cachedInterfacesMu.RLock()
+	jsonStr := cachedInterfacesJSON
+	cachedInterfacesMu.RUnlock()
+	if jsonStr != "" {
+		return parseInterfacesJSON(jsonStr)
+	}
+
+	// Desktop fallback: use Go's net.Interfaces()
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		slog.Error("get interfaces failed", "error", err)
@@ -221,27 +274,25 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 		}
 
 		// Build raw flags compatible with linkFlags() in libbox.
-		// Without Flags, linkFlags(0) returns no FlagUp, and UpdateInterfaces()
-		// filters out all interfaces (Flags&net.FlagUp == 0), leaving the
-		// networkInterfaces cache empty and causing "no available network interface".
+		// Use numeric constants instead of syscall.IFF_* for Windows compatibility.
 		var flags int32
 		if iface.Flags&net.FlagUp != 0 {
-			flags |= syscall.IFF_UP
+			flags |= 0x1 // IFF_UP
 		}
 		if iface.Flags&net.FlagRunning != 0 {
-			flags |= syscall.IFF_RUNNING
+			flags |= 0x40 // IFF_RUNNING
 		}
 		if iface.Flags&net.FlagBroadcast != 0 {
-			flags |= syscall.IFF_BROADCAST
+			flags |= 0x2 // IFF_BROADCAST
 		}
 		if iface.Flags&net.FlagLoopback != 0 {
-			flags |= syscall.IFF_LOOPBACK
+			flags |= 0x8 // IFF_LOOPBACK
 		}
 		if iface.Flags&net.FlagPointToPoint != 0 {
-			flags |= syscall.IFF_POINTOPOINT
+			flags |= 0x10 // IFF_POINTOPOINT
 		}
 		if iface.Flags&net.FlagMulticast != 0 {
-			flags |= syscall.IFF_MULTICAST
+			flags |= 0x1000 // IFF_MULTICAST
 		}
 
 		result = append(result, &libbox.NetworkInterface{

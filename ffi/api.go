@@ -163,6 +163,13 @@ func (s *Singcast) SetSocketProtector(p SocketProtector) {
 	})
 }
 
+// SetInterfacesJSON provides network interface data from the mobile platform.
+// On Android, this is populated via ConnectivityManager since Go's net.Interfaces()
+// fails with netlink permission denied.
+func (s *Singcast) SetInterfacesJSON(json string) {
+	core.SetInterfacesJSON(json)
+}
+
 // StartWithContent starts the service with raw YAML or JSON content.
 func (s *Singcast) StartWithContent(content, ruleSetProxy string) error {
 	return core.StartWithContent(content, ruleSetProxy)
