@@ -16,9 +16,20 @@ jobs:
       tag_name: ${{ steps.get-release.outputs.tag_name }}
       upload_url: ${{ steps.get-release.outputs.upload_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: thebritican/fetch-latest-release@v2.0.0
+      - name: Get release info
         id: get-release
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag_name=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "upload_url=${{ github.event.release.upload_url }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+            UPLOAD_URL=$(gh release view "$TAG" --json uploadUrl -q '.uploadUrl')
+            echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+            echo "upload_url=$UPLOAD_URL" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── 测试 ────────────────────────────────────────────────
 
