@@ -29,12 +29,6 @@ type PlatformIO struct {
 	externalTun bool
 }
 
-func (p *PlatformIO) externalTunActive() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.externalTun
-}
-
 // SetTunFd stores a TUN file descriptor from VpnService (Android)
 // or NetworkExtension (iOS).
 func (p *PlatformIO) SetTunFd(fd int32) {
@@ -102,8 +96,8 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	if p.externalTunActive() {
-		slog.Debug("interface monitor skipped (externalTun)")
+	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
+		slog.Debug("interface monitor skipped (mobile)")
 		return nil
 	}
 	slog.Info("starting interface detection")
@@ -164,8 +158,8 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	if p.externalTunActive() {
-		slog.Debug("get interfaces: skipped (externalTun)")
+	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
+		slog.Debug("get interfaces: skipped (mobile)")
 		return &networkInterfaceIterator{}, nil
 	}
 	ifaces, err := net.Interfaces()
@@ -203,7 +197,9 @@ func (p *PlatformIO) UnderNetworkExtension() bool {
 	if runtime.GOOS != "ios" {
 		return false
 	}
-	return p.externalTunActive()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.externalTun
 }
 
 func (p *PlatformIO) IncludeAllNetworks() bool {
