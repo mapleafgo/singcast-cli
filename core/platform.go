@@ -160,10 +160,6 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		slog.Info("[DIAG] GetInterfaces skipped (mobile)")
-		return &networkInterfaceIterator{}, nil
-	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		slog.Error("get interfaces failed", "error", err)
