@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -38,7 +39,6 @@ type Service struct {
 	commandClient *libbox.CommandClient
 	handler       *ClientHandler
 	homeDir       string
-	configPath    string
 	ruleSetProxy  string
 	started       bool
 	platformIO    *PlatformIO
@@ -59,31 +59,33 @@ func Init(homeDir string) error {
 		return fmt.Errorf("core already initialized")
 	}
 
-	// Create temp directory under homeDir
+	slog.Info("core init", "homeDir", homeDir)
+
 	tempDir := filepath.Join(homeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
-	// Setup libbox runtime
 	err := libbox.Setup(&libbox.SetupOptions{
 		BasePath:    homeDir,
 		WorkingPath: homeDir,
 		TempPath:    tempDir,
 	})
 	if err != nil {
+		slog.Error("libbox setup failed", "error", err)
 		return fmt.Errorf("libbox setup: %w", err)
 	}
 
 	handler := NewClientHandler(nil)
 	platformIO := &PlatformIO{}
 
-	// Create and start the CommandServer
 	commandServer, err := libbox.NewCommandServer(&serverHandler{}, platformIO)
 	if err != nil {
+		slog.Error("create command server failed", "error", err)
 		return fmt.Errorf("create command server: %w", err)
 	}
 	if err := commandServer.Start(); err != nil {
+		slog.Error("start command server failed", "error", err)
 		return fmt.Errorf("start command server: %w", err)
 	}
 
@@ -94,47 +96,8 @@ func Init(homeDir string) error {
 		platformIO:    platformIO,
 	}
 
+	slog.Info("core init done")
 	return nil
-}
-
-// Start starts the singleton service with the given config path.
-// ruleSetProxy is an optional URL prefix for rule_set downloads (empty = direct).
-func Start(configPath string, ruleSetProxy ...string) error {
-	mu.Lock()
-	svc := instance
-	mu.Unlock()
-	if svc == nil {
-		return fmt.Errorf("core not initialized")
-	}
-	var proxy string
-	if len(ruleSetProxy) > 0 {
-		proxy = ruleSetProxy[0]
-	}
-	return svc.start(configPath, proxy)
-}
-
-func (s *Service) start(configPath string, ruleSetProxy string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.commandServer == nil {
-		return fmt.Errorf("service closed")
-	}
-
-	s.configPath = configPath
-	s.ruleSetProxy = ruleSetProxy
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("read config: %w", err)
-	}
-
-	jsonContent, err := s.translateConfig(data, ruleSetProxy)
-	if err != nil {
-		return err
-	}
-
-	return s.startWithJSON(jsonContent)
 }
 
 // Stop shuts down the running singleton service.
@@ -152,19 +115,25 @@ func (s *Service) stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.started {
+		slog.Debug("stop: not started, skipping")
 		return nil
 	}
+	slog.Info("stopping service")
 	s.started = false
-	// The service closes the TUN interface on shutdown; clear the
-	// stored fd so a subsequent start cannot reuse a stale descriptor.
 	if s.platformIO != nil {
 		s.platformIO.ResetTunFd()
 	}
-	return s.commandServer.CloseService()
+	err := s.commandServer.CloseService()
+	if err != nil {
+		slog.Error("stop: CloseService error", "error", err)
+	} else {
+		slog.Info("service stopped")
+	}
+	return err
 }
 
-// Close tears down the singleton and releases all resources.
-func Close() error {
+// Destroy tears down the singleton and releases all resources.
+func Destroy() error {
 	mu.Lock()
 	svc := instance
 	instance = nil
@@ -172,12 +141,13 @@ func Close() error {
 	if svc == nil {
 		return nil
 	}
-	return svc.close()
+	return svc.destroy()
 }
 
-func (s *Service) close() error {
+func (s *Service) destroy() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	slog.Info("releasing all resources", "started", s.started)
 	if s.started {
 		s.commandServer.CloseService()
 		s.started = false
@@ -193,35 +163,11 @@ func (s *Service) close() error {
 		s.commandServer.Close()
 		s.commandServer = nil
 	}
+	slog.Info("all resources released")
 	return nil
 }
 
-// ReloadConfig reloads the singleton service with the last used config path.
-func ReloadConfig() error {
-	mu.Lock()
-	svc := instance
-	mu.Unlock()
-	if svc == nil {
-		return fmt.Errorf("core not initialized")
-	}
-	return svc.ReloadConfig()
-}
-
-// ReloadConfig re-reads and re-translates the config, then reloads.
-func (s *Service) ReloadConfig() error {
-	s.mu.Lock()
-	path := s.configPath
-	proxy := s.ruleSetProxy
-	s.mu.Unlock()
-	if path == "" {
-		return fmt.Errorf("no config path set")
-	}
-	return s.start(path, proxy)
-}
-
-// CheckConfig validates a sing-box JSON config string.
 // CheckConfig validates a config string (Clash YAML or sing-box JSON).
-// YAML content is translated to sing-box JSON before validation.
 func CheckConfig(content string) error {
 	data := []byte(content)
 	if translator.DetectFormat(data) == translator.FormatYAML {
@@ -242,6 +188,7 @@ func SetOnEvent(fn func(eventType int, jsonPayload string)) {
 	if svc != nil && svc.handler != nil {
 		svc.handler.SetOnEvent(fn)
 	}
+	setLogCallback(fn)
 }
 
 func (s *Service) client() (*libbox.CommandClient, error) {
@@ -298,30 +245,61 @@ func (s *Service) CloseConnections() error {
 	return c.CloseConnections()
 }
 
+// QueryLogs returns combined sing-box logs and core internal logs as JSON.
+func QueryLogs() string {
+	mu.Lock()
+	svc := instance
+	mu.Unlock()
+
+	var singboxJSON string
+	if svc != nil && svc.handler != nil {
+		singboxJSON = svc.handler.GetCachedLogsJSON()
+	}
+
+	coreJSON := queryCoreLogs()
+
+	if singboxJSON == "[]" || singboxJSON == "" {
+		return coreJSON
+	}
+	if coreJSON == "[]" || coreJSON == "" {
+		return singboxJSON
+	}
+	// Merge "[a,b]" + "[c,d]" → "[a,b,c,d]"
+	return singboxJSON[:len(singboxJSON)-1] + "," + coreJSON[1:]
+}
+
 // serverHandler implements libbox.CommandServerHandler with no-op methods.
 type serverHandler struct{}
 
-func (h *serverHandler) ServiceStop() error                { return nil }
-func (h *serverHandler) ServiceReload() error              { return nil }
+func (h *serverHandler) ServiceStop() error {
+	slog.Warn("core requested stop")
+	return nil
+}
+func (h *serverHandler) ServiceReload() error {
+	slog.Info("core requested reload")
+	return nil
+}
 func (h *serverHandler) GetSystemProxyStatus() (*libbox.SystemProxyStatus, error) {
 	return &libbox.SystemProxyStatus{}, nil
 }
 func (h *serverHandler) SetSystemProxyEnabled(enabled bool) error { return nil }
-func (h *serverHandler) WriteDebugMessage(message string)         {}
+func (h *serverHandler) WriteDebugMessage(message string) {
+	slog.Debug(message)
+}
 
 // SetTunFd stores a TUN file descriptor for mobile platforms.
-// Call this after creating the TUN interface (VpnService/NetworkExtension)
-// and before Start/StartWithContent.
 func SetTunFd(fd int32) {
 	mu.Lock()
 	defer mu.Unlock()
+	slog.Info("set TUN fd", "fd", fd)
 	if instance != nil && instance.platformIO != nil {
 		instance.platformIO.SetTunFd(fd)
+	} else {
+		slog.Warn("SetTunFd: instance or platformIO is nil", "instance", instance != nil)
 	}
 }
 
 // StartWithContent starts the service with raw YAML or JSON content.
-// No file is involved; the content is translated and used directly.
 func StartWithContent(content, ruleSetProxy string) error {
 	mu.Lock()
 	svc := instance
@@ -340,10 +318,16 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 		return fmt.Errorf("service closed")
 	}
 
+	slog.Info("startWithContent", "bytes", len(content), "proxy", ruleSetProxy, "started", s.started)
+
 	s.ruleSetProxy = ruleSetProxy
+
+	format := translator.DetectFormat([]byte(content))
+	slog.Debug("detected config format", "format", format)
 
 	jsonContent, err := s.translateConfig([]byte(content), ruleSetProxy)
 	if err != nil {
+		slog.Error("config translation failed", "error", err)
 		return err
 	}
 
@@ -366,10 +350,16 @@ func (s *Service) translateConfig(data []byte, ruleSetProxy string) (string, err
 // startWithJSON feeds the already-translated JSON config to libbox and
 // reconnects the command client. Caller must hold s.mu.
 func (s *Service) startWithJSON(jsonContent string) error {
+	slog.Info("starting/reloading service", "bytes", len(jsonContent))
+	startTime := time.Now()
+
 	err := s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{})
+	elapsed := time.Since(startTime)
 	if err != nil {
+		slog.Error("StartOrReloadService failed", "elapsed", elapsed, "error", err)
 		return fmt.Errorf("start service: %w", err)
 	}
+	slog.Info("StartOrReloadService succeeded", "elapsed", elapsed)
 
 	opts := &libbox.CommandClientOptions{
 		StatusInterval: int64(time.Second),
@@ -381,6 +371,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 
 	newClient := libbox.NewCommandClient(s.handler, opts)
 	if err := newClient.Connect(); err != nil {
+		slog.Error("command client Connect failed", "error", err)
 		return fmt.Errorf("connect command client: %w", err)
 	}
 
@@ -390,5 +381,6 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	s.commandClient = newClient
 
 	s.started = true
+	slog.Info("core fully initialized and running")
 	return nil
 }

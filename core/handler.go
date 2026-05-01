@@ -14,6 +14,7 @@ const (
 	EventConnections = 2
 	EventProxyUpdate = 3
 	EventModeUpdate  = 4
+	EventCoreLog     = 6
 )
 
 // ClientHandler implements libbox.CommandClientHandler.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"runtime"
@@ -13,32 +14,21 @@ import (
 
 // SocketProtector protects socket file descriptors from being routed through
 // the VPN tunnel. On Android, this calls VpnService.protect(fd).
-// gomobile cannot export function types, so we use a package-level variable
-// set from the FFI layer.
 var socketProtector func(fd int32) bool
 
 // SetSocketProtector registers a callback that protects socket fds from VPN routing.
-// Call from the mobile app after VPN is established:
-//   Android: calls VpnService.protect(fd)
-//   iOS: no-op (NetworkExtension handles this)
 func SetSocketProtector(fn func(fd int32) bool) {
+	slog.Info("set socket protector", "registered", fn != nil)
 	socketProtector = fn
 }
 
 // PlatformIO implements libbox.PlatformInterface.
-// On desktop, it provides default implementations for all methods.
-// On mobile, callers can set a TUN fd via SetTunFd before starting
-// a configuration that contains a TUN inbound.
 type PlatformIO struct {
 	mu          sync.RWMutex
 	tunFd       int32
 	externalTun bool
 }
 
-// externalTunActive reports whether the TUN interface is managed by
-// the platform (Android VpnService / iOS NetworkExtension) rather
-// than by sing-box itself.  The flag persists after OpenTun consumes
-// the fd and is cleared only by ResetTunFd on service stop.
 func (p *PlatformIO) externalTunActive() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -46,7 +36,7 @@ func (p *PlatformIO) externalTunActive() bool {
 }
 
 // SetTunFd stores a TUN file descriptor from VpnService (Android)
-// or NetworkExtension (iOS). OpenTun returns this fd when set.
+// or NetworkExtension (iOS).
 func (p *PlatformIO) SetTunFd(fd int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -54,15 +44,17 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	if fd != 0 {
 		p.externalTun = true
 	}
+	slog.Debug("set TUN fd", "fd", fd, "externalTun", fd != 0)
 }
 
-// ResetTunFd clears the stored TUN file descriptor. Called when the
-// service stops so that a stale fd cannot be reused accidentally.
+// ResetTunFd clears the stored TUN file descriptor.
 func (p *PlatformIO) ResetTunFd() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	oldFd := p.tunFd
 	p.tunFd = 0
 	p.externalTun = false
+	slog.Debug("reset TUN fd", "cleared", oldFd)
 }
 
 func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
@@ -76,14 +68,16 @@ func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
 	if socketProtector != nil {
 		if !socketProtector(fd) {
+			slog.Warn("protect fd failed", "fd", fd)
 			return fmt.Errorf("protect fd %d failed", fd)
 		}
+	} else {
+		slog.Debug("no socket protector, skipping", "fd", fd)
 	}
 	return nil
 }
 
-// OpenTun returns the external TUN fd (set via SetTunFd) and consumes it.
-// The fd is cleared after retrieval to prevent reuse after sing-box takes ownership.
+// OpenTun returns the external TUN fd and consumes it.
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	p.mu.Lock()
 	fd := p.tunFd
@@ -92,8 +86,10 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	}
 	p.mu.Unlock()
 	if fd != 0 {
+		slog.Info("opening TUN", "fd", fd)
 		return fd, nil
 	}
+	slog.Error("no TUN fd available")
 	return 0, os.ErrInvalid
 }
 
@@ -107,25 +103,28 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
 	if p.externalTunActive() {
+		slog.Debug("interface monitor skipped (externalTun)")
 		return nil
 	}
+	slog.Info("starting interface detection")
 	go detectDefaultInterface(listener)
 	return nil
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	slog.Debug("closing interface monitor")
 	return nil
 }
 
 // detectDefaultInterface attempts to find the default network interface by
-// dialing UDP to public DNS servers. Runs asynchronously with retries so
-// that startup is not blocked when the network is unavailable.
+// dialing UDP to public DNS servers.
 func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
 	for attempt := 0; attempt < 5; attempt++ {
 		for _, target := range targets {
 			conn, err := net.DialTimeout("udp4", target, 2*time.Second)
 			if err != nil {
+				slog.Debug("detect interface: dial failed", "attempt", attempt+1, "target", target, "error", err)
 				continue
 			}
 			localAddr := conn.LocalAddr()
@@ -151,22 +150,27 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 						continue
 					}
 					if ipNet.Contains(localUDP.IP) {
+						slog.Info("detected default interface", "iface", iface.Name, "index", iface.Index, "via", target)
 						listener.UpdateDefaultInterface(iface.Name, int32(iface.Index), false, false)
 						return
 					}
 				}
 			}
 		}
+		slog.Warn("detect interface: attempt failed, retrying", "attempt", attempt+1, "wait", attempt+1)
 		time.Sleep(time.Duration(attempt+1) * time.Second)
 	}
+	slog.Warn("detect interface: all attempts failed")
 }
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 	if p.externalTunActive() {
+		slog.Debug("get interfaces: skipped (externalTun)")
 		return &networkInterfaceIterator{}, nil
 	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
+		slog.Error("get interfaces failed", "error", err)
 		return nil, err
 	}
 	var result []*libbox.NetworkInterface
@@ -191,6 +195,7 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 			Type:      ifaceType,
 		})
 	}
+	slog.Debug("get interfaces", "count", len(result))
 	return &networkInterfaceIterator{items: result}, nil
 }
 

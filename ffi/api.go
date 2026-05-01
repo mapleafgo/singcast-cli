@@ -37,24 +37,14 @@ func (s *Singcast) Init(homeDir string) error {
 	return core.Init(homeDir)
 }
 
-// Start starts the proxy service.
-func (s *Singcast) Start(configPath, ruleSetProxy string) error {
-	return core.Start(configPath, ruleSetProxy)
-}
-
 // Stop stops the running service.
 func (s *Singcast) Stop() error {
 	return core.Stop()
 }
 
-// Close shuts down and releases all resources.
-func (s *Singcast) Close() {
-	core.Close()
-}
-
-// ReloadConfig reloads the config from the last used path.
-func (s *Singcast) ReloadConfig() error {
-	return core.ReloadConfig()
+// Destroy shuts down and releases all resources.
+func (s *Singcast) Destroy() {
+	core.Destroy()
 }
 
 // CheckConfig validates a config string (Clash YAML or sing-box JSON).
@@ -107,13 +97,9 @@ func (s *Singcast) QueryTraffic() string {
 	return svc.Handler().GetCachedStatusJSON()
 }
 
-// QueryLogs returns cached log entries as JSON.
+// QueryLogs returns combined sing-box and core internal logs as JSON.
 func (s *Singcast) QueryLogs() string {
-	svc := core.GetService()
-	if svc == nil || svc.Handler() == nil {
-		return "[]"
-	}
-	return svc.Handler().GetCachedLogsJSON()
+	return core.QueryLogs()
 }
 
 // QueryConnections returns cached connections as JSON.

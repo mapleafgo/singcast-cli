@@ -27,29 +27,19 @@ func CoreInit(homeDir *C.char) *C.char {
 	return resultJSON(api.Init(goString(homeDir)))
 }
 
-//export CoreStart
-func CoreStart(configPath *C.char, ruleSetProxy *C.char) *C.char {
-	return resultJSON(api.Start(goString(configPath), goString(ruleSetProxy)))
-}
-
 //export CoreStop
 func CoreStop() *C.char {
 	return resultJSON(api.Stop())
 }
 
-//export CoreClose
-func CoreClose() {
-	api.Close()
+//export CoreDestroy
+func CoreDestroy() {
+	api.Destroy()
 }
 
 //export CoreCheckConfig
 func CoreCheckConfig(content *C.char) *C.char {
 	return resultJSON(api.CheckConfig(goString(content)))
-}
-
-//export CoreReloadConfig
-func CoreReloadConfig() *C.char {
-	return resultJSON(api.ReloadConfig())
 }
 
 //export CoreQueryProxies
@@ -93,7 +83,7 @@ func CoreCloseAllConnections() *C.char {
 }
 
 //export CoreTestDelay
-func CoreTestDelay(name *C.char, _ *C.char) *C.char {
+func CoreTestDelay(name *C.char) *C.char {
 	return resultJSON(api.TestDelay(goString(name)))
 }
 

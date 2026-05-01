@@ -142,7 +142,7 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 	if err := core.Init(homeDir); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
-	defer core.Close()
+	defer core.Destroy()
 
 	core.SetOnEvent(func(eventType int, jsonPayload string) {
 		if eventType != core.EventLogs {
@@ -160,7 +160,11 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 		}
 	})
 
-	if err := core.Start(configPath); err != nil {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	if err := core.StartWithContent(string(data), ""); err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
 
@@ -173,7 +177,10 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 		sig := <-sigCh
 		if isReloadSignal(sig) {
 			fmt.Println("received SIGHUP, reloading config...")
-			if err := core.ReloadConfig(); err != nil {
+			rd, rerr := os.ReadFile(configPath)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "reload: read config failed: %v\n", rerr)
+			} else if err := core.StartWithContent(string(rd), ""); err != nil {
 				fmt.Fprintf(os.Stderr, "reload failed: %v\n", err)
 			} else {
 				fmt.Println("config reloaded")
