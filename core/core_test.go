@@ -86,6 +86,9 @@ func parseJSONMap(t *testing.T, s string) map[string]any {
 func TestCheckConfig_MinimalYAML(t *testing.T) {
 	jsonStr := mustTranslateYAML(t, minimalYAML)
 	if err := CheckConfig(jsonStr); err != nil {
+		if strings.Contains(err.Error(), "clash api is not included in this build") {
+			t.Skip("requires -tags with_clash_api")
+		}
 		t.Fatalf("CheckConfig failed: %v\nJSON:\n%s", err, jsonStr)
 	}
 }
@@ -94,6 +97,9 @@ func TestCheckConfig_MinimalYAML(t *testing.T) {
 func TestCheckConfig_FakeipYAML(t *testing.T) {
 	jsonStr := mustTranslateYAML(t, fakeipYAML)
 	if err := CheckConfig(jsonStr); err != nil {
+		if strings.Contains(err.Error(), "clash api is not included in this build") {
+			t.Skip("requires -tags with_clash_api")
+		}
 		t.Fatalf("CheckConfig failed: %v\nJSON:\n%s", err, jsonStr)
 	}
 }

@@ -10,40 +10,25 @@ func newPlatform() *PlatformIO {
 	return &PlatformIO{}
 }
 
-// --- externalTun lifecycle ---
+// --- SetTunFd / ResetTunFd ---
 
-func TestExternalTun_InitiallyFalse(t *testing.T) {
-	p := newPlatform()
-	if p.externalTunActive() {
-		t.Fatal("externalTun should be false initially")
-	}
-}
-
-func TestSetTunFd_SetsExternalTun(t *testing.T) {
-	p := newPlatform()
-	p.SetTunFd(42)
-	if !p.externalTunActive() {
-		t.Fatal("externalTun should be true after SetTunFd with non-zero fd")
-	}
-}
-
-func TestSetTunFd_ZeroDoesNotSetExternalTun(t *testing.T) {
+func TestSetTunFd_ZeroDoesNotPanic(t *testing.T) {
 	p := newPlatform()
 	p.SetTunFd(0)
-	if p.externalTunActive() {
-		t.Fatal("externalTun should remain false when fd is 0")
-	}
 }
 
-func TestResetTunFd_ClearsExternalTun(t *testing.T) {
+func TestResetTunFd_WithoutSetDoesNotPanic(t *testing.T) {
+	p := newPlatform()
+	p.ResetTunFd()
+}
+
+func TestResetTunFd_ClearsState(t *testing.T) {
 	p := newPlatform()
 	p.SetTunFd(42)
-	if !p.externalTunActive() {
-		t.Fatal("setup: externalTun should be true")
-	}
 	p.ResetTunFd()
-	if p.externalTunActive() {
-		t.Fatal("externalTun should be false after ResetTunFd")
+	_, err := p.OpenTun(nil)
+	if err == nil {
+		t.Fatal("OpenTun should fail after ResetTunFd")
 	}
 }
 
@@ -71,17 +56,6 @@ func TestOpenTun_ConsumesFd(t *testing.T) {
 	}
 }
 
-func TestOpenTun_PreservesExternalTun(t *testing.T) {
-	p := newPlatform()
-	p.SetTunFd(42)
-	_, _ = p.OpenTun(nil)
-	// externalTun must persist so subsequent GetInterfaces/StartDefaultInterfaceMonitor
-	// still skip netlink, even though the fd is gone.
-	if !p.externalTunActive() {
-		t.Fatal("externalTun should persist after OpenTun consumes fd")
-	}
-}
-
 func TestOpenTun_NoFdReturnsError(t *testing.T) {
 	p := newPlatform()
 	_, err := p.OpenTun(nil)
@@ -90,39 +64,41 @@ func TestOpenTun_NoFdReturnsError(t *testing.T) {
 	}
 }
 
-// --- GetInterfaces skips netlink when externalTun ---
+// --- GetInterfaces ---
 
-func TestGetInterfaces_ExternalTunReturnsEmpty(t *testing.T) {
+func TestGetInterfaces_OnDesktopReturnsHostInterfaces(t *testing.T) {
+	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
+		t.Skip("test only runs on desktop platforms")
+	}
 	p := newPlatform()
-	p.SetTunFd(42)
+	iter, err := p.GetInterfaces()
+	if err != nil {
+		t.Fatalf("GetInterfaces: %v", err)
+	}
+	_ = iter
+}
+
+func TestGetInterfaces_OnMobileReturnsEmpty(t *testing.T) {
+	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+		t.Skip("test only runs on mobile platforms")
+	}
+	p := newPlatform()
 	iter, err := p.GetInterfaces()
 	if err != nil {
 		t.Fatalf("GetInterfaces: %v", err)
 	}
 	if iter.HasNext() {
-		t.Fatal("GetInterfaces should return empty iterator when externalTun is true")
+		t.Fatal("GetInterfaces should return empty iterator on mobile")
 	}
 }
 
-func TestGetInterfaces_NoExternalTunReturnsHostInterfaces(t *testing.T) {
-	p := newPlatform()
-	// Without external TUN, GetInterfaces calls net.Interfaces() which
-	// should return at least the loopback on any system.
-	iter, err := p.GetInterfaces()
-	if err != nil {
-		t.Fatalf("GetInterfaces: %v", err)
+// --- StartDefaultInterfaceMonitor ---
+
+func TestStartDefaultInterfaceMonitor_OnMobileReturnsNil(t *testing.T) {
+	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+		t.Skip("test only runs on mobile platforms")
 	}
-	// We don't assert non-empty since a sandboxed CI might have no interfaces,
-	// but it should not panic or return an error.
-	_ = iter
-}
-
-// --- StartDefaultInterfaceMonitor skips netlink when externalTun ---
-
-func TestStartDefaultInterfaceMonitor_ExternalTunReturnsNil(t *testing.T) {
 	p := newPlatform()
-	p.SetTunFd(42)
-	// A nil listener is safe here because externalTun prevents the goroutine.
 	err := p.StartDefaultInterfaceMonitor(nil)
 	if err != nil {
 		t.Fatalf("StartDefaultInterfaceMonitor: %v", err)
@@ -144,13 +120,13 @@ func TestUnderNetworkExtension_NonIosReturnsFalse(t *testing.T) {
 
 // --- concurrency safety ---
 
-func TestExternalTun_ConcurrentAccess(t *testing.T) {
+func TestTunState_ConcurrentAccess(t *testing.T) {
 	p := newPlatform()
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(3)
 		go func() { defer wg.Done(); p.SetTunFd(int32(i%2) * 10) }()
-		go func() { defer wg.Done(); p.externalTunActive() }()
+		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
 		go func() { defer wg.Done(); p.ResetTunFd() }()
 	}
 	wg.Wait()
