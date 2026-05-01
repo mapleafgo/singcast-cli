@@ -331,6 +331,21 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 		return err
 	}
 
+	// Diagnostic: log key sections of translated config
+	var cfg map[string]any
+	if json.Unmarshal([]byte(jsonContent), &cfg) == nil {
+		if route, ok := cfg["route"].(map[string]any); ok {
+			slog.Info("[DIAG] route config", "auto_detect_interface", route["auto_detect_interface"], "final", route["final"])
+		}
+		if inbounds, ok := cfg["inbounds"].([]any); ok {
+			for _, ib := range inbounds {
+				if m, ok := ib.(map[string]any); ok && m["type"] == "tun" {
+					slog.Info("[DIAG] tun inbound", "auto_route", m["auto_route"], "strict_route", m["strict_route"])
+				}
+			}
+		}
+	}
+
 	return s.startWithJSON(jsonContent)
 }
 

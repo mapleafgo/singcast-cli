@@ -56,17 +56,19 @@ func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
+	slog.Info("[DIAG] UsePlatformAutoDetectInterfaceControl → true")
 	return true
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
 	if socketProtector != nil {
-		if !socketProtector(fd) {
-			slog.Warn("protect fd failed", "fd", fd)
+		ok := socketProtector(fd)
+		slog.Info("[DIAG] AutoDetectInterfaceControl", "fd", fd, "protected", ok)
+		if !ok {
 			return fmt.Errorf("protect fd %d failed", fd)
 		}
 	} else {
-		slog.Debug("no socket protector, skipping", "fd", fd)
+		slog.Warn("[DIAG] AutoDetectInterfaceControl: no socket protector registered", "fd", fd)
 	}
 	return nil
 }
@@ -79,11 +81,11 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 		p.tunFd = 0
 	}
 	p.mu.Unlock()
+	slog.Info("[DIAG] OpenTun called", "storedFd", fd, "fdValid", fd != 0)
 	if fd != 0 {
-		slog.Info("opening TUN", "fd", fd)
 		return fd, nil
 	}
-	slog.Error("no TUN fd available")
+	slog.Error("[DIAG] OpenTun: no TUN fd available")
 	return 0, os.ErrInvalid
 }
 
@@ -97,7 +99,7 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
 	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		slog.Debug("interface monitor skipped (mobile)")
+		slog.Info("[DIAG] StartDefaultInterfaceMonitor skipped (mobile)")
 		return nil
 	}
 	slog.Info("starting interface detection")
@@ -159,7 +161,7 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		slog.Debug("get interfaces: skipped (mobile)")
+		slog.Info("[DIAG] GetInterfaces skipped (mobile)")
 		return &networkInterfaceIterator{}, nil
 	}
 	ifaces, err := net.Interfaces()
