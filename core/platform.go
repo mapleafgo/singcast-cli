@@ -99,7 +99,11 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
 	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		slog.Info("[DIAG] StartDefaultInterfaceMonitor skipped (mobile)")
+		// Trigger UpdateInterfaces() to populate network interface cache,
+		// but pass index=-1 so DefaultInterface() stays nil. This ensures
+		// selectInterfaces() uses all available (non-TUN) interfaces.
+		listener.UpdateDefaultInterface("", -1, false, false)
+		slog.Info("[DIAG] StartDefaultInterfaceMonitor: triggered interface update (mobile)")
 		return nil
 	}
 	slog.Info("starting interface detection")
