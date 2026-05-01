@@ -155,17 +155,11 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 	}
 }
 
-// TestServiceLifecycle tests Init/Start/Stop/Close with a minimal config.
+// TestServiceLifecycle tests Init/StartWithContent/Stop/Destroy with a minimal config.
 func TestServiceLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write config
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(minimalYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,8 +168,8 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	// Start (will fail at rule-set download in sandbox, but config parse must succeed)
-	err := Start(configPath)
+	// StartWithContent (will fail at rule-set download in sandbox, but config parse must succeed)
+	err := StartWithContent(minimalYAML, "")
 	if err != nil {
 		// Network errors are expected in sandbox; verify it's not a config parse error
 		errMsg := err.Error()
@@ -184,11 +178,11 @@ func TestServiceLifecycle(t *testing.T) {
 			strings.Contains(errMsg, "invalid") {
 			t.Fatalf("config parse error (not network): %v", err)
 		}
-		t.Logf("Start returned expected network error: %v", err)
+		t.Logf("StartWithContent returned expected network error: %v", err)
 	}
 
 	// Cleanup
-	Close()
+	Destroy()
 }
 
 // TestServiceDoubleInit verifies calling Init twice returns an error.
@@ -201,7 +195,7 @@ func TestServiceDoubleInit(t *testing.T) {
 	if err := Init(filepath.Join(tmpDir, "home2")); err == nil {
 		t.Fatal("second Init should return error")
 	}
-	Close()
+	Destroy()
 }
 
 // TestDetectFormat_PassThrough verifies JSON passthrough is detected correctly.

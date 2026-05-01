@@ -53,15 +53,11 @@ func TestConnectivity_Google(t *testing.T) {
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(tmpDir, "config.json")
-	if err := os.WriteFile(configPath, []byte(jsonContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := Init(homeDir); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	defer Close()
+	defer Destroy()
 
 	// Track connection events to prove traffic goes through singcast
 	var (
@@ -96,8 +92,8 @@ func TestConnectivity_Google(t *testing.T) {
 		}
 	})
 
-	if err := Start(configPath); err != nil {
-		t.Fatalf("Start: %v", err)
+	if err := StartWithContent(jsonContent, ""); err != nil {
+		t.Fatalf("StartWithContent: %v", err)
 	}
 	defer Stop()
 
@@ -189,15 +185,11 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(tmpDir, "config.json")
-	if err := os.WriteFile(configPath, []byte(jsonContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := Init(homeDir); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	defer Close()
+	defer Destroy()
 
 	var (
 		connMu      sync.Mutex
@@ -230,8 +222,8 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		}
 	})
 
-	if err := Start(configPath); err != nil {
-		t.Fatalf("Start: %v", err)
+	if err := StartWithContent(jsonContent, ""); err != nil {
+		t.Fatalf("StartWithContent: %v", err)
 	}
 	defer Stop()
 
@@ -329,15 +321,11 @@ func TestConnectivity_HTTPS(t *testing.T) {
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(tmpDir, "config.json")
-	if err := os.WriteFile(configPath, []byte(jsonContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := Init(homeDir); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	defer Close()
+	defer Destroy()
 
 	var (
 		connMu      sync.Mutex
@@ -370,8 +358,8 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		}
 	})
 
-	if err := Start(configPath); err != nil {
-		t.Fatalf("Start: %v", err)
+	if err := StartWithContent(jsonContent, ""); err != nil {
+		t.Fatalf("StartWithContent: %v", err)
 	}
 	defer Stop()
 
