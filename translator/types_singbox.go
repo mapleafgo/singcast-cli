@@ -12,8 +12,8 @@ type singboxConfig struct {
 type singboxRoute struct {
 	Rules                []map[string]any  `json:"rules"`
 	RuleSet              []map[string]any  `json:"rule_set,omitempty"`
-	Final                string            `json:"final"`
-	AutoDetectInterface  bool              `json:"auto_detect_interface"`
+	Final                string            `json:"final,omitempty"`
+	AutoDetectInterface  bool              `json:"auto_detect_interface,omitempty"`
 	FindProcess          bool              `json:"find_process,omitempty"`
 	DefaultInterface     string            `json:"default_interface,omitempty"`
 	DefaultMark          uint32            `json:"default_mark,omitempty"`
@@ -21,10 +21,10 @@ type singboxRoute struct {
 }
 
 type singboxDNS struct {
-	Servers []map[string]any `json:"servers"`
-	Rules   []map[string]any `json:"rules,omitempty"`
-	Final   string           `json:"final"`
-	Strategy string          `json:"strategy,omitempty"`
+	Servers  []map[string]any `json:"servers"`
+	Rules    []map[string]any `json:"rules,omitempty"`
+	Final    string           `json:"final,omitempty"`
+	Strategy string           `json:"strategy,omitempty"`
 }
 
 type translation struct {
