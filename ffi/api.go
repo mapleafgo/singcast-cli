@@ -167,3 +167,9 @@ func (s *Singcast) SetSocketProtector(p SocketProtector) {
 func (s *Singcast) StartWithContent(content, ruleSetProxy string) error {
 	return core.StartWithContent(content, ruleSetProxy)
 }
+
+// UpdateDefaultInterface reports the current default network interface
+// detected by the mobile platform (e.g. via Android ConnectivityManager).
+func (s *Singcast) UpdateDefaultInterface(name string, index int64, expensive bool) {
+	core.UpdateDefaultInterface(name, index, expensive)
+}

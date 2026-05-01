@@ -17,6 +17,34 @@ import (
 // the VPN tunnel. On Android, this calls VpnService.protect(fd).
 var socketProtector func(fd int32) bool
 
+// defaultIfaceMu protects defaultIfaceListener and pendingIfaceUpdate.
+var defaultIfaceMu sync.Mutex
+
+var (
+	defaultIfaceListener libbox.InterfaceUpdateListener
+	pendingIfaceUpdate   *ifaceUpdate
+)
+
+type ifaceUpdate struct {
+	name      string
+	index     int32
+	expensive bool
+}
+
+// UpdateDefaultInterface is called from the mobile side (via FFI) to report
+// the current default network interface detected via ConnectivityManager.
+func UpdateDefaultInterface(name string, index int64, expensive bool) {
+	defaultIfaceMu.Lock()
+	defer defaultIfaceMu.Unlock()
+	slog.Info("UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive)
+	upd := &ifaceUpdate{name: name, index: int32(index), expensive: expensive}
+	if defaultIfaceListener != nil {
+		defaultIfaceListener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
+	} else {
+		pendingIfaceUpdate = upd
+	}
+}
+
 // SetSocketProtector registers a callback that protects socket fds from VPN routing.
 func SetSocketProtector(fn func(fd int32) bool) {
 	slog.Info("set socket protector", "registered", fn != nil)
@@ -99,15 +127,24 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	// Mobile and desktop both use UDP dial to detect the default interface.
-	// This triggers UpdateInterfaces() to populate the interface cache and
-	// sets a real default interface so selectInterfaces() works correctly.
-	slog.Info("starting interface detection")
-	go detectDefaultInterface(listener)
+	defaultIfaceMu.Lock()
+	defer defaultIfaceMu.Unlock()
+	defaultIfaceListener = listener
+	if pendingIfaceUpdate != nil {
+		slog.Info("applying pending interface update", "name", pendingIfaceUpdate.name, "index", pendingIfaceUpdate.index)
+		listener.UpdateDefaultInterface(pendingIfaceUpdate.name, pendingIfaceUpdate.index, pendingIfaceUpdate.expensive, false)
+		pendingIfaceUpdate = nil
+	} else if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+		// Desktop: use UDP dial detection
+		go detectDefaultInterface(listener)
+	}
 	return nil
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
+	defaultIfaceMu.Lock()
+	defaultIfaceListener = nil
+	defaultIfaceMu.Unlock()
 	slog.Debug("closing interface monitor")
 	return nil
 }
