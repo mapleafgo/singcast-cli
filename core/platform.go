@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
@@ -98,14 +99,9 @@ func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string,
 }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		// Trigger UpdateInterfaces() to populate network interface cache,
-		// but pass index=-1 so DefaultInterface() stays nil. This ensures
-		// selectInterfaces() uses all available (non-TUN) interfaces.
-		listener.UpdateDefaultInterface("", -1, false, false)
-		slog.Info("[DIAG] StartDefaultInterfaceMonitor: triggered interface update (mobile)")
-		return nil
-	}
+	// Mobile and desktop both use UDP dial to detect the default interface.
+	// This triggers UpdateInterfaces() to populate the interface cache and
+	// sets a real default interface so selectInterfaces() works correctly.
 	slog.Info("starting interface detection")
 	go detectDefaultInterface(listener)
 	return nil
@@ -119,6 +115,9 @@ func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 // detectDefaultInterface attempts to find the default network interface by
 // dialing UDP to public DNS servers.
 func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
+	if listener == nil {
+		return
+	}
 	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
 	for attempt := 0; attempt < 5; attempt++ {
 		for _, target := range targets {
@@ -183,11 +182,37 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 		if iface.Flags&net.FlagBroadcast != 0 {
 			ifaceType = libbox.InterfaceTypeEthernet
 		}
+
+		// Build raw flags compatible with linkFlags() in libbox.
+		// Without Flags, linkFlags(0) returns no FlagUp, and UpdateInterfaces()
+		// filters out all interfaces (Flags&net.FlagUp == 0), leaving the
+		// networkInterfaces cache empty and causing "no available network interface".
+		var flags int32
+		if iface.Flags&net.FlagUp != 0 {
+			flags |= syscall.IFF_UP
+		}
+		if iface.Flags&net.FlagRunning != 0 {
+			flags |= syscall.IFF_RUNNING
+		}
+		if iface.Flags&net.FlagBroadcast != 0 {
+			flags |= syscall.IFF_BROADCAST
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			flags |= syscall.IFF_LOOPBACK
+		}
+		if iface.Flags&net.FlagPointToPoint != 0 {
+			flags |= syscall.IFF_POINTOPOINT
+		}
+		if iface.Flags&net.FlagMulticast != 0 {
+			flags |= syscall.IFF_MULTICAST
+		}
+
 		result = append(result, &libbox.NetworkInterface{
 			Index:     int32(iface.Index),
 			MTU:       int32(iface.MTU),
 			Name:      iface.Name,
 			Addresses: &stringIterator{items: addrStrings},
+			Flags:     flags,
 			Type:      ifaceType,
 		})
 	}

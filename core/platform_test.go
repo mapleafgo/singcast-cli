@@ -78,26 +78,30 @@ func TestGetInterfaces_OnDesktopReturnsHostInterfaces(t *testing.T) {
 	_ = iter
 }
 
-func TestGetInterfaces_OnMobileReturnsEmpty(t *testing.T) {
-	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
-		t.Skip("test only runs on mobile platforms")
+func TestGetInterfaces_SetsFlags(t *testing.T) {
+	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
+		t.Skip("test only runs on desktop platforms")
 	}
 	p := newPlatform()
 	iter, err := p.GetInterfaces()
 	if err != nil {
 		t.Fatalf("GetInterfaces: %v", err)
 	}
-	if iter.HasNext() {
-		t.Fatal("GetInterfaces should return empty iterator on mobile")
+	// Verify that returned interfaces have non-zero Flags (IFF_UP must be set).
+	for iter.HasNext() {
+		iface := iter.Next()
+		if iface.Flags == 0 {
+			t.Fatalf("interface %q has Flags=0, expected IFF_UP to be set", iface.Name)
+		}
+		if iface.Flags&1 == 0 { // syscall.IFF_UP = 0x1
+			t.Fatalf("interface %q Flags=%d missing IFF_UP bit", iface.Name, iface.Flags)
+		}
 	}
 }
 
 // --- StartDefaultInterfaceMonitor ---
 
-func TestStartDefaultInterfaceMonitor_OnMobileReturnsNil(t *testing.T) {
-	if runtime.GOOS != "android" && runtime.GOOS != "ios" {
-		t.Skip("test only runs on mobile platforms")
-	}
+func TestStartDefaultInterfaceMonitor_ReturnsNil(t *testing.T) {
 	p := newPlatform()
 	err := p.StartDefaultInterfaceMonitor(nil)
 	if err != nil {
