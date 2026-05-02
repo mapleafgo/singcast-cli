@@ -52,11 +52,13 @@ func SetInterfacesJSON(json string) {
 func UpdateDefaultInterface(name string, index int64, expensive bool) {
 	defaultIfaceMu.Lock()
 	defer defaultIfaceMu.Unlock()
-	slog.Info("UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive)
+	slog.Info("[DIAG] UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive, "hasListener", defaultIfaceListener != nil)
 	upd := &ifaceUpdate{name: name, index: int32(index), expensive: expensive}
 	if defaultIfaceListener != nil {
+		slog.Info("[DIAG] UpdateDefaultInterface: calling listener.UpdateDefaultInterface")
 		defaultIfaceListener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
 	} else {
+		slog.Info("[DIAG] UpdateDefaultInterface: storing pending update (listener not yet registered)")
 		pendingIfaceUpdate = upd
 	}
 }
@@ -146,13 +148,16 @@ func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 	defaultIfaceMu.Lock()
 	defer defaultIfaceMu.Unlock()
 	defaultIfaceListener = listener
+	slog.Info("[DIAG] StartDefaultInterfaceMonitor", "hasPendingUpdate", pendingIfaceUpdate != nil)
 	if pendingIfaceUpdate != nil {
-		slog.Info("applying pending interface update", "name", pendingIfaceUpdate.name, "index", pendingIfaceUpdate.index)
+		slog.Info("applying pending interface update", "name", pendingIfaceUpdate.name, "index", pendingIfaceUpdate.index, "expensive", pendingIfaceUpdate.expensive)
 		listener.UpdateDefaultInterface(pendingIfaceUpdate.name, pendingIfaceUpdate.index, pendingIfaceUpdate.expensive, false)
 		pendingIfaceUpdate = nil
 	} else if runtime.GOOS != "android" && runtime.GOOS != "ios" {
 		// Desktop: use UDP dial detection
 		go detectDefaultInterface(listener)
+	} else {
+		slog.Info("[DIAG] StartDefaultInterfaceMonitor: no pending update, waiting for UpdateDefaultInterface call")
 	}
 	return nil
 }
@@ -227,10 +232,12 @@ type mobileInterface struct {
 func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error) {
 	var ifaces []mobileInterface
 	if err := json.Unmarshal([]byte(jsonStr), &ifaces); err != nil {
+		slog.Error("parse interfaces JSON failed", "error", err, "json", jsonStr[:min(200, len(jsonStr))])
 		return nil, fmt.Errorf("parse interfaces JSON: %w", err)
 	}
 	var result []*libbox.NetworkInterface
 	for _, mi := range ifaces {
+		slog.Info("[DIAG] parsed interface", "name", mi.Name, "index", mi.Index, "flags", mi.Flags, "addrs", len(mi.Addresses))
 		result = append(result, &libbox.NetworkInterface{
 			Index:     mi.Index,
 			MTU:       mi.MTU,
@@ -244,15 +251,24 @@ func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error
 	return &networkInterfaceIterator{items: result}, nil
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 	cachedInterfacesMu.RLock()
 	jsonStr := cachedInterfacesJSON
 	cachedInterfacesMu.RUnlock()
+	slog.Info("[DIAG] GetInterfaces", "hasCachedJSON", jsonStr != "", "jsonLen", len(jsonStr))
 	if jsonStr != "" {
 		return parseInterfacesJSON(jsonStr)
 	}
 
 	// Desktop fallback: use Go's net.Interfaces()
+	slog.Warn("[DIAG] GetInterfaces: no cached JSON, using net.Interfaces() fallback")
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		slog.Error("get interfaces failed", "error", err)
