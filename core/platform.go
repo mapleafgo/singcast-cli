@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"runtime"
 	"sync"
 	"time"
@@ -13,17 +15,29 @@ import (
 	"github.com/sagernet/sing-box/experimental/libbox"
 )
 
-// SocketProtector protects socket file descriptors from being routed through
-// the VPN tunnel. On Android, this calls VpnService.protect(fd).
-var socketProtector func(fd int32) bool
+// PlatformIO implements libbox.PlatformInterface with all platform-specific
+// state self-contained (no package-level globals).
+type PlatformIO struct {
+	mu sync.Mutex
 
-// defaultIfaceMu protects defaultIfaceListener and pendingIfaceUpdate.
-var defaultIfaceMu sync.Mutex
+	// TUN file descriptor from VpnService (Android) or NetworkExtension (iOS).
+	tunFd       int32
+	externalTun bool
 
-var (
-	defaultIfaceListener libbox.InterfaceUpdateListener
-	pendingIfaceUpdate   *ifaceUpdate
-)
+	// Socket protector from mobile platform (Android VpnService.protect).
+	protectFn func(fd int32) bool
+
+	// Interface data from mobile platform (JSON string).
+	interfacesJSON string
+
+	// iOS: set to true when the VPN configuration uses includeAllNetworks.
+	includeAllNetworks bool
+
+	// Default interface monitor.
+	ifaceListener libbox.InterfaceUpdateListener
+	pendingUpdate *ifaceUpdate
+	cancelDetect  context.CancelFunc
+}
 
 type ifaceUpdate struct {
 	name      string
@@ -31,53 +45,12 @@ type ifaceUpdate struct {
 	expensive bool
 }
 
-// cachedInterfacesJSON stores interface data provided by the mobile platform.
-// On Android, net.Interfaces() fails (netlink permission denied), so the Kotlin
-// side enumerates interfaces via ConnectivityManager and passes JSON here.
-var (
-	cachedInterfacesJSON string
-	cachedInterfacesMu   sync.RWMutex
-)
-
-// SetInterfacesJSON stores interface data from the mobile platform.
-func SetInterfacesJSON(json string) {
-	cachedInterfacesMu.Lock()
-	defer cachedInterfacesMu.Unlock()
-	cachedInterfacesJSON = json
-	slog.Info("set interfaces JSON", "len", len(json))
+// NewPlatformIO creates a new PlatformIO.
+func NewPlatformIO() *PlatformIO {
+	return &PlatformIO{}
 }
 
-// UpdateDefaultInterface is called from the mobile side (via FFI) to report
-// the current default network interface detected via ConnectivityManager.
-func UpdateDefaultInterface(name string, index int64, expensive bool) {
-	defaultIfaceMu.Lock()
-	defer defaultIfaceMu.Unlock()
-	slog.Info("[DIAG] UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive, "hasListener", defaultIfaceListener != nil)
-	upd := &ifaceUpdate{name: name, index: int32(index), expensive: expensive}
-	if defaultIfaceListener != nil {
-		slog.Info("[DIAG] UpdateDefaultInterface: calling listener.UpdateDefaultInterface")
-		defaultIfaceListener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
-	} else {
-		slog.Info("[DIAG] UpdateDefaultInterface: storing pending update (listener not yet registered)")
-		pendingIfaceUpdate = upd
-	}
-}
-
-// SetSocketProtector registers a callback that protects socket fds from VPN routing.
-func SetSocketProtector(fn func(fd int32) bool) {
-	slog.Info("set socket protector", "registered", fn != nil)
-	socketProtector = fn
-}
-
-// PlatformIO implements libbox.PlatformInterface.
-type PlatformIO struct {
-	mu          sync.RWMutex
-	tunFd       int32
-	externalTun bool
-}
-
-// SetTunFd stores a TUN file descriptor from VpnService (Android)
-// or NetworkExtension (iOS).
+// SetTunFd stores a TUN file descriptor from VpnService or NetworkExtension.
 func (p *PlatformIO) SetTunFd(fd int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -98,29 +71,72 @@ func (p *PlatformIO) ResetTunFd() {
 	slog.Debug("reset TUN fd", "cleared", oldFd)
 }
 
-func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport {
-	return nil
+// SetSocketProtector registers a callback that protects socket fds from VPN routing.
+func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	slog.Info("set socket protector", "registered", fn != nil)
+	p.protectFn = fn
 }
 
+// SetIncludeAllNetworks sets whether the VPN configuration uses includeAllNetworks (iOS).
+func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.includeAllNetworks = v
+	slog.Debug("set includeAllNetworks", "value", v)
+}
+
+// SetInterfacesJSON stores interface data from the mobile platform.
+func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.interfacesJSON = jsonStr
+	slog.Debug("set interfaces JSON", "len", len(jsonStr))
+}
+
+// UpdateDefaultInterface reports the current default network interface
+// detected by the mobile platform.
+func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	slog.Debug("UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive, "hasListener", p.ifaceListener != nil)
+	upd := &ifaceUpdate{name: name, index: int32(index), expensive: expensive}
+	if p.ifaceListener != nil {
+		slog.Debug("UpdateDefaultInterface: calling listener")
+		p.ifaceListener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
+	} else {
+		slog.Debug("UpdateDefaultInterface: storing pending update")
+		p.pendingUpdate = upd
+	}
+}
+
+// libbox.PlatformInterface implementation.
+
+func (p *PlatformIO) LocalDNSTransport() libbox.LocalDNSTransport { return nil }
+
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool {
-	slog.Info("[DIAG] UsePlatformAutoDetectInterfaceControl → true")
+	slog.Debug("UsePlatformAutoDetectInterfaceControl")
 	return true
 }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
-	if socketProtector != nil {
-		ok := socketProtector(fd)
-		slog.Info("[DIAG] AutoDetectInterfaceControl", "fd", fd, "protected", ok)
+	p.mu.Lock()
+	fn := p.protectFn
+	p.mu.Unlock()
+
+	if fn != nil {
+		ok := fn(fd)
+		slog.Debug("AutoDetectInterfaceControl", "fd", fd, "protected", ok)
 		if !ok {
 			return fmt.Errorf("protect fd %d failed", fd)
 		}
 	} else {
-		slog.Warn("[DIAG] AutoDetectInterfaceControl: no socket protector registered", "fd", fd)
+		slog.Warn("AutoDetectInterfaceControl: no socket protector", "fd", fd)
 	}
 	return nil
 }
 
-// OpenTun returns the external TUN fd and consumes it.
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	p.mu.Lock()
 	fd := p.tunFd
@@ -128,57 +144,133 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 		p.tunFd = 0
 	}
 	p.mu.Unlock()
-	slog.Info("[DIAG] OpenTun called", "storedFd", fd, "fdValid", fd != 0)
+
 	if fd != 0 {
+		slog.Debug("OpenTun", "fd", fd)
 		return fd, nil
 	}
-	slog.Error("[DIAG] OpenTun: no TUN fd available")
+	slog.Warn("OpenTun: no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
 	return 0, os.ErrInvalid
 }
 
-func (p *PlatformIO) UseProcFS() bool {
-	return false
+func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string, sourcePort int32, destinationAddress string, destinationPort int32) (*libbox.ConnectionOwner, error) {
+	return findConnectionOwnerImpl(ipProtocol, sourceAddress, sourcePort, destinationAddress, destinationPort)
 }
 
-func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string, sourcePort int32, destinationAddress string, destinationPort int32) (*libbox.ConnectionOwner, error) {
-	return nil, os.ErrInvalid
-}
+func (p *PlatformIO) UseProcFS() bool { return false }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	defaultIfaceMu.Lock()
-	defer defaultIfaceMu.Unlock()
-	defaultIfaceListener = listener
-	slog.Info("[DIAG] StartDefaultInterfaceMonitor", "hasPendingUpdate", pendingIfaceUpdate != nil)
-	if pendingIfaceUpdate != nil {
-		slog.Info("applying pending interface update", "name", pendingIfaceUpdate.name, "index", pendingIfaceUpdate.index, "expensive", pendingIfaceUpdate.expensive)
-		listener.UpdateDefaultInterface(pendingIfaceUpdate.name, pendingIfaceUpdate.index, pendingIfaceUpdate.expensive, false)
-		pendingIfaceUpdate = nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ifaceListener = listener
+	slog.Debug("StartDefaultInterfaceMonitor", "hasPendingUpdate", p.pendingUpdate != nil)
+
+	if p.pendingUpdate != nil {
+		slog.Debug("applying pending interface update", "name", p.pendingUpdate.name, "index", p.pendingUpdate.index)
+		listener.UpdateDefaultInterface(p.pendingUpdate.name, p.pendingUpdate.index, p.pendingUpdate.expensive, false)
+		p.pendingUpdate = nil
 	} else if runtime.GOOS != "android" && runtime.GOOS != "ios" {
-		// Desktop: use UDP dial detection
-		go detectDefaultInterface(listener)
+		ctx, cancel := context.WithCancel(context.Background())
+		p.cancelDetect = cancel
+		go detectDefaultInterface(ctx, listener)
 	} else {
-		slog.Info("[DIAG] StartDefaultInterfaceMonitor: no pending update, waiting for UpdateDefaultInterface call")
+		slog.Debug("StartDefaultInterfaceMonitor: waiting for UpdateDefaultInterface call")
 	}
 	return nil
 }
 
 func (p *PlatformIO) CloseDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
-	defaultIfaceMu.Lock()
-	defaultIfaceListener = nil
-	defaultIfaceMu.Unlock()
+	p.mu.Lock()
+	if p.cancelDetect != nil {
+		p.cancelDetect()
+		p.cancelDetect = nil
+	}
+	p.ifaceListener = nil
+	p.mu.Unlock()
 	slog.Debug("closing interface monitor")
 	return nil
 }
 
-// detectDefaultInterface attempts to find the default network interface by
-// dialing UDP to public DNS servers.
-func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
+func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
+	p.mu.Lock()
+	jsonStr := p.interfacesJSON
+	p.mu.Unlock()
+
+	if jsonStr != "" {
+		return parseInterfacesJSON(jsonStr)
+	}
+
+	// Desktop fallback: use Go's net.Interfaces()
+	slog.Warn("GetInterfaces: no cached JSON, using net.Interfaces() fallback")
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	return buildDesktopInterfaces(ifaces)
+}
+
+func (p *PlatformIO) UnderNetworkExtension() bool {
+	if runtime.GOOS != "ios" {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.externalTun
+}
+
+func (p *PlatformIO) IncludeAllNetworks() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.includeAllNetworks
+}
+
+func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState { return nil }
+
+func (p *PlatformIO) SystemCertificates() libbox.StringIterator { return nil }
+
+func (p *PlatformIO) ClearDNSCache() { flushSystemDNS() }
+
+// FlushSystemDNS attempts to flush the system DNS cache (best-effort).
+func (p *PlatformIO) FlushSystemDNS() { flushSystemDNS() }
+
+func flushSystemDNS() {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("resolvectl", "flush-caches")
+	case "darwin":
+		cmd = exec.Command("dscacheutil", "-flushcache")
+	case "windows":
+		cmd = exec.Command("ipconfig", "/flushdns")
+	default:
+		return
+	}
+	if err := cmd.Run(); err != nil {
+		slog.Debug("flush system DNS", "error", err)
+	}
+}
+
+func (p *PlatformIO) SendNotification(notification *libbox.Notification) error { return nil }
+
+// detectDefaultInterface finds the default network interface by dialing UDP.
+func detectDefaultInterface(ctx context.Context, listener libbox.InterfaceUpdateListener) {
 	if listener == nil {
 		return
 	}
 	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
 	for attempt := 0; attempt < 5; attempt++ {
+		select {
+		case <-ctx.Done():
+			slog.Debug("detect interface: cancelled")
+			return
+		default:
+		}
 		for _, target := range targets {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			conn, err := net.DialTimeout("udp4", target, 2*time.Second)
 			if err != nil {
 				slog.Debug("detect interface: dial failed", "attempt", attempt+1, "target", target, "error", err)
@@ -214,8 +306,12 @@ func detectDefaultInterface(listener libbox.InterfaceUpdateListener) {
 				}
 			}
 		}
-		slog.Warn("detect interface: attempt failed, retrying", "attempt", attempt+1, "wait", attempt+1)
-		time.Sleep(time.Duration(attempt+1) * time.Second)
+		slog.Warn("detect interface: attempt failed, retrying", "attempt", attempt+1)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		}
 	}
 	slog.Warn("detect interface: all attempts failed")
 }
@@ -232,12 +328,12 @@ type mobileInterface struct {
 func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error) {
 	var ifaces []mobileInterface
 	if err := json.Unmarshal([]byte(jsonStr), &ifaces); err != nil {
-		slog.Error("parse interfaces JSON failed", "error", err, "json", jsonStr[:min(200, len(jsonStr))])
+		slog.Error("parse interfaces JSON failed", "error", err)
 		return nil, fmt.Errorf("parse interfaces JSON: %w", err)
 	}
 	var result []*libbox.NetworkInterface
 	for _, mi := range ifaces {
-		slog.Info("[DIAG] parsed interface", "name", mi.Name, "index", mi.Index, "flags", mi.Flags, "addrs", len(mi.Addresses))
+		slog.Debug("parsed interface", "name", mi.Name, "index", mi.Index, "flags", mi.Flags, "addrs", len(mi.Addresses))
 		result = append(result, &libbox.NetworkInterface{
 			Index:     mi.Index,
 			MTU:       mi.MTU,
@@ -247,33 +343,11 @@ func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error
 			Type:      mi.Type,
 		})
 	}
-	slog.Info("parsed mobile interfaces", "count", len(result))
+	slog.Debug("parsed mobile interfaces", "count", len(result))
 	return &networkInterfaceIterator{items: result}, nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
-	cachedInterfacesMu.RLock()
-	jsonStr := cachedInterfacesJSON
-	cachedInterfacesMu.RUnlock()
-	slog.Info("[DIAG] GetInterfaces", "hasCachedJSON", jsonStr != "", "jsonLen", len(jsonStr))
-	if jsonStr != "" {
-		return parseInterfacesJSON(jsonStr)
-	}
-
-	// Desktop fallback: use Go's net.Interfaces()
-	slog.Warn("[DIAG] GetInterfaces: no cached JSON, using net.Interfaces() fallback")
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		slog.Error("get interfaces failed", "error", err)
-		return nil, err
-	}
+func buildDesktopInterfaces(ifaces []net.Interface) (libbox.NetworkInterfaceIterator, error) {
 	var result []*libbox.NetworkInterface
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
@@ -289,8 +363,6 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 			ifaceType = libbox.InterfaceTypeEthernet
 		}
 
-		// Build raw flags compatible with linkFlags() in libbox.
-		// Use numeric constants instead of syscall.IFF_* for Windows compatibility.
 		var flags int32
 		if iface.Flags&net.FlagUp != 0 {
 			flags |= 0x1 // IFF_UP
@@ -324,43 +396,13 @@ func (p *PlatformIO) GetInterfaces() (libbox.NetworkInterfaceIterator, error) {
 	return &networkInterfaceIterator{items: result}, nil
 }
 
-func (p *PlatformIO) UnderNetworkExtension() bool {
-	if runtime.GOOS != "ios" {
-		return false
-	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.externalTun
-}
-
-func (p *PlatformIO) IncludeAllNetworks() bool {
-	return runtime.GOOS == "ios"
-}
-
-func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState {
-	return nil
-}
-
-func (p *PlatformIO) SystemCertificates() libbox.StringIterator {
-	return nil
-}
-
-func (p *PlatformIO) ClearDNSCache() {}
-
-func (p *PlatformIO) SendNotification(notification *libbox.Notification) error {
-	return nil
-}
-
 // stringIterator implements libbox.StringIterator.
 type stringIterator struct {
 	items []string
 	index int
 }
 
-func (s *stringIterator) Len() int32 {
-	return int32(len(s.items))
-}
-
+func (s *stringIterator) Len() int32 { return int32(len(s.items)) }
 func (s *stringIterator) Next() string {
 	if s.index >= len(s.items) {
 		return ""
@@ -369,10 +411,7 @@ func (s *stringIterator) Next() string {
 	s.index++
 	return item
 }
-
-func (s *stringIterator) HasNext() bool {
-	return s.index < len(s.items)
-}
+func (s *stringIterator) HasNext() bool { return s.index < len(s.items) }
 
 // networkInterfaceIterator implements libbox.NetworkInterfaceIterator.
 type networkInterfaceIterator struct {
@@ -388,7 +427,4 @@ func (it *networkInterfaceIterator) Next() *libbox.NetworkInterface {
 	it.index++
 	return item
 }
-
-func (it *networkInterfaceIterator) HasNext() bool {
-	return it.index < len(it.items)
-}
+func (it *networkInterfaceIterator) HasNext() bool { return it.index < len(it.items) }

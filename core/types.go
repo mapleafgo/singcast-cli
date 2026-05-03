@@ -2,14 +2,14 @@ package core
 
 // TrafficSnapshot holds traffic and resource usage statistics.
 type TrafficSnapshot struct {
-	Up          int64 `json:"up"`
-	Down        int64 `json:"down"`
-	UpTotal     int64 `json:"up_total"`
-	DownTotal   int64 `json:"down_total"`
-	Memory      int64 `json:"memory"`
-	Goroutines  int32 `json:"goroutines"`
-	ConnsIn     int32 `json:"connections_in"`
-	ConnsOut    int32 `json:"connections_out"`
+	Up         int64 `json:"up"`
+	Down       int64 `json:"down"`
+	UpTotal    int64 `json:"up_total"`
+	DownTotal  int64 `json:"down_total"`
+	Memory     int64 `json:"memory"`
+	Goroutines int32 `json:"goroutines"`
+	ConnsIn    int32 `json:"connections_in"`
+	ConnsOut   int32 `json:"connections_out"`
 }
 
 // ProxyGroup represents a proxy group with its items.

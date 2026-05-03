@@ -12,9 +12,13 @@ import (
 const maxCoreLogEntries = 500
 
 var (
-	coreLogBuf []LogEntry
-	coreLogMu  sync.Mutex
-	coreLogCb  func(eventType int, jsonPayload string)
+	coreLogMu sync.Mutex
+	coreLogCb func(eventType int32, jsonPayload string)
+
+	// Fixed-size ring buffer avoids slice-shift memory waste.
+	coreLogRing [maxCoreLogEntries]LogEntry
+	coreLogPos  int // next write position
+	coreLogLen  int // current length (0..maxCoreLogEntries)
 )
 
 func init() {
@@ -47,10 +51,11 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	coreLogMu.Lock()
-	if len(coreLogBuf) >= maxCoreLogEntries {
-		coreLogBuf = coreLogBuf[1:]
+	coreLogRing[coreLogPos] = entry
+	coreLogPos = (coreLogPos + 1) % maxCoreLogEntries
+	if coreLogLen < maxCoreLogEntries {
+		coreLogLen++
 	}
-	coreLogBuf = append(coreLogBuf, entry)
 	cb := coreLogCb
 	coreLogMu.Unlock()
 
@@ -87,7 +92,7 @@ func slogToCoreLevel(level slog.Level) int32 {
 	}
 }
 
-func setLogCallback(fn func(int, string)) {
+func setLogCallback(fn func(int32, string)) {
 	coreLogMu.Lock()
 	coreLogCb = fn
 	coreLogMu.Unlock()
@@ -96,9 +101,14 @@ func setLogCallback(fn func(int, string)) {
 func queryCoreLogs() string {
 	coreLogMu.Lock()
 	defer coreLogMu.Unlock()
-	if len(coreLogBuf) == 0 {
+	if coreLogLen == 0 {
 		return "[]"
 	}
-	data, _ := json.Marshal(coreLogBuf)
+	entries := make([]LogEntry, 0, coreLogLen)
+	start := (coreLogPos - coreLogLen + maxCoreLogEntries) % maxCoreLogEntries
+	for i := 0; i < coreLogLen; i++ {
+		entries = append(entries, coreLogRing[(start+i)%maxCoreLogEntries])
+	}
+	data, _ := json.Marshal(entries)
 	return string(data)
 }

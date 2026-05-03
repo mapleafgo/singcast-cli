@@ -21,34 +21,30 @@ const (
 // Each callback converts the libbox data to JSON and forwards it
 // through the onEvent function.
 type ClientHandler struct {
-	onEvent func(eventType int, jsonPayload string)
+	onEvent func(eventType int32, jsonPayload string)
 	mu      sync.Mutex
 
 	// cached JSON strings for query APIs
-	cachedGroups     string
-	cachedStatus     string
-	cachedLogs       string
-	cachedConns      string
+	cachedGroups string
+	cachedStatus string
+	cachedLogs   string
+	cachedConns  string
 }
 
-// NewClientHandler creates a ClientHandler with the given event callback.
-func NewClientHandler(onEvent func(eventType int, jsonPayload string)) *ClientHandler {
-	return &ClientHandler{onEvent: onEvent}
+// NewClientHandler creates a ClientHandler.
+// Call SetOnEvent to register the callback.
+func NewClientHandler() *ClientHandler {
+	return &ClientHandler{}
 }
 
 // SetOnEvent replaces the event callback.
-func (h *ClientHandler) SetOnEvent(fn func(eventType int, jsonPayload string)) {
+func (h *ClientHandler) SetOnEvent(fn func(eventType int32, jsonPayload string)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.onEvent = fn
 }
 
-// Handler returns the handler (for FFI query access).
-func (s *Service) Handler() *ClientHandler {
-	return s.handler
-}
-
-func (h *ClientHandler) emit(eventType int, payload any) {
+func (h *ClientHandler) emit(eventType int32, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return

@@ -107,11 +107,11 @@ func TestCheckConfig_FakeipYAML(t *testing.T) {
 // TestCheckConfig_PassThroughJSON verifies a direct sing-box JSON config passes validation.
 func TestCheckConfig_PassThroughJSON(t *testing.T) {
 	singboxJSON := `{
-		"log": {"level": "warn"},
-		"inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 1080}],
-		"outbounds": [{"type": "direct", "tag": "DIRECT"}],
-		"route": {"final": "DIRECT"}
-	}`
+			"log": {"level": "warn"},
+			"inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 1080}],
+			"outbounds": [{"type": "direct", "tag": "DIRECT"}],
+			"route": {"final": "DIRECT"}
+		}`
 	if err := CheckConfig(singboxJSON); err != nil {
 		t.Fatalf("CheckConfig for raw JSON failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestDNS_FinalNotFakeIP(t *testing.T) {
 	dns := m["dns"].(map[string]any)
 	final, _ := dns["final"].(string)
 	if final == "" {
-		return // no final set is fine
+		return
 	}
 
 	servers := dns["servers"].([]any)
@@ -163,21 +163,28 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 
 // TestServiceLifecycle tests Init/StartWithContent/Stop/Destroy with a minimal config.
 func TestServiceLifecycle(t *testing.T) {
+	resetLibboxForTesting()
+
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	// Init
-	if err := Init(homeDir); err != nil {
-		t.Fatalf("Init failed: %v", err)
+	svc := NewService()
+	if s := svc.State(); s != StateCreated {
+		t.Fatalf("expected StateCreated, got %s", s)
 	}
 
-	// StartWithContent (will fail at rule-set download in sandbox, but config parse must succeed)
-	err := StartWithContent(minimalYAML, "")
+	if err := svc.Init(homeDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if s := svc.State(); s != StateInitialized {
+		t.Fatalf("expected StateInitialized, got %s", s)
+	}
+
+	err := svc.StartWithContent(minimalYAML, "")
 	if err != nil {
-		// Network errors are expected in sandbox; verify it's not a config parse error
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "decode config") ||
 			strings.Contains(errMsg, "unknown field") ||
@@ -187,21 +194,27 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Logf("StartWithContent returned expected network error: %v", err)
 	}
 
-	// Cleanup
-	Destroy()
+	svc.Stop()
+	svc.Destroy()
+	if s := svc.State(); s != StateDestroyed {
+		t.Fatalf("expected StateDestroyed, got %s", s)
+	}
 }
 
-// TestServiceDoubleInit verifies calling Init twice returns an error.
+// TestServiceDoubleInit verifies calling Init twice on the same instance returns an error.
 func TestServiceDoubleInit(t *testing.T) {
-	tmpDir := t.TempDir()
+	resetLibboxForTesting()
 
-	if err := Init(filepath.Join(tmpDir, "home1")); err != nil {
+	tmpDir := t.TempDir()
+	svc := NewService()
+
+	if err := svc.Init(filepath.Join(tmpDir, "home1")); err != nil {
 		t.Fatalf("first Init: %v", err)
 	}
-	if err := Init(filepath.Join(tmpDir, "home2")); err == nil {
-		t.Fatal("second Init should return error")
+	if err := svc.Init(filepath.Join(tmpDir, "home2")); err == nil {
+		t.Fatal("second Init on same instance should return error")
 	}
-	Destroy()
+	svc.Destroy()
 }
 
 // TestDetectFormat_PassThrough verifies JSON passthrough is detected correctly.
@@ -211,5 +224,80 @@ func TestDetectFormat_PassThrough(t *testing.T) {
 	got := translator.DetectFormat([]byte(singboxJSON))
 	if got != translator.FormatJSON {
 		t.Errorf("DetectFormat for valid sing-box JSON = %v, want FormatJSON", got)
+	}
+}
+
+// TestReloadConfig_NotInitialized verifies ReloadConfig returns error on uninitialized service.
+func TestReloadConfig_NotInitialized(t *testing.T) {
+	svc := NewService() // StateCreated
+
+	err := svc.ReloadConfig(minimalYAML, "")
+	if err == nil {
+		t.Fatal("ReloadConfig should return error when not initialized")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Errorf("ReloadConfig error = %q, want state error", err.Error())
+	}
+}
+
+// TestReloadTUN_NotInitialized verifies ReloadTUN returns error on uninitialized service.
+func TestReloadTUN_NotInitialized(t *testing.T) {
+	svc := NewService() // StateCreated
+
+	err := svc.ReloadTUN()
+	if err == nil {
+		t.Fatal("ReloadTUN should return error when not initialized")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Errorf("ReloadTUN error = %q, want state error", err.Error())
+	}
+}
+
+// TestReloadTUN_NoConfigStored verifies ReloadTUN returns error when service is not running.
+func TestReloadTUN_NoConfigStored(t *testing.T) {
+	resetLibboxForTesting()
+
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	if err := os.MkdirAll(homeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService()
+	if err := svc.Init(homeDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer svc.Destroy()
+
+	// ReloadTUN should fail because state is Initialized (not Running)
+	err := svc.ReloadTUN()
+	if err == nil {
+		t.Fatal("ReloadTUN should return error when not running")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Errorf("ReloadTUN error = %q, want state error", err.Error())
+	}
+}
+
+// TestReloadTUN_ConfigStored verifies translated config is stored for ReloadTUN.
+func TestReloadTUN_ConfigStored(t *testing.T) {
+	resetLibboxForTesting()
+
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	if err := os.MkdirAll(homeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService()
+	if err := svc.Init(homeDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer svc.Destroy()
+
+	_ = svc.StartWithContent(minimalYAML, "")
+
+	if svc.currentConfig == "" {
+		t.Error("currentConfig should be set after StartWithContent")
 	}
 }
