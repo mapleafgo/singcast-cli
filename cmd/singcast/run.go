@@ -73,7 +73,7 @@ func runCommand() *cli.Command {
 			configPath := cmd.String("config")
 			daemon := cmd.Bool("daemon")
 			apiAddr := cmd.String("api")
-				proxyPrefix := cmd.String("rule-set-proxy")
+			proxyPrefix := cmd.String("rule-set-proxy")
 
 			if err := os.MkdirAll(homeDir, 0o700); err != nil {
 				return fmt.Errorf("create home dir: %w", err)
@@ -139,12 +139,13 @@ func parseConfigLogLevel(jsonContent string) int32 {
 }
 
 func runForeground(homeDir, configPath string, maxLevel int32, jsonContent string) error {
-	if err := core.Init(homeDir); err != nil {
+	svc := core.NewService()
+	if err := svc.Init(homeDir); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
-	defer core.Destroy()
+	defer svc.Destroy()
 
-	core.SetOnEvent(func(eventType int, jsonPayload string) {
+	svc.SetOnEvent(func(eventType int32, jsonPayload string) {
 		if eventType != core.EventLogs {
 			return
 		}
@@ -164,7 +165,7 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
 	}
-	if err := core.StartWithContent(string(data), ""); err != nil {
+	if err := svc.StartWithContent(string(data), ""); err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
 
@@ -180,7 +181,7 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 			rd, rerr := os.ReadFile(configPath)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "reload: read config failed: %v\n", rerr)
-			} else if err := core.StartWithContent(string(rd), ""); err != nil {
+			} else if err := svc.StartWithContent(string(rd), ""); err != nil {
 				fmt.Fprintf(os.Stderr, "reload failed: %v\n", err)
 			} else {
 				fmt.Println("config reloaded")
@@ -191,7 +192,7 @@ func runForeground(homeDir, configPath string, maxLevel int32, jsonContent strin
 		break
 	}
 
-	core.Stop()
+	svc.Stop()
 	return nil
 }
 

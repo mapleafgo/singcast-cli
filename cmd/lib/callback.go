@@ -26,7 +26,7 @@ var (
 // cCallbackHandler adapts a C function pointer to ffi.EventHandler.
 type cCallbackHandler struct{}
 
-func (cCallbackHandler) OnEvent(eventType int, jsonPayload string) {
+func (cCallbackHandler) OnEvent(eventType int32, jsonPayload string) {
 	callbackMu.RLock()
 	cb := globalCallback
 	callbackMu.RUnlock()
