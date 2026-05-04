@@ -37,6 +37,13 @@ type PlatformIO struct {
 	ifaceListener libbox.InterfaceUpdateListener
 	pendingUpdate *ifaceUpdate
 	cancelDetect  context.CancelFunc
+
+	// Cached TUN options from last OpenTun call.
+	tunOptions libbox.TunOptions
+
+	// WiFi state from mobile platform.
+	wifiSSID  string
+	wifiBSSID string
 }
 
 type ifaceUpdate struct {
@@ -61,13 +68,14 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	slog.Debug("set TUN fd", "fd", fd, "externalTun", fd != 0)
 }
 
-// ResetTunFd clears the stored TUN file descriptor.
+// ResetTunFd clears the stored TUN file descriptor and cached TUN options.
 func (p *PlatformIO) ResetTunFd() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	oldFd := p.tunFd
 	p.tunFd = 0
 	p.externalTun = false
+	p.tunOptions = nil
 	slog.Debug("reset TUN fd", "cleared", oldFd)
 }
 
@@ -85,6 +93,14 @@ func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
 	defer p.mu.Unlock()
 	p.includeAllNetworks = v
 	slog.Debug("set includeAllNetworks", "value", v)
+}
+
+// SetWIFIState stores the current WiFi SSID and BSSID from the mobile platform.
+func (p *PlatformIO) SetWIFIState(ssid, bssid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.wifiSSID = ssid
+	p.wifiBSSID = bssid
 }
 
 // SetInterfacesJSON stores interface data from the mobile platform.
@@ -143,6 +159,7 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	if fd != 0 {
 		p.tunFd = 0
 	}
+	p.tunOptions = options
 	p.mu.Unlock()
 
 	if fd != 0 {
@@ -151,6 +168,75 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	}
 	slog.Warn("OpenTun: no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
 	return 0, os.ErrInvalid
+}
+
+// GetTunOptions returns cached TUN options from the last OpenTun call.
+func (p *PlatformIO) GetTunOptions() libbox.TunOptions {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.tunOptions
+}
+
+// QueryTunOptions returns TUN configuration as JSON for mobile consumers.
+func (p *PlatformIO) QueryTunOptions() string {
+	opts := p.GetTunOptions()
+	if opts == nil {
+		return "{}"
+	}
+	snap := TunOptionsSnapshot{
+		MTU:                 opts.GetMTU(),
+		AutoRoute:           opts.GetAutoRoute(),
+		StrictRoute:         opts.GetStrictRoute(),
+		HTTPProxyEnabled:    opts.IsHTTPProxyEnabled(),
+		HTTPProxyServer:     opts.GetHTTPProxyServer(),
+		HTTPProxyServerPort: opts.GetHTTPProxyServerPort(),
+	}
+	snap.Inet4Address = routePrefixSlice(opts.GetInet4Address())
+	snap.Inet6Address = routePrefixSlice(opts.GetInet6Address())
+	if dns, err := opts.GetDNSServerAddress(); err == nil && dns != nil {
+		snap.DNSServerAddress = dns.Value
+	} else if err != nil {
+		slog.Debug("GetDNSServerAddress", "error", err)
+	}
+	snap.Inet4RouteAddress = routePrefixSlice(opts.GetInet4RouteAddress())
+	snap.Inet6RouteAddress = routePrefixSlice(opts.GetInet6RouteAddress())
+	snap.Inet4RouteExcludeAddress = routePrefixSlice(opts.GetInet4RouteExcludeAddress())
+	snap.Inet6RouteExcludeAddress = routePrefixSlice(opts.GetInet6RouteExcludeAddress())
+	snap.Inet4RouteRange = routePrefixSlice(opts.GetInet4RouteRange())
+	snap.Inet6RouteRange = routePrefixSlice(opts.GetInet6RouteRange())
+	snap.IncludePackage = stringIterSlice(opts.GetIncludePackage())
+	snap.ExcludePackage = stringIterSlice(opts.GetExcludePackage())
+	snap.HTTPProxyBypassDomain = stringIterSlice(opts.GetHTTPProxyBypassDomain())
+	snap.HTTPProxyMatchDomain = stringIterSlice(opts.GetHTTPProxyMatchDomain())
+	data, _ := json.Marshal(snap)
+	return string(data)
+}
+
+// routePrefixSlice converts a RoutePrefixIterator to a string slice.
+// Returns nil if the iterator is nil or empty (so omitempty in JSON omits the field).
+func routePrefixSlice(iter libbox.RoutePrefixIterator) []string {
+	if iter == nil {
+		return nil
+	}
+	var result []string
+	for iter.HasNext() {
+		p := iter.Next()
+		result = append(result, p.String())
+	}
+	return result
+}
+
+// stringIterSlice converts a StringIterator to a string slice.
+// Returns nil if the iterator is nil or empty (so omitempty in JSON omits the field).
+func stringIterSlice(iter libbox.StringIterator) []string {
+	if iter == nil {
+		return nil
+	}
+	var result []string
+	for iter.HasNext() {
+		result = append(result, iter.Next())
+	}
+	return result
 }
 
 func (p *PlatformIO) FindConnectionOwner(ipProtocol int32, sourceAddress string, sourcePort int32, destinationAddress string, destinationPort int32) (*libbox.ConnectionOwner, error) {
@@ -224,7 +310,14 @@ func (p *PlatformIO) IncludeAllNetworks() bool {
 	return p.includeAllNetworks
 }
 
-func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState { return nil }
+func (p *PlatformIO) ReadWIFIState() *libbox.WIFIState {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.wifiSSID == "" {
+		return nil
+	}
+	return libbox.NewWIFIState(p.wifiSSID, p.wifiBSSID)
+}
 
 func (p *PlatformIO) SystemCertificates() libbox.StringIterator { return nil }
 

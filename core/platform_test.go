@@ -495,3 +495,92 @@ func TestMobileInterfaceJSON(t *testing.T) {
 		t.Errorf("Flags = %d, want 0x1043", parsed[0].Flags)
 	}
 }
+
+// --- TUN options caching ---
+
+func TestGetTunOptions_NilBeforeOpen(t *testing.T) {
+	p := newPlatform()
+	if p.GetTunOptions() != nil {
+		t.Error("expected nil before OpenTun")
+	}
+}
+
+func TestQueryTunOptions_EmptyBeforeOpen(t *testing.T) {
+	p := newPlatform()
+	got := p.QueryTunOptions()
+	if got != "{}" {
+		t.Errorf("QueryTunOptions before open = %q, want {}", got)
+	}
+}
+
+func TestRoutePrefixSlice_Nil(t *testing.T) {
+	if routePrefixSlice(nil) != nil {
+		t.Error("nil iterator should return nil")
+	}
+}
+
+func TestStringIterSlice_Nil(t *testing.T) {
+	if stringIterSlice(nil) != nil {
+		t.Error("nil iterator should return nil")
+	}
+}
+
+func TestResetTunFd_ClearsCachedOptions(t *testing.T) {
+	p := newPlatform()
+	// Use any non-nil TunOptions to verify ResetTunFd clears it.
+	// A simple wrapper suffices since we only test nil/non-nil.
+	p.mu.Lock()
+	p.tunOptions = noOpTunOptions{}
+	p.mu.Unlock()
+	if p.GetTunOptions() == nil {
+		t.Fatal("expected non-nil after setting tunOptions")
+	}
+	p.ResetTunFd()
+	if p.GetTunOptions() != nil {
+		t.Error("ResetTunFd should clear cached tunOptions")
+	}
+}
+
+type noOpTunOptions struct{}
+
+func (noOpTunOptions) GetInet4Address() libbox.RoutePrefixIterator              { return nil }
+func (noOpTunOptions) GetInet6Address() libbox.RoutePrefixIterator              { return nil }
+func (noOpTunOptions) GetDNSServerAddress() (*libbox.StringBox, error)          { return nil, nil }
+func (noOpTunOptions) GetMTU() int32                                            { return 0 }
+func (noOpTunOptions) GetAutoRoute() bool                                       { return false }
+func (noOpTunOptions) GetStrictRoute() bool                                     { return false }
+func (noOpTunOptions) GetInet4RouteAddress() libbox.RoutePrefixIterator         { return nil }
+func (noOpTunOptions) GetInet6RouteAddress() libbox.RoutePrefixIterator         { return nil }
+func (noOpTunOptions) GetInet4RouteExcludeAddress() libbox.RoutePrefixIterator  { return nil }
+func (noOpTunOptions) GetInet6RouteExcludeAddress() libbox.RoutePrefixIterator  { return nil }
+func (noOpTunOptions) GetInet4RouteRange() libbox.RoutePrefixIterator           { return nil }
+func (noOpTunOptions) GetInet6RouteRange() libbox.RoutePrefixIterator           { return nil }
+func (noOpTunOptions) GetIncludePackage() libbox.StringIterator                 { return nil }
+func (noOpTunOptions) GetExcludePackage() libbox.StringIterator                 { return nil }
+func (noOpTunOptions) IsHTTPProxyEnabled() bool                                 { return false }
+func (noOpTunOptions) GetHTTPProxyServer() string                               { return "" }
+func (noOpTunOptions) GetHTTPProxyServerPort() int32                            { return 0 }
+func (noOpTunOptions) GetHTTPProxyBypassDomain() libbox.StringIterator          { return nil }
+func (noOpTunOptions) GetHTTPProxyMatchDomain() libbox.StringIterator           { return nil }
+
+// --- WiFi state ---
+
+func TestSetWIFIState_ReadRoundTrip(t *testing.T) {
+	p := newPlatform()
+	if p.ReadWIFIState() != nil {
+		t.Error("should be nil before set")
+	}
+	p.SetWIFIState("MyWiFi", "aa:bb:cc:dd:ee:ff")
+	state := p.ReadWIFIState()
+	if state == nil {
+		t.Fatal("expected non-nil after set")
+	}
+}
+
+func TestSetWIFIState_EmptySSIDReturnsNil(t *testing.T) {
+	p := newPlatform()
+	p.SetWIFIState("", "aa:bb:cc:dd:ee:ff")
+	if p.ReadWIFIState() != nil {
+		t.Error("empty SSID should return nil")
+	}
+}
