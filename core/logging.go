@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const maxCoreLogEntries = 500
@@ -19,11 +20,22 @@ var (
 	coreLogRing [maxCoreLogEntries]LogEntry
 	coreLogPos  int // next write position
 	coreLogLen  int // current length (0..maxCoreLogEntries)
+
+	// Runtime log level filter. Lower number = higher severity.
+	// Error=2, Warn=3, Info=4, Debug=5, Trace=6.
+	coreLogLevel atomic.Int32
 )
 
 func init() {
+	coreLogLevel.Store(4) // Info
 	slog.SetDefault(slog.New(&coreLogHandler{}))
 }
+
+// SetLogLevel sets the minimum log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace).
+func SetLogLevel(level int32) { coreLogLevel.Store(level) }
+
+// GetLogLevel returns the current minimum log level.
+func GetLogLevel() int32 { return coreLogLevel.Load() }
 
 // coreLogHandler implements slog.Handler, routing log entries to an in-memory
 // ring buffer and the event callback. No file I/O is performed; the frontend
@@ -32,7 +44,9 @@ type coreLogHandler struct {
 	extra string // accumulated key=value pairs from WithAttrs
 }
 
-func (h *coreLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *coreLogHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return slogToCoreLevel(level) <= coreLogLevel.Load()
+}
 
 func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	var b strings.Builder

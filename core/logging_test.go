@@ -43,6 +43,11 @@ func TestLogging_RingBufferOverflow(t *testing.T) {
 	coreLogCb = nil
 	coreLogMu.Unlock()
 
+	// Ensure all log levels pass for this test.
+	prevLevel := GetLogLevel()
+	SetLogLevel(6) // Trace
+	defer SetLogLevel(prevLevel)
+
 	// Write more than maxCoreLogEntries entries.
 	for i := 0; i < maxCoreLogEntries+100; i++ {
 		slog.Debug("overflow-test", "i", i)
