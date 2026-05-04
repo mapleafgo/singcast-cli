@@ -38,6 +38,33 @@ type LogEntry struct {
 type ConnectionEventSnapshot struct {
 	EventType int32  `json:"event_type"`
 	ID        string `json:"id"`
+	// Connection details (available for open/update events, empty for close).
+	Inbound       string   `json:"inbound,omitempty"`
+	InboundType   string   `json:"inbound_type,omitempty"`
+	IPVersion     int32    `json:"ip_version,omitempty"`
+	Network       string   `json:"network,omitempty"`
+	Source        string   `json:"source,omitempty"`
+	Destination   string   `json:"destination,omitempty"`
+	Domain        string   `json:"domain,omitempty"`
+	Protocol      string   `json:"protocol,omitempty"`
+	User          string   `json:"user,omitempty"`
+	FromOutbound  string   `json:"from_outbound,omitempty"`
+	CreatedAt     int64    `json:"created_at,omitempty"`
+	ClosedAt      int64    `json:"closed_at,omitempty"`
+	Uplink        int64    `json:"uplink,omitempty"`
+	Downlink      int64    `json:"downlink,omitempty"`
+	UplinkTotal   int64    `json:"uplink_total,omitempty"`
+	DownlinkTotal int64    `json:"downlink_total,omitempty"`
+	Rule          string   `json:"rule,omitempty"`
+	Outbound      string   `json:"outbound,omitempty"`
+	OutboundType  string   `json:"outbound_type,omitempty"`
+	Chain         []string `json:"chain,omitempty"`
+	// Process info (only when process finding is enabled).
+	ProcessID   int64    `json:"process_id,omitempty"`
+	UserID      int32    `json:"user_id,omitempty"`
+	UserName    string   `json:"user_name,omitempty"`
+	ProcessPath string   `json:"process_path,omitempty"`
+	Packages    []string `json:"packages,omitempty"`
 }
 
 // TunOptionsSnapshot is a JSON-serializable snapshot of TUN configuration.
@@ -65,6 +92,7 @@ type TunOptionsSnapshot struct {
 
 // OverrideConfig holds override options for VPN split tunneling.
 type OverrideConfig struct {
+	AutoRedirect    bool     `json:"auto_redirect,omitempty"`
 	IncludePackages []string `json:"include_packages,omitempty"`
 	ExcludePackages []string `json:"exclude_packages,omitempty"`
 }

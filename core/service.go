@@ -43,45 +43,6 @@ func CheckConfig(content string) error {
 	return libbox.CheckConfig(content)
 }
 
-// FormatBytes formats a byte count as a human-readable string (KB).
-func FormatBytes(length int64) string { return libbox.FormatBytes(length) }
-
-// FormatDuration formats a millisecond duration as a human-readable string.
-func FormatDuration(duration int64) string { return libbox.FormatDuration(duration) }
-
-// AvailablePort finds the next available TCP port starting from startPort.
-func AvailablePort(startPort int32) (int32, error) { return libbox.AvailablePort(startPort) }
-
-// ForceGC triggers a manual garbage collection and returns memory to the OS.
-func ForceGC() {
-	runtime.GC()
-	debug.FreeOSMemory()
-}
-
-// SetMemoryLimit sets a soft memory limit for the Go runtime (OOM protection).
-// Set to 0 to disable. This is a package-level convenience without monitoring.
-func SetMemoryLimit(bytes int64) { debug.SetMemoryLimit(bytes) }
-
-// SetMemoryLimitWithMonitor sets a soft memory limit and enables adaptive OOM monitoring.
-// When the limit is breached, the monitor triggers ResetNetwork + GC asynchronously.
-// Set to 0 to disable monitoring and restore the default memory limit.
-// No-op if the service is destroyed.
-func (s *Service) SetMemoryLimitWithMonitor(bytes int64) {
-	s.mu.Lock()
-	if s.state == StateDestroyed {
-		s.mu.Unlock()
-		return
-	}
-	s.mu.Unlock()
-
-	if bytes <= 0 {
-		debug.SetMemoryLimit(0)
-	} else {
-		debug.SetMemoryLimit(bytes)
-	}
-	s.oom.setLimit(bytes)
-}
-
 // State represents the lifecycle state of a Service.
 type State int32
 
@@ -134,17 +95,15 @@ type Service struct {
 	commandClient   *libbox.CommandClient
 	handler         *ClientHandler
 	platformIO      *PlatformIO
-	currentConfig   string // translated sing-box JSON (kept for ReloadTUN)
-	overrideInclude []string
-	overrideExclude []string
-	oom             *oomMonitor
+	currentConfig     string // translated sing-box JSON (kept for ReloadTUN)
+	overrideAutoRoute bool
+	overrideInclude   []string
+	overrideExclude   []string
 }
 
 // NewService creates a Service in StateCreated.
 func NewService() *Service {
-	s := &Service{platformIO: NewPlatformIO()}
-	s.oom = newOOMMonitor(func() { s.ResetNetwork() })
-	return s
+	return &Service{platformIO: NewPlatformIO()}
 }
 
 // State returns the current lifecycle state (thread-safe).
@@ -243,7 +202,7 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 		return err
 	}
 
-	return s.startWithJSON(jsonContent, &libbox.OverrideOptions{}, nil, nil)
+	return s.startWithJSON(jsonContent, &libbox.OverrideOptions{}, false, nil, nil)
 }
 
 func parseOverrideOptions(jsonStr string) (*libbox.OverrideOptions, OverrideConfig, error) {
@@ -257,6 +216,7 @@ func parseOverrideOptions(jsonStr string) (*libbox.OverrideOptions, OverrideConf
 	// cfg slices are fresh from json.Unmarshal — safe to share with stringIterator
 	// and store as snapshot without Clone.
 	return &libbox.OverrideOptions{
+		AutoRedirect:   cfg.AutoRedirect,
 		IncludePackage: &stringIterator{items: cfg.IncludePackages},
 		ExcludePackage: &stringIterator{items: cfg.ExcludePackages},
 	}, cfg, nil
@@ -264,8 +224,9 @@ func parseOverrideOptions(jsonStr string) (*libbox.OverrideOptions, OverrideConf
 
 // buildOverrideFromSnapshot constructs a fresh OverrideOptions with cloned slices
 // so each call produces an independent iterator.
-func buildOverrideFromSnapshot(include, exclude []string) *libbox.OverrideOptions {
+func buildOverrideFromSnapshot(autoRoute bool, include, exclude []string) *libbox.OverrideOptions {
 	return &libbox.OverrideOptions{
+		AutoRedirect:   autoRoute,
 		IncludePackage: &stringIterator{items: slices.Clone(include)},
 		ExcludePackage: &stringIterator{items: slices.Clone(exclude)},
 	}
@@ -285,8 +246,8 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 
 // startWithJSON feeds translated JSON config to libbox and reconnects
 // the command client. Caller must hold s.mu.
-// include/exclude are stored as the current override snapshot on success.
-func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOptions, include, exclude []string) error {
+// autoRoute/include/exclude are stored as the current override snapshot on success.
+func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOptions, autoRoute bool, include, exclude []string) error {
 	slog.Info("starting/reloading service", "bytes", len(jsonContent))
 
 	oldConfig := s.currentConfig
@@ -322,6 +283,7 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 
 	s.commandClient = newClient
 	// Only update override snapshot on success; on failure they remain unchanged.
+	s.overrideAutoRoute = autoRoute
 	s.overrideInclude = include
 	s.overrideExclude = exclude
 	s.state = StateRunning
@@ -353,6 +315,7 @@ func (s *Service) Stop() error {
 		slog.Info("service stopped")
 	}
 
+	s.overrideAutoRoute = false
 	s.overrideInclude = nil
 	s.overrideExclude = nil
 	s.state = StateInitialized
@@ -369,8 +332,6 @@ func (s *Service) Destroy() {
 	}
 
 	slog.Info("destroying service")
-
-	s.oom.stop()
 
 	if s.state == StateRunning {
 		s.platformIO.ResetTunFd()
@@ -415,8 +376,8 @@ func (s *Service) ReloadTUN() error {
 	}
 
 	slog.Info("reloading TUN with existing config", "configBytes", len(s.currentConfig))
-	override := buildOverrideFromSnapshot(s.overrideInclude, s.overrideExclude)
-	return s.startWithJSON(s.currentConfig, override, s.overrideInclude, s.overrideExclude)
+	override := buildOverrideFromSnapshot(s.overrideAutoRoute, s.overrideInclude, s.overrideExclude)
+	return s.startWithJSON(s.currentConfig, override, s.overrideAutoRoute, s.overrideInclude, s.overrideExclude)
 }
 
 // SetOverridePackages updates the include/exclude package lists for VPN split tunneling
@@ -440,7 +401,7 @@ func (s *Service) SetOverridePackages(overrideJSON string) error {
 		return err
 	}
 	slog.Info("updating override packages", "include", len(cfg.IncludePackages), "exclude", len(cfg.ExcludePackages))
-	return s.startWithJSON(s.currentConfig, override, cfg.IncludePackages, cfg.ExcludePackages)
+	return s.startWithJSON(s.currentConfig, override, cfg.AutoRedirect, cfg.IncludePackages, cfg.ExcludePackages)
 }
 
 // withServer executes fn with the command server under lock protection.
@@ -534,11 +495,9 @@ func (s *Service) QueryLogs() string {
 
 	var entries []LogEntry
 	if handler != nil {
-		_ = json.Unmarshal([]byte(handler.GetCachedLogsJSON()), &entries)
+		entries = append(entries, handler.GetCachedLogs()...)
 	}
-	var coreEntries []LogEntry
-	_ = json.Unmarshal([]byte(queryCoreLogs()), &coreEntries)
-	entries = append(entries, coreEntries...)
+	entries = append(entries, queryCoreLogEntries()...)
 
 	if len(entries) == 0 {
 		return "[]"

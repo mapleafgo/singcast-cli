@@ -7,7 +7,6 @@ import "C"
 
 import (
 	"encoding/json"
-	"strconv"
 	"unsafe"
 
 	"github.com/mapleafgo/singcast/ffi"
@@ -125,7 +124,7 @@ func CoreGetStartedAt() *C.char {
 	if err != nil {
 		return resultJSON(err)
 	}
-	data, _ := json.Marshal(map[string]any{"ok": true, "started_at": ts})
+	data, _ := json.Marshal(map[string]int64{"started_at": ts})
 	return cString(string(data))
 }
 
@@ -184,16 +183,9 @@ func CoreQueryMemoryStats() *C.char { return cString(api.QueryMemoryStats()) }
 
 // --- Memory ---
 
-//export CoreForceGC
-func CoreForceGC() { api.ForceGC() }
-
 //export CoreSetMemoryLimit
-func CoreSetMemoryLimit(bytes *C.char) *C.char {
-	n, err := strconv.ParseInt(goString(bytes), 10, 64)
-	if err != nil {
-		return resultJSON(err)
-	}
-	api.SetMemoryLimit(n)
+func CoreSetMemoryLimit(bytes C.longlong) *C.char {
+	api.SetMemoryLimit(int64(bytes))
 	return resultJSON(nil)
 }
 
@@ -228,6 +220,9 @@ func CoreAvailablePort(startPort C.int) *C.char {
 	data, _ := json.Marshal(map[string]any{"ok": true, "port": int64(port)})
 	return cString(string(data))
 }
+
+//export CoreSetLocale
+func CoreSetLocale(localeID *C.char) { ffi.SetLocale(goString(localeID)) }
 
 // --- System Proxy ---
 // System proxy management is handled by the GUI, not the core.

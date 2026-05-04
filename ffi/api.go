@@ -3,7 +3,10 @@
 package ffi
 
 import (
+	runtimeDebug "runtime/debug"
+
 	"github.com/mapleafgo/singcast/core"
+	"github.com/sagernet/sing-box/experimental/libbox"
 	_ "golang.org/x/mobile/bind" // retained for gomobile bind
 )
 
@@ -226,13 +229,10 @@ func (s *Singcast) GetStartedAt() (int64, error) {
 
 // --- Memory ---
 
-// ForceGC triggers a manual garbage collection.
-func (s *Singcast) ForceGC() { core.ForceGC() }
-
-// SetMemoryLimit sets a soft memory limit with adaptive OOM monitoring.
-// When the limit is breached, the monitor triggers ResetNetwork + GC.
+// SetMemoryLimit sets a soft memory limit for Go runtime OOM protection.
+// Set to 0 to disable.
 func (s *Singcast) SetMemoryLimit(bytes int64) {
-	s.svc.SetMemoryLimitWithMonitor(bytes)
+	runtimeDebug.SetMemoryLimit(bytes)
 }
 
 // Version returns version info as JSON.
@@ -252,10 +252,13 @@ func (s *Singcast) SetOnEvent(handler EventHandler) {
 // --- Package-level Utilities ---
 
 // FormatBytes formats a byte count as a human-readable string.
-func FormatBytes(length int64) string { return core.FormatBytes(length) }
+func FormatBytes(length int64) string { return libbox.FormatBytes(length) }
 
 // FormatDuration formats a millisecond duration as a human-readable string.
-func FormatDuration(duration int64) string { return core.FormatDuration(duration) }
+func FormatDuration(duration int64) string { return libbox.FormatDuration(duration) }
 
 // AvailablePort finds the next available TCP port starting from startPort.
-func AvailablePort(startPort int32) (int32, error) { return core.AvailablePort(startPort) }
+func AvailablePort(startPort int32) (int32, error) { return libbox.AvailablePort(startPort) }
+
+// SetLocale sets the locale for sing-box internal error messages.
+func SetLocale(localeID string) { libbox.SetLocale(localeID) }

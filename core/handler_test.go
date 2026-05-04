@@ -70,8 +70,8 @@ func TestHandler_ClearLogs(t *testing.T) {
 	if got != "[]" {
 		t.Errorf("ClearLogs payload = %q, want []", got)
 	}
-	if cached := h.GetCachedLogsJSON(); cached != "[]" {
-		t.Errorf("cached logs after ClearLogs = %q, want []", cached)
+	if cached := h.GetCachedLogs(); len(cached) != 0 {
+		t.Errorf("cached logs after ClearLogs = %v, want empty", cached)
 	}
 }
 
@@ -105,8 +105,80 @@ func TestHandler_WriteLogs(t *testing.T) {
 		t.Errorf("entry[1].Level = %d, want 2", entries[1].Level)
 	}
 
-	if cached := h.GetCachedLogsJSON(); cached != got {
+	cached := h.GetCachedLogs()
+	cachedJSON, _ := json.Marshal(cached)
+	if string(cachedJSON) != got {
 		t.Error("cached logs should match callback payload")
+	}
+}
+
+func TestHandler_WriteLogsLevelFilter(t *testing.T) {
+	// Default level is Info(4). Debug(5) and Trace(6) should be filtered.
+	prevLevel := GetLogLevel()
+	defer SetLogLevel(prevLevel)
+	SetLogLevel(4) // Info
+
+	h := NewClientHandler()
+	var got string
+	h.SetOnEvent(func(eventType int32, jsonPayload string) {
+		if eventType == EventLogs {
+			got = jsonPayload
+		}
+	})
+
+	h.WriteLogs(&mockLogIterator{
+		items: []*libbox.LogEntry{
+			{Level: 2, Message: "error"},  // Error → pass
+			{Level: 3, Message: "warn"},   // Warn → pass
+			{Level: 4, Message: "info"},   // Info → pass
+			{Level: 5, Message: "debug"},  // Debug → filtered
+			{Level: 6, Message: "trace"},  // Trace → filtered
+		},
+	})
+
+	var entries []LogEntry
+	if err := json.Unmarshal([]byte(got), &entries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries (debug/trace filtered), got %d: %+v", len(entries), entries)
+	}
+	for _, e := range entries {
+		if e.Level > 4 {
+			t.Errorf("entry level %d should have been filtered: %s", e.Level, e.Message)
+		}
+	}
+
+	// Raise level to Error(2) — only errors should pass.
+	SetLogLevel(2)
+	got = ""
+	h.WriteLogs(&mockLogIterator{
+		items: []*libbox.LogEntry{
+			{Level: 2, Message: "error"},
+			{Level: 4, Message: "info"},
+		},
+	})
+	if err := json.Unmarshal([]byte(got), &entries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Message != "error" {
+		t.Errorf("expected only error entry, got %+v", entries)
+	}
+
+	// Set to Trace(6) — all should pass.
+	SetLogLevel(6)
+	got = ""
+	h.WriteLogs(&mockLogIterator{
+		items: []*libbox.LogEntry{
+			{Level: 5, Message: "debug"},
+			{Level: 6, Message: "trace"},
+		},
+	})
+	if err := json.Unmarshal([]byte(got), &entries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries at trace level, got %d", len(entries))
 	}
 }
 
@@ -241,7 +313,7 @@ func TestHandler_EmitCachesCorrectly(t *testing.T) {
 
 	// Emit logs → should cache under logs.
 	h.emit(EventLogs, []LogEntry{{Level: 4, Message: "test"}})
-	if h.GetCachedLogsJSON() == "[]" {
+	if h.GetCachedLogs() == nil {
 		t.Error("logs emit should update logs cache")
 	}
 
@@ -266,8 +338,8 @@ func TestHandler_GetCachedDefaults(t *testing.T) {
 	if h.GetCachedStatusJSON() != "{}" {
 		t.Errorf("default status = %q, want {}", h.GetCachedStatusJSON())
 	}
-	if h.GetCachedLogsJSON() != "[]" {
-		t.Errorf("default logs = %q, want []", h.GetCachedLogsJSON())
+	if h.GetCachedLogs() != nil {
+		t.Errorf("default logs = %v, want nil", h.GetCachedLogs())
 	}
 	if h.GetCachedConnectionsJSON() != "[]" {
 		t.Errorf("default conns = %q, want []", h.GetCachedConnectionsJSON())

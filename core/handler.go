@@ -26,11 +26,11 @@ type ClientHandler struct {
 	onEvent func(eventType int32, jsonPayload string)
 	mu      sync.Mutex
 
-	// cached JSON strings for query APIs
-	cachedGroups string
-	cachedStatus string
-	cachedLogs   string
-	cachedConns  string
+	// cached data for query APIs
+	cachedGroups []ProxyGroup
+	cachedStatus *TrafficSnapshot
+	cachedLogs   []LogEntry
+	cachedConns  any // map[string]any for connection events
 }
 
 // NewClientHandler creates a ClientHandler.
@@ -57,13 +57,19 @@ func (h *ClientHandler) emit(eventType int32, payload any) {
 	fn := h.onEvent
 	switch eventType {
 	case EventTraffic:
-		h.cachedStatus = jsonStr
+		if s, ok := payload.(TrafficSnapshot); ok {
+			h.cachedStatus = &s
+		}
 	case EventLogs:
-		h.cachedLogs = jsonStr
+		if entries, ok := payload.([]LogEntry); ok {
+			h.cachedLogs = entries
+		}
 	case EventConnections:
-		h.cachedConns = jsonStr
+		h.cachedConns = payload
 	case EventProxyUpdate:
-		h.cachedGroups = jsonStr
+		if groups, ok := payload.([]ProxyGroup); ok {
+			h.cachedGroups = groups
+		}
 	}
 	h.mu.Unlock()
 
@@ -72,33 +78,47 @@ func (h *ClientHandler) emit(eventType int32, payload any) {
 	}
 }
 
-func (h *ClientHandler) getCached(cache *string, fallback string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if *cache == "" {
-		return fallback
-	}
-	return *cache
-}
-
 // GetCachedGroupsJSON returns the last cached proxy group JSON.
 func (h *ClientHandler) GetCachedGroupsJSON() string {
-	return h.getCached(&h.cachedGroups, "[]")
+	h.mu.Lock()
+	groups := h.cachedGroups
+	h.mu.Unlock()
+	if groups == nil {
+		return "[]"
+	}
+	data, _ := json.Marshal(groups)
+	return string(data)
 }
 
 // GetCachedStatusJSON returns the last cached traffic status JSON.
 func (h *ClientHandler) GetCachedStatusJSON() string {
-	return h.getCached(&h.cachedStatus, "{}")
+	h.mu.Lock()
+	s := h.cachedStatus
+	h.mu.Unlock()
+	if s == nil {
+		return "{}"
+	}
+	data, _ := json.Marshal(s)
+	return string(data)
 }
 
-// GetCachedLogsJSON returns the last cached log entries JSON.
-func (h *ClientHandler) GetCachedLogsJSON() string {
-	return h.getCached(&h.cachedLogs, "[]")
+// GetCachedLogs returns the last cached log entries.
+func (h *ClientHandler) GetCachedLogs() []LogEntry {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cachedLogs
 }
 
 // GetCachedConnectionsJSON returns the last cached connection events JSON.
 func (h *ClientHandler) GetCachedConnectionsJSON() string {
-	return h.getCached(&h.cachedConns, "[]")
+	h.mu.Lock()
+	conns := h.cachedConns
+	h.mu.Unlock()
+	if conns == nil {
+		return "[]"
+	}
+	data, _ := json.Marshal(conns)
+	return string(data)
 }
 
 // Connected is called when the command client connects to the server.
@@ -122,10 +142,15 @@ func (h *ClientHandler) ClearLogs() {
 }
 
 // WriteLogs receives a batch of log entries from the server.
+// Entries exceeding the current log level are filtered out.
 func (h *ClientHandler) WriteLogs(messageList libbox.LogIterator) {
+	maxLevel := GetLogLevel()
 	var entries []LogEntry
 	for messageList.HasNext() {
 		entry := messageList.Next()
+		if entry.Level > maxLevel {
+			continue
+		}
 		entries = append(entries, LogEntry{
 			Level:   entry.Level,
 			Message: entry.Message,
@@ -199,10 +224,46 @@ func (h *ClientHandler) WriteConnectionEvents(events *libbox.ConnectionEvents) {
 	it := events.Iterator()
 	for it.HasNext() {
 		evt := it.Next()
-		snapshots = append(snapshots, ConnectionEventSnapshot{
+		snap := ConnectionEventSnapshot{
 			EventType: evt.Type,
 			ID:        evt.ID,
-		})
+		}
+		if conn := evt.Connection; conn != nil {
+			snap.Inbound = conn.Inbound
+			snap.InboundType = conn.InboundType
+			snap.IPVersion = conn.IPVersion
+			snap.Network = conn.Network
+			snap.Source = conn.Source
+			snap.Destination = conn.Destination
+			snap.Domain = conn.Domain
+			snap.Protocol = conn.Protocol
+			snap.User = conn.User
+			snap.FromOutbound = conn.FromOutbound
+			snap.CreatedAt = conn.CreatedAt
+			snap.Uplink = conn.Uplink
+			snap.Downlink = conn.Downlink
+			snap.UplinkTotal = conn.UplinkTotal
+			snap.DownlinkTotal = conn.DownlinkTotal
+			snap.Rule = conn.Rule
+			snap.Outbound = conn.Outbound
+			snap.OutboundType = conn.OutboundType
+			chain := conn.Chain()
+			for chain.HasNext() {
+				snap.Chain = append(snap.Chain, chain.Next())
+			}
+			if pi := conn.ProcessInfo; pi != nil {
+				snap.ProcessID = pi.ProcessID
+				snap.UserID = pi.UserID
+				snap.UserName = pi.UserName
+				snap.ProcessPath = pi.ProcessPath
+				pkgs := pi.PackageNames()
+				for pkgs.HasNext() {
+					snap.Packages = append(snap.Packages, pkgs.Next())
+				}
+			}
+		}
+		snap.ClosedAt = evt.ClosedAt
+		snapshots = append(snapshots, snap)
 	}
 	h.emit(EventConnections, map[string]any{
 		"reset": events.Reset,

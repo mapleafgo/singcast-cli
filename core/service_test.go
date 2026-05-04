@@ -74,49 +74,6 @@ func TestService_SetOnEventBeforeInit(t *testing.T) {
 	svc.SetOnEvent(func(eventType int32, jsonPayload string) {})
 }
 
-func TestService_SetMemoryLimitWithMonitorAfterDestroy(t *testing.T) {
-	resetLibboxForTesting()
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	svc.Destroy()
-
-	svc.SetMemoryLimitWithMonitor(1 << 30)
-	if svc.oom.running.Load() {
-		t.Error("SetMemoryLimitWithMonitor should not start monitor after Destroy")
-	}
-}
-
-func TestService_SetMemoryLimitWithMonitorZero(t *testing.T) {
-	resetLibboxForTesting()
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	defer svc.Destroy()
-
-	svc.SetMemoryLimitWithMonitor(1 << 20)
-	if !svc.oom.running.Load() {
-		t.Fatal("expected monitor running after setLimit")
-	}
-	svc.SetMemoryLimitWithMonitor(0)
-	for i := 0; i < 50; i++ {
-		if !svc.oom.running.Load() {
-			return
-		}
-	}
-	t.Error("expected monitor stopped after setLimit(0)")
-}
-
 func TestService_StopWhenNotRunning(t *testing.T) {
 	resetLibboxForTesting()
 	tmpDir := t.TempDir()
@@ -205,21 +162,22 @@ func TestService_QueryLogsWithCoreLogs(t *testing.T) {
 
 func TestParseOverrideOptions(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantInc int
-		wantExc int
-		wantErr bool
+		name     string
+		input    string
+		wantInc  int
+		wantExc  int
+		wantAuto bool
+		wantErr  bool
 	}{
-		{"empty", "", 0, 0, false},
-		{"valid", `{"include_packages":["a","b"],"exclude_packages":["c"]}`, 2, 1, false},
-		{"only_include", `{"include_packages":["x"]}`, 1, 0, false},
-		{"invalid_json", `{bad`, 0, 0, true},
+		{"empty", "", 0, 0, false, false},
+		{"valid", `{"include_packages":["a","b"],"exclude_packages":["c"]}`, 2, 1, false, false},
+		{"auto_redirect", `{"auto_redirect":true,"include_packages":["x"]}`, 1, 0, true, false},
+		{"invalid_json", `{bad`, 0, 0, false, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, _, err := parseOverrideOptions(tt.input)
+			opts, cfg, err := parseOverrideOptions(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -229,7 +187,9 @@ func TestParseOverrideOptions(t *testing.T) {
 			if opts == nil {
 				t.Fatal("opts should not be nil on success")
 			}
-			// Verify via StringIterator round-trip
+			if cfg.AutoRedirect != tt.wantAuto {
+				t.Errorf("AutoRedirect = %v, want %v", cfg.AutoRedirect, tt.wantAuto)
+			}
 			countInc := countIter(opts.IncludePackage)
 			countExc := countIter(opts.ExcludePackage)
 			if countInc != tt.wantInc {

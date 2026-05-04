@@ -113,16 +113,24 @@ func setLogCallback(fn func(int32, string)) {
 }
 
 func queryCoreLogs() string {
+	entries := queryCoreLogEntries()
+	if len(entries) == 0 {
+		return "[]"
+	}
+	data, _ := json.Marshal(entries)
+	return string(data)
+}
+
+func queryCoreLogEntries() []LogEntry {
 	coreLogMu.Lock()
 	defer coreLogMu.Unlock()
 	if coreLogLen == 0 {
-		return "[]"
+		return nil
 	}
 	entries := make([]LogEntry, 0, coreLogLen)
 	start := (coreLogPos - coreLogLen + maxCoreLogEntries) % maxCoreLogEntries
 	for i := 0; i < coreLogLen; i++ {
 		entries = append(entries, coreLogRing[(start+i)%maxCoreLogEntries])
 	}
-	data, _ := json.Marshal(entries)
-	return string(data)
+	return entries
 }

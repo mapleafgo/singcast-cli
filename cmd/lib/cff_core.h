@@ -71,8 +71,7 @@ extern void CoreWriteMessage(int level, const char* message);
 // --- Logging ---
 extern void CoreSetLogLevel(int level);
 extern void CoreSetError(const char* message);
-extern void CoreForceGC();
-extern char* CoreSetMemoryLimit(const char* bytes);
+extern char* CoreSetMemoryLimit(int64_t bytes);
 extern char* CoreQueryMemoryStats();
 extern void CoreFlushSystemDNS();
 
@@ -86,6 +85,7 @@ extern void CoreSetCallback(void* cb);
 extern char* CoreFormatBytes(int64_t length);
 extern char* CoreFormatDuration(int64_t duration);
 extern char* CoreAvailablePort(int startPort);
+extern void  CoreSetLocale(const char* localeID);
 
 // --- Memory Management ---
 extern void CoreFreeString(char* s);
