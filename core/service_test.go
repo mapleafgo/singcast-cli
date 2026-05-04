@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sagernet/sing-box/experimental/libbox"
 )
 
 func mustMkdirAll(t *testing.T, dir string) {
@@ -15,6 +17,12 @@ func mustMkdirAll(t *testing.T, dir string) {
 	}
 }
 
+// initJSON returns a minimal Init options JSON for the given home directory.
+func initJSON(homeDir string) string {
+	data, _ := json.Marshal(InitOptions{HomeDir: homeDir})
+	return string(data)
+}
+
 func TestService_QueryMemoryStats(t *testing.T) {
 	resetLibboxForTesting()
 	tmpDir := t.TempDir()
@@ -22,7 +30,7 @@ func TestService_QueryMemoryStats(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -49,7 +57,7 @@ func TestService_QueryLogsReturnsJSON(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -73,7 +81,7 @@ func TestService_SetMemoryLimitWithMonitorAfterDestroy(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	svc.Destroy()
@@ -91,7 +99,7 @@ func TestService_SetMemoryLimitWithMonitorZero(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -116,7 +124,7 @@ func TestService_StopWhenNotRunning(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -133,7 +141,7 @@ func TestService_DestroyTwice(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	svc.Destroy()
@@ -147,7 +155,7 @@ func TestService_StartOnDestroyed(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	svc.Destroy()
@@ -165,7 +173,7 @@ func TestService_FlushDNS(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -180,7 +188,7 @@ func TestService_QueryLogsWithCoreLogs(t *testing.T) {
 	mustMkdirAll(t, homeDir)
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -193,4 +201,83 @@ func TestService_QueryLogsWithCoreLogs(t *testing.T) {
 	if len(entries) == 0 {
 		t.Error("expected at least some core log entries from init")
 	}
+}
+
+func TestParseOverrideOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantInc int
+		wantExc int
+		wantErr bool
+	}{
+		{"empty", "", 0, 0, false},
+		{"valid", `{"include_packages":["a","b"],"exclude_packages":["c"]}`, 2, 1, false},
+		{"only_include", `{"include_packages":["x"]}`, 1, 0, false},
+		{"invalid_json", `{bad`, 0, 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, _, err := parseOverrideOptions(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if opts == nil {
+				t.Fatal("opts should not be nil on success")
+			}
+			// Verify via StringIterator round-trip
+			countInc := countIter(opts.IncludePackage)
+			countExc := countIter(opts.ExcludePackage)
+			if countInc != tt.wantInc {
+				t.Errorf("include count = %d, want %d", countInc, tt.wantInc)
+			}
+			if countExc != tt.wantExc {
+				t.Errorf("exclude count = %d, want %d", countExc, tt.wantExc)
+			}
+		})
+	}
+}
+
+func countIter(it libbox.StringIterator) int {
+	if it == nil {
+		return 0
+	}
+	n := 0
+	for it.HasNext() {
+		it.Next()
+		n++
+	}
+	return n
+}
+
+func TestSetOverridePackages_StateChecks(t *testing.T) {
+	resetLibboxForTesting()
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	mustMkdirAll(t, homeDir)
+
+	svc := NewService()
+	if err := svc.Init(initJSON(homeDir)); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer svc.Destroy()
+
+	t.Run("NotRunning", func(t *testing.T) {
+		if err := svc.SetOverridePackages(`{"include_packages":["a"]}`); err == nil {
+			t.Error("expected error when not running")
+		}
+	})
+
+	t.Run("InvalidJSON", func(t *testing.T) {
+		// parseOverrideOptions validates JSON regardless of state.
+		// Test it directly to ensure the parse path is covered.
+		_, _, err := parseOverrideOptions(`{bad`)
+		if err == nil {
+			t.Error("expected parse error for invalid JSON")
+		}
+	})
 }

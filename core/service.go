@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
@@ -127,14 +128,16 @@ func resetLibboxForTesting() {
 //	  └── Stop ←─────────────────────────────────────────────────────┘
 //	Destroy is terminal; the instance cannot be reused.
 type Service struct {
-	mu            sync.Mutex
-	state         State
-	commandServer *libbox.CommandServer
-	commandClient *libbox.CommandClient
-	handler       *ClientHandler
-	platformIO    *PlatformIO
-	currentConfig string // translated sing-box JSON (kept for ReloadTUN)
-	oom           *oomMonitor
+	mu              sync.Mutex
+	state           State
+	commandServer   *libbox.CommandServer
+	commandClient   *libbox.CommandClient
+	handler         *ClientHandler
+	platformIO      *PlatformIO
+	currentConfig   string // translated sing-box JSON (kept for ReloadTUN)
+	overrideInclude []string
+	overrideExclude []string
+	oom             *oomMonitor
 }
 
 // NewService creates a Service in StateCreated.
@@ -159,7 +162,7 @@ func (s *Service) PlatformIO() *PlatformIO { return s.platformIO }
 
 // Init initializes the libbox runtime and command server.
 // Must be called once after NewService.
-func (s *Service) Init(homeDir string) error {
+func (s *Service) Init(optionsJSON string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -167,9 +170,17 @@ func (s *Service) Init(homeDir string) error {
 		return fmt.Errorf("init: invalid state %s", s.state)
 	}
 
-	slog.Info("service init", "homeDir", homeDir)
+	var opts InitOptions
+	if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {
+		return fmt.Errorf("parse init options: %w", err)
+	}
+	if opts.HomeDir == "" {
+		return fmt.Errorf("init: home_dir is required")
+	}
 
-	tempDir := filepath.Join(homeDir, "temp")
+	slog.Info("service init", "homeDir", opts.HomeDir)
+
+	tempDir := filepath.Join(opts.HomeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -177,9 +188,12 @@ func (s *Service) Init(homeDir string) error {
 	libboxSetupMu.Lock()
 	if !libboxReady {
 		if err := libbox.Setup(&libbox.SetupOptions{
-			BasePath:    homeDir,
-			WorkingPath: homeDir,
-			TempPath:    tempDir,
+			BasePath:        opts.HomeDir,
+			WorkingPath:     opts.HomeDir,
+			TempPath:        tempDir,
+			LogMaxLines:     opts.LogMaxLines,
+			Debug:           opts.Debug,
+			FixAndroidStack: opts.FixAndroidStack,
 		}); err != nil {
 			libboxSetupMu.Unlock()
 			return fmt.Errorf("libbox setup: %w", err)
@@ -229,7 +243,32 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 		return err
 	}
 
-	return s.startWithJSON(jsonContent)
+	return s.startWithJSON(jsonContent, &libbox.OverrideOptions{}, nil, nil)
+}
+
+func parseOverrideOptions(jsonStr string) (*libbox.OverrideOptions, OverrideConfig, error) {
+	if jsonStr == "" {
+		return &libbox.OverrideOptions{}, OverrideConfig{}, nil
+	}
+	var cfg OverrideConfig
+	if err := json.Unmarshal([]byte(jsonStr), &cfg); err != nil {
+		return nil, OverrideConfig{}, fmt.Errorf("parse override JSON: %w", err)
+	}
+	// cfg slices are fresh from json.Unmarshal — safe to share with stringIterator
+	// and store as snapshot without Clone.
+	return &libbox.OverrideOptions{
+		IncludePackage: &stringIterator{items: cfg.IncludePackages},
+		ExcludePackage: &stringIterator{items: cfg.ExcludePackages},
+	}, cfg, nil
+}
+
+// buildOverrideFromSnapshot constructs a fresh OverrideOptions with cloned slices
+// so each call produces an independent iterator.
+func buildOverrideFromSnapshot(include, exclude []string) *libbox.OverrideOptions {
+	return &libbox.OverrideOptions{
+		IncludePackage: &stringIterator{items: slices.Clone(include)},
+		ExcludePackage: &stringIterator{items: slices.Clone(exclude)},
+	}
 }
 
 func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, error) {
@@ -246,9 +285,11 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 
 // startWithJSON feeds translated JSON config to libbox and reconnects
 // the command client. Caller must hold s.mu.
-func (s *Service) startWithJSON(jsonContent string) error {
+// include/exclude are stored as the current override snapshot on success.
+func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOptions, include, exclude []string) error {
 	slog.Info("starting/reloading service", "bytes", len(jsonContent))
 
+	oldConfig := s.currentConfig
 	s.currentConfig = jsonContent
 
 	// Disconnect old client BEFORE starting new service to avoid stale callbacks.
@@ -257,8 +298,9 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		s.commandClient = nil
 	}
 
-	if err := s.commandServer.StartOrReloadService(jsonContent, &libbox.OverrideOptions{}); err != nil {
+	if err := s.commandServer.StartOrReloadService(jsonContent, override); err != nil {
 		slog.Error("StartOrReloadService failed", "error", err)
+		s.currentConfig = oldConfig
 		s.state = StateInitialized
 		return fmt.Errorf("start service: %w", err)
 	}
@@ -273,11 +315,15 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	if err := newClient.Connect(); err != nil {
 		slog.Error("command client Connect failed", "error", err)
 		s.commandServer.CloseService()
+		s.currentConfig = oldConfig
 		s.state = StateInitialized
 		return fmt.Errorf("connect command client: %w", err)
 	}
 
 	s.commandClient = newClient
+	// Only update override snapshot on success; on failure they remain unchanged.
+	s.overrideInclude = include
+	s.overrideExclude = exclude
 	s.state = StateRunning
 	slog.Info("service running")
 	return nil
@@ -307,6 +353,8 @@ func (s *Service) Stop() error {
 		slog.Info("service stopped")
 	}
 
+	s.overrideInclude = nil
+	s.overrideExclude = nil
 	s.state = StateInitialized
 	return err
 }
@@ -367,7 +415,32 @@ func (s *Service) ReloadTUN() error {
 	}
 
 	slog.Info("reloading TUN with existing config", "configBytes", len(s.currentConfig))
-	return s.startWithJSON(s.currentConfig)
+	override := buildOverrideFromSnapshot(s.overrideInclude, s.overrideExclude)
+	return s.startWithJSON(s.currentConfig, override, s.overrideInclude, s.overrideExclude)
+}
+
+// SetOverridePackages updates the include/exclude package lists for VPN split tunneling
+// and restarts the service with the current config. Requires StateRunning.
+// Pass empty string to clear all overrides.
+// Note: this triggers a full service reload (including TUN rebuild on mobile).
+// Mobile callers must ensure a fresh TUN fd is set via SetTunFd before calling this.
+func (s *Service) SetOverridePackages(overrideJSON string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.state != StateRunning {
+		return fmt.Errorf("set override packages: invalid state %s", s.state)
+	}
+	if s.currentConfig == "" {
+		return fmt.Errorf("set override packages: no configuration stored")
+	}
+
+	override, cfg, err := parseOverrideOptions(overrideJSON)
+	if err != nil {
+		return err
+	}
+	slog.Info("updating override packages", "include", len(cfg.IncludePackages), "exclude", len(cfg.ExcludePackages))
+	return s.startWithJSON(s.currentConfig, override, cfg.IncludePackages, cfg.ExcludePackages)
 }
 
 // withServer executes fn with the command server under lock protection.
@@ -378,6 +451,14 @@ func (s *Service) withServer(fn func(*libbox.CommandServer)) {
 	if srv != nil {
 		fn(srv)
 	}
+}
+
+// SetLogLevel sets the minimum log level (2=Error .. 6=Trace).
+func (s *Service) SetLogLevel(level int32) { SetLogLevel(level) }
+
+// SetError pushes an error message to the command server.
+func (s *Service) SetError(message string) {
+	s.withServer(func(srv *libbox.CommandServer) { srv.SetError(message) })
 }
 
 // Pause suspends network activity. On iOS, auto-wakes after 1 minute.

@@ -55,7 +55,7 @@ func TestConnectivity_Google(t *testing.T) {
 	}
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -182,7 +182,7 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 	}
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
@@ -314,7 +314,7 @@ func TestConnectivity_HTTPS(t *testing.T) {
 	}
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()

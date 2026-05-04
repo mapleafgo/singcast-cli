@@ -176,7 +176,7 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Fatalf("expected StateCreated, got %s", s)
 	}
 
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 	if s := svc.State(); s != StateInitialized {
@@ -208,10 +208,9 @@ func TestServiceDoubleInit(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewService()
 
-	if err := svc.Init(filepath.Join(tmpDir, "home1")); err != nil {
-		t.Fatalf("first Init: %v", err)
+	if err := svc.Init(initJSON(filepath.Join(tmpDir, "home1"))); err != nil {		t.Fatalf("first Init: %v", err)
 	}
-	if err := svc.Init(filepath.Join(tmpDir, "home2")); err == nil {
+	if err := svc.Init(initJSON(filepath.Join(tmpDir, "home2"))); err == nil {
 		t.Fatal("second Init on same instance should return error")
 	}
 	svc.Destroy()
@@ -264,7 +263,7 @@ func TestReloadTUN_NoConfigStored(t *testing.T) {
 	}
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 	defer svc.Destroy()
@@ -279,8 +278,8 @@ func TestReloadTUN_NoConfigStored(t *testing.T) {
 	}
 }
 
-// TestReloadTUN_ConfigStored verifies translated config is stored for ReloadTUN.
-func TestReloadTUN_ConfigStored(t *testing.T) {
+// TestStartWithJSON_RollbackOnFailure verifies currentConfig is rolled back when startWithJSON fails.
+func TestStartWithJSON_RollbackOnFailure(t *testing.T) {
 	resetLibboxForTesting()
 
 	tmpDir := t.TempDir()
@@ -290,14 +289,14 @@ func TestReloadTUN_ConfigStored(t *testing.T) {
 	}
 
 	svc := NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(initJSON(homeDir)); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 	defer svc.Destroy()
 
+	// StartWithContent fails (no clash_api tag), currentConfig should remain empty.
 	_ = svc.StartWithContent(minimalYAML, "")
-
-	if svc.currentConfig == "" {
-		t.Error("currentConfig should be set after StartWithContent")
+	if svc.currentConfig != "" {
+		t.Error("currentConfig should be empty after failed StartWithContent")
 	}
 }
