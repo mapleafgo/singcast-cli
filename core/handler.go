@@ -15,6 +15,8 @@ const (
 	EventProxyUpdate = 3
 	EventModeUpdate  = 4
 	EventCoreLog     = 6
+	EventConnected    = 7
+	EventDisconnected = 8
 )
 
 // ClientHandler implements libbox.CommandClientHandler.
@@ -100,13 +102,19 @@ func (h *ClientHandler) GetCachedConnectionsJSON() string {
 }
 
 // Connected is called when the command client connects to the server.
-func (h *ClientHandler) Connected() {}
+func (h *ClientHandler) Connected() {
+	h.emit(EventConnected, map[string]bool{"connected": true})
+}
 
 // Disconnected is called when the command client disconnects.
-func (h *ClientHandler) Disconnected(message string) {}
+func (h *ClientHandler) Disconnected(message string) {
+	h.emit(EventDisconnected, map[string]string{"message": message})
+}
 
-// SetDefaultLogLevel is called with the initial log level.
-func (h *ClientHandler) SetDefaultLogLevel(level int32) {}
+// SetDefaultLogLevel is called with the initial log level from the server.
+func (h *ClientHandler) SetDefaultLogLevel(level int32) {
+	SetLogLevel(level)
+}
 
 // ClearLogs is called when the log buffer is cleared on the server side.
 func (h *ClientHandler) ClearLogs() {
