@@ -35,9 +35,10 @@ func New() *Singcast {
 	return &Singcast{svc: core.NewService()}
 }
 
-// Init initializes the core runtime at the given home directory.
-func (s *Singcast) Init(homeDir string) error {
-	return s.svc.Init(homeDir)
+// Init initializes the core runtime.
+// optionsJSON: {"home_dir":"/path","log_max_lines":500,"debug":false,"fix_android_stack":false}
+func (s *Singcast) Init(optionsJSON string) error {
+	return s.svc.Init(optionsJSON)
 }
 
 // StartWithContent starts or restarts the service with raw YAML or JSON config.
@@ -87,6 +88,25 @@ func (s *Singcast) SetIncludeAllNetworks(v bool) {
 	s.svc.PlatformIO().SetIncludeAllNetworks(v)
 }
 
+// SetWIFIState reports the current WiFi SSID and BSSID from the mobile platform.
+func (s *Singcast) SetWIFIState(ssid, bssid string) {
+	s.svc.PlatformIO().SetWIFIState(ssid, bssid)
+}
+
+// QueryTunOptions returns TUN configuration as JSON for mobile consumers.
+// Call after the service has started (OpenTun has been invoked by sing-box).
+func (s *Singcast) QueryTunOptions() string {
+	return s.svc.PlatformIO().QueryTunOptions()
+}
+
+// --- Logging ---
+
+// SetLogLevel sets the minimum log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace).
+func (s *Singcast) SetLogLevel(level int32) { s.svc.SetLogLevel(level) }
+
+// SetError pushes an error message to connected clients.
+func (s *Singcast) SetError(message string) { s.svc.SetError(message) }
+
 // --- Pause / Wake / Network ---
 
 // Pause suspends network activity. On iOS, auto-wakes after 1 minute.
@@ -107,6 +127,13 @@ func (s *Singcast) ReloadConfig(content, ruleSetProxy string) error {
 
 // ReloadTUN restarts the TUN interface without changing configuration.
 func (s *Singcast) ReloadTUN() error { return s.svc.ReloadTUN() }
+
+// SetOverridePackages updates the include/exclude package lists for VPN split tunneling.
+// The service restarts with the current config and new package overrides.
+// Pass empty string to clear all overrides.
+func (s *Singcast) SetOverridePackages(overrideJSON string) error {
+	return s.svc.SetOverridePackages(overrideJSON)
+}
 
 // CheckConfig validates a config string (Clash YAML or sing-box JSON).
 func (s *Singcast) CheckConfig(content string) error { return core.CheckConfig(content) }

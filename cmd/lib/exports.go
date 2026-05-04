@@ -26,8 +26,8 @@ func resultJSON(err error) *C.char {
 // --- Lifecycle ---
 
 //export CoreInit
-func CoreInit(homeDir *C.char) *C.char {
-	return resultJSON(api.Init(goString(homeDir)))
+func CoreInit(optionsJSON *C.char) *C.char {
+	return resultJSON(api.Init(goString(optionsJSON)))
 }
 
 //export CoreStartWithContent
@@ -55,6 +55,19 @@ func CoreReloadConfig(content, ruleSetProxy *C.char) *C.char {
 
 //export CoreReloadTUN
 func CoreReloadTUN() *C.char { return resultJSON(api.ReloadTUN()) }
+
+//export CoreSetOverridePackages
+func CoreSetOverridePackages(overrideJSON *C.char) *C.char {
+	return resultJSON(api.SetOverridePackages(goString(overrideJSON)))
+}
+
+// --- Logging ---
+
+//export CoreSetLogLevel
+func CoreSetLogLevel(level C.int) { api.SetLogLevel(int32(level)) }
+
+//export CoreSetError
+func CoreSetError(message *C.char) { api.SetError(goString(message)) }
 
 // --- Pause / Wake / Network ---
 
@@ -152,6 +165,12 @@ func CoreUpdateWIFIState() { api.UpdateWIFIState() }
 //export CoreSetIncludeAllNetworks
 func CoreSetIncludeAllNetworks(v C.int) { api.SetIncludeAllNetworks(v != 0) }
 
+//export CoreSetWIFIState
+func CoreSetWIFIState(ssid, bssid *C.char) { api.SetWIFIState(goString(ssid), goString(bssid)) }
+
+//export CoreQueryTunOptions
+func CoreQueryTunOptions() *C.char { return cString(api.QueryTunOptions()) }
+
 //export CoreWriteMessage
 func CoreWriteMessage(level C.int, message *C.char) {
 	api.WriteMessage(int32(level), goString(message))
@@ -209,3 +228,6 @@ func CoreAvailablePort(startPort C.int) *C.char {
 	data, _ := json.Marshal(map[string]any{"ok": true, "port": int64(port)})
 	return cString(string(data))
 }
+
+// --- System Proxy ---
+// System proxy management is handled by the GUI, not the core.

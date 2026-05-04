@@ -140,7 +140,7 @@ func parseConfigLogLevel(jsonContent string) int32 {
 
 func runForeground(homeDir, configPath string, maxLevel int32, jsonContent string) error {
 	svc := core.NewService()
-	if err := svc.Init(homeDir); err != nil {
+	if err := svc.Init(`{"home_dir":"` + homeDir + `"}`); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
 	defer svc.Destroy()

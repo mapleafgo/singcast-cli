@@ -10,6 +10,8 @@
 #define CFF_EVENT_PROXY_UPDATE 3
 #define CFF_EVENT_MODE_UPDATE  4
 #define CFF_EVENT_CORE_LOG     6
+#define CFF_EVENT_CONNECTED    7
+#define CFF_EVENT_DISCONNECTED 8
 
 // Log level constants.
 #define CFF_LEVEL_ERROR 2
@@ -22,7 +24,8 @@
 typedef void (*CoreCallback)(int, const char*);
 
 // --- Lifecycle ---
-extern char* CoreInit(const char* homeDir);
+// optionsJSON: {"home_dir":"/path","log_max_lines":500,"debug":false,"fix_android_stack":false}
+extern char* CoreInit(const char* optionsJSON);
 extern char* CoreStartWithContent(const char* content, const char* ruleSetProxy);
 extern char* CoreStop();
 extern void  CoreDestroy();
@@ -31,6 +34,8 @@ extern void  CoreDestroy();
 extern char* CoreCheckConfig(const char* content);
 extern char* CoreReloadConfig(const char* content, const char* ruleSetProxy);
 extern char* CoreReloadTUN();
+extern char* CoreSetOverridePackages(const char* overrideJSON);
+extern char* CoreQueryTunOptions();
 
 // --- Pause / Wake / Network ---
 extern void CorePause();
@@ -60,9 +65,12 @@ extern int  CoreNeedWIFIState();
 extern int  CoreNeedFindProcess();
 extern void CoreUpdateWIFIState();
 extern void CoreSetIncludeAllNetworks(int v);
+extern void CoreSetWIFIState(const char* ssid, const char* bssid);
 extern void CoreWriteMessage(int level, const char* message);
 
-// --- Memory ---
+// --- Logging ---
+extern void CoreSetLogLevel(int level);
+extern void CoreSetError(const char* message);
 extern void CoreForceGC();
 extern char* CoreSetMemoryLimit(const char* bytes);
 extern char* CoreQueryMemoryStats();
