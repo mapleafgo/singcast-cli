@@ -82,26 +82,96 @@ task all
 
 所有函数返回 JSON 字符串，以 C 兼容符号导出。
 
+### 生命周期
+
 | 函数 | 参数 | 说明 |
 |------|------|------|
-| `CoreInit` | `homeDir: string` | 初始化核心运行时 |
-| `CoreStart` | `configPath: string, ruleSetProxy: string` | 使用配置文件启动。`ruleSetProxy` 为规则集下载代理 URL 前缀（空 = 直连） |
+| `CoreInit` | `optionsJSON: string` | 初始化核心运行时。JSON：`{"home_dir":"/path","log_max_lines":500,"debug":false}` |
 | `CoreStartWithContent` | `content: string, ruleSetProxy: string` | 使用内容启动。支持 Clash YAML 或 sing-box JSON |
 | `CoreStop` | | 停止服务 |
-| `CoreClose` | | 关闭并释放资源 |
-| `CoreReloadConfig` | | 从上次使用的路径重载配置 |
+| `CoreDestroy` | | 关闭并释放资源 |
+
+### 配置
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
 | `CoreCheckConfig` | `content: string` | 校验 Clash YAML 或 sing-box JSON |
+| `CoreReloadConfig` | `content: string, ruleSetProxy: string` | 使用新配置内容重载 |
+| `CoreReloadTUN` | | 仅重载 TUN 接口 |
+| `CoreSetOverridePackages` | `overrideJSON: string` | 设置 VPN 分流应用包名 |
+
+### 日志
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CoreSetLogLevel` | `level: int` | 设置最低日志级别（2=Error … 6=Trace） |
+| `CoreSetError` | `message: string` | 向客户端推送错误消息 |
+| `CoreWriteMessage` | `level: int, message: string` | 写入自定义日志消息 |
+
+### 暂停 / 唤醒 / 网络
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CorePause` | | 暂停网络活动 |
+| `CoreWake` | | 恢复网络活动 |
+| `CoreResetNetwork` | | 重置所有连接和 DNS 缓存 |
+
+### 代理控制
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CoreSelectProxy` | `group: string, tag: string` | 选择代理组中的节点 |
+| `CoreTestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
+| `CoreSetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
+| `CoreSetGroupExpand` | `group: string, expand: int` | 设置代理组展开状态（0=收起, 1=展开） |
+
+### 查询
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
 | `CoreQueryProxies` | | 查询代理组和节点（JSON） |
 | `CoreQueryTraffic` | | 查询实时流量统计（JSON） |
 | `CoreQueryLogs` | | 查询最近日志（JSON） |
 | `CoreQueryConnections` | | 查询活跃连接（JSON） |
-| `CoreSelectProxy` | `group: string, tag: string` | 选择代理组中的节点 |
-| `CoreTestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
-| `CoreSetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
+| `CoreQueryTunOptions` | | 查询 TUN 配置（JSON） |
+| `CoreQueryMemoryStats` | | 查询 Go 运行时内存统计（JSON） |
+| `CoreClearLogs` | | 清空日志缓冲区 |
+| `CoreGetStartedAt` | | 获取启动时间戳（JSON） |
+
+### 连接管理
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
 | `CoreCloseConnection` | `id: string` | 按 ID 关闭连接 |
 | `CoreCloseAllConnections` | | 关闭所有活跃连接 |
-| `CoreSetCallback` | `cb: pointer` | 设置事件回调（C 函数指针 `void (*)(int eventType, const char* jsonPayload)`） |
+
+### 平台
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CoreNeedWIFIState` | → `int` | 是否需要 WiFi 状态监听 |
+| `CoreNeedFindProcess` | → `int` | 是否需要进程查找 |
+| `CoreUpdateWIFIState` | | 触发 WiFi 状态更新 |
+| `CoreSetIncludeAllNetworks` | `v: int` | 设置 iOS includeAllNetworks |
+| `CoreSetWIFIState` | `ssid: string, bssid: string` | 上报当前 WiFi 状态 |
+| `CoreFlushSystemDNS` | | 刷新系统 DNS 缓存 |
+
+### 内存
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `CoreSetMemoryLimit` | `bytes: int64` | 设置 Go 运行时软内存限制（0=禁用） |
+
+### 工具
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
 | `CoreGetVersion` | | 获取版本信息（JSON） |
+| `CoreSetCallback` | `cb: pointer` | 设置事件回调（`void (*)(int eventType, const char* jsonPayload)`） |
+| `CoreSetLocale` | `localeID: string` | 设置错误消息语言 |
+| `CoreFormatBytes` | `length: int64` | 格式化字节数为可读字符串 |
+| `CoreFormatDuration` | `duration: int64` | 格式化时长（毫秒）为可读字符串 |
+| `CoreAvailablePort` | `startPort: int` | 查找下一个可用 TCP 端口 |
 
 ### 事件回调
 
@@ -236,34 +306,117 @@ task mobile-all             # 所有移动端目标
 
 ### API（gomobile）
 
+#### 生命周期
+
 | 方法 | 参数 | 说明 |
 |------|------|------|
-| `Init` | `homeDir: string` | 初始化核心运行时 |
-| `SetTunFd` | `fd: int32` | 设置来自 VpnService/NetworkExtension 的 TUN fd |
-| `CheckConfig` | `content: string` | 校验 Clash YAML 或 sing-box JSON |
+| `Init` | `optionsJSON: string` | 初始化核心运行时。JSON：`{"home_dir":"/path","log_max_lines":500}` |
 | `StartWithContent` | `content: string, ruleSetProxy: string` | 使用内容启动。支持 Clash YAML 或 sing-box JSON |
-| `Start` | `configPath: string, ruleSetProxy: string` | 使用配置文件启动 |
 | `Stop` | | 停止服务 |
-| `Close` | | 释放所有资源 |
-| `ReloadConfig` | | 从上次使用的路径重载配置 |
-| `CloseConnection` | `id: string` | 按 ID 关闭连接 |
-| `CloseAllConnections` | | 关闭所有活跃连接 |
+| `Destroy` | | 释放所有资源。实例不可复用 |
+
+#### 平台 IO
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `SetTunFd` | `fd: int32` | 设置来自 VpnService/NetworkExtension 的 TUN fd |
+| `SetSocketProtector` | `p: SocketProtector` | 设置 socket 保护器用于 VPN 绕过（`bool Protect(int fd)`） |
+| `SetInterfacesJSON` | `json: string` | 提供来自平台的网络接口数据 |
+| `UpdateDefaultInterface` | `name: string, index: int64, expensive: bool` | 上报当前默认网络接口 |
+| `SetIncludeAllNetworks` | `v: bool` | 设置 iOS includeAllNetworks |
+| `SetWIFIState` | `ssid: string, bssid: string` | 上报当前 WiFi 状态 |
+| `QueryTunOptions` | | 获取 TUN 配置（JSON） |
+
+#### 配置
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `CheckConfig` | `content: string` | 校验 Clash YAML 或 sing-box JSON |
+| `ReloadConfig` | `content: string, ruleSetProxy: string` | 使用新配置内容重载 |
+| `ReloadTUN` | | 仅重载 TUN 接口 |
+| `SetOverridePackages` | `overrideJSON: string` | 设置 VPN 分流应用包名 |
+
+#### 日志
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `SetLogLevel` | `level: int32` | 设置最低日志级别（2=Error … 6=Trace） |
+| `SetError` | `message: string` | 向客户端推送错误消息 |
+| `WriteMessage` | `level: int32, message: string` | 写入自定义日志消息 |
+
+#### 暂停 / 唤醒 / 网络
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `Pause` | | 暂停网络活动 |
+| `Wake` | | 恢复网络活动 |
+| `ResetNetwork` | | 重置所有连接和 DNS 缓存 |
+
+#### 代理控制
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
 | `SelectProxy` | `group: string, tag: string` | 选择代理组中的节点 |
+| `TestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
 | `SetMode` | `mode: string` | 设置路由模式：`rule` / `global` / `direct` |
+| `SetGroupExpand` | `group: string, expand: bool` | 设置代理组展开状态 |
+
+#### 查询
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
 | `QueryProxies` | | 查询代理组（JSON） |
 | `QueryTraffic` | | 查询流量统计（JSON） |
 | `QueryLogs` | | 查询最近日志（JSON） |
 | `QueryConnections` | | 查询活跃连接（JSON） |
-| `TestDelay` | `name: string` | 测试代理延迟。使用代理组配置中的 URL |
-| `SetOnEvent` | `handler: EventHandler` | 设置事件处理器。需实现 `EventHandler` 接口：`void OnEvent(int eventType, String jsonPayload)` |
+| `ClearLogs` | | 清空日志缓冲区 |
+| `GetStartedAt` | | 获取启动时间戳（int64） |
+
+#### 连接管理
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `CloseConnection` | `id: string` | 按 ID 关闭连接 |
+| `CloseAllConnections` | | 关闭所有活跃连接 |
+
+#### 平台查询
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `NeedWIFIState` | → `bool` | 是否需要 WiFi 状态监听 |
+| `NeedFindProcess` | → `bool` | 是否需要进程查找 |
+| `UpdateWIFIState` | | 触发 WiFi 状态更新 |
+| `FlushSystemDNS` | | 刷新系统 DNS 缓存 |
+| `QueryMemoryStats` | | 查询 Go 运行时内存统计（JSON） |
+
+#### 内存
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `SetMemoryLimit` | `bytes: int64` | 设置 Go 运行时软内存限制（0=禁用） |
+
+#### 事件
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `SetOnEvent` | `handler: EventHandler` | 设置事件处理器（`void OnEvent(int eventType, String jsonPayload)`） |
+
+#### 工具
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
 | `Version` | | 获取版本信息（JSON） |
+| `FormatBytes` | `length: int64` | 格式化字节数为可读字符串（静态方法） |
+| `FormatDuration` | `duration: int64` | 格式化时长（毫秒）为可读字符串（静态方法） |
+| `AvailablePort` | `startPort: int32` | 查找下一个可用 TCP 端口（静态方法） |
+| `SetLocale` | `localeID: string` | 设置错误消息语言（静态方法） |
 
 ### 移动端 TUN 集成
 
 **Android（Kotlin）：**
 ```kotlin
 val singcast = Singcast()
-singcast.init(homeDir)
+singcast.init("""{"home_dir":"$homeDir"}""")
 
 // 用户点击连接时 — 启动 VpnService 并传入 TUN fd
 val fd = vpnService.Builder()
@@ -276,7 +429,7 @@ singcast.startWithContent(yamlContent, "")
 **iOS（Swift）：**
 ```swift
 let singcast = Singcast()
-singcast.init(homeDir)
+singcast.init("{\"home_dir\":\"\(homeDir)\"}")
 
 // 用户点击连接时 — 从 NEPacketTunnelProvider 提取 fd
 let fd = tunnelFileDescriptor  // 来自 NetworkExtension

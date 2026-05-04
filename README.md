@@ -82,26 +82,96 @@ Build tags: `with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
 
 All functions return JSON strings. Exported as C-compatible symbols.
 
+### Lifecycle
+
 | Function | Params | Description |
 |----------|--------|-------------|
-| `CoreInit` | `homeDir: string` | Initialize the core runtime |
-| `CoreStart` | `configPath: string, ruleSetProxy: string` | Start with config file. `ruleSetProxy` is URL prefix for rule-set downloads (empty = direct) |
+| `CoreInit` | `optionsJSON: string` | Initialize the core runtime. JSON: `{"home_dir":"/path","log_max_lines":500,"debug":false}` |
 | `CoreStartWithContent` | `content: string, ruleSetProxy: string` | Start with content. Accepts Clash YAML or sing-box JSON |
 | `CoreStop` | | Stop the service |
-| `CoreClose` | | Shutdown and release resources |
-| `CoreReloadConfig` | | Reload config from last used path |
+| `CoreDestroy` | | Shutdown and release resources |
+
+### Config
+
+| Function | Params | Description |
+|----------|--------|-------------|
 | `CoreCheckConfig` | `content: string` | Validate Clash YAML or sing-box JSON |
+| `CoreReloadConfig` | `content: string, ruleSetProxy: string` | Reload with new config content |
+| `CoreReloadTUN` | | Reload TUN interface only |
+| `CoreSetOverridePackages` | `overrideJSON: string` | Set VPN package overrides for split tunneling |
+
+### Logging
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CoreSetLogLevel` | `level: int` | Set minimum log level (2=Error … 6=Trace) |
+| `CoreSetError` | `message: string` | Push error message to clients |
+| `CoreWriteMessage` | `level: int, message: string` | Write custom log message |
+
+### Pause / Wake / Network
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CorePause` | | Suspend network activity |
+| `CoreWake` | | Resume network activity |
+| `CoreResetNetwork` | | Reset all connections and DNS cache |
+
+### Proxy Control
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CoreSelectProxy` | `group: string, tag: string` | Select a proxy node in a group |
+| `CoreTestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
+| `CoreSetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
+| `CoreSetGroupExpand` | `group: string, expand: int` | Set group expand state (0=false, 1=true) |
+
+### Queries
+
+| Function | Params | Description |
+|----------|--------|-------------|
 | `CoreQueryProxies` | | Query proxy groups and nodes (JSON) |
 | `CoreQueryTraffic` | | Query real-time traffic stats (JSON) |
 | `CoreQueryLogs` | | Query recent log entries (JSON) |
 | `CoreQueryConnections` | | Query active connections (JSON) |
-| `CoreSelectProxy` | `group: string, tag: string` | Select a proxy node in a group |
-| `CoreTestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
-| `CoreSetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
+| `CoreQueryTunOptions` | | Query TUN configuration (JSON) |
+| `CoreQueryMemoryStats` | | Query Go runtime memory stats (JSON) |
+| `CoreClearLogs` | | Clear the log buffer |
+| `CoreGetStartedAt` | | Get start timestamp (JSON) |
+
+### Connection Management
+
+| Function | Params | Description |
+|----------|--------|-------------|
 | `CoreCloseConnection` | `id: string` | Close a connection by ID |
 | `CoreCloseAllConnections` | | Close all active connections |
-| `CoreSetCallback` | `cb: pointer` | Set event callback (C function pointer `void (*)(int eventType, const char* jsonPayload)`) |
+
+### Platform
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CoreNeedWIFIState` | → `int` | Whether WIFI state monitoring is required |
+| `CoreNeedFindProcess` | → `int` | Whether process finding is required |
+| `CoreUpdateWIFIState` | | Trigger WIFI state update |
+| `CoreSetIncludeAllNetworks` | `v: int` | Set iOS includeAllNetworks |
+| `CoreSetWIFIState` | `ssid: string, bssid: string` | Report current WiFi state |
+| `CoreFlushSystemDNS` | | Flush system DNS cache |
+
+### Memory
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `CoreSetMemoryLimit` | `bytes: int64` | Set Go runtime soft memory limit (0=disable) |
+
+### Utilities
+
+| Function | Params | Description |
+|----------|--------|-------------|
 | `CoreGetVersion` | | Get version info (JSON) |
+| `CoreSetCallback` | `cb: pointer` | Set event callback (`void (*)(int eventType, const char* jsonPayload)`) |
+| `CoreSetLocale` | `localeID: string` | Set locale for error messages |
+| `CoreFormatBytes` | `length: int64` | Format byte count as human-readable string |
+| `CoreFormatDuration` | `duration: int64` | Format duration (ms) as human-readable string |
+| `CoreAvailablePort` | `startPort: int` | Find next available TCP port |
 
 ### Event Callback
 
@@ -236,34 +306,117 @@ task mobile-all             # All mobile targets
 
 ### API (gomobile)
 
+#### Lifecycle
+
 | Method | Params | Description |
 |--------|--------|-------------|
-| `Init` | `homeDir: string` | Initialize the core runtime |
-| `SetTunFd` | `fd: int32` | Set TUN fd from VpnService/NetworkExtension |
-| `CheckConfig` | `content: string` | Validate Clash YAML or sing-box JSON |
+| `Init` | `optionsJSON: string` | Initialize the core runtime. JSON: `{"home_dir":"/path","log_max_lines":500}` |
 | `StartWithContent` | `content: string, ruleSetProxy: string` | Start with content. Accepts Clash YAML or sing-box JSON |
-| `Start` | `configPath: string, ruleSetProxy: string` | Start with config file |
 | `Stop` | | Stop the service |
-| `Close` | | Release all resources |
-| `ReloadConfig` | | Reload config from last used path |
-| `CloseConnection` | `id: string` | Close a connection by ID |
-| `CloseAllConnections` | | Close all active connections |
+| `Destroy` | | Release all resources. Instance cannot be reused |
+
+#### Platform IO
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `SetTunFd` | `fd: int32` | Set TUN fd from VpnService/NetworkExtension |
+| `SetSocketProtector` | `p: SocketProtector` | Set socket protector for VPN bypass (`bool Protect(int fd)`) |
+| `SetInterfacesJSON` | `json: string` | Provide network interface data from platform |
+| `UpdateDefaultInterface` | `name: string, index: int64, expensive: bool` | Report current default network interface |
+| `SetIncludeAllNetworks` | `v: bool` | Set iOS includeAllNetworks |
+| `SetWIFIState` | `ssid: string, bssid: string` | Report current WiFi state |
+| `QueryTunOptions` | | Get TUN configuration as JSON |
+
+#### Config
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `CheckConfig` | `content: string` | Validate Clash YAML or sing-box JSON |
+| `ReloadConfig` | `content: string, ruleSetProxy: string` | Reload with new config content |
+| `ReloadTUN` | | Reload TUN interface only |
+| `SetOverridePackages` | `overrideJSON: string` | Set VPN package overrides for split tunneling |
+
+#### Logging
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `SetLogLevel` | `level: int32` | Set minimum log level (2=Error … 6=Trace) |
+| `SetError` | `message: string` | Push error message to clients |
+| `WriteMessage` | `level: int32, message: string` | Write custom log message |
+
+#### Pause / Wake / Network
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `Pause` | | Suspend network activity |
+| `Wake` | | Resume network activity |
+| `ResetNetwork` | | Reset all connections and DNS cache |
+
+#### Proxy Control
+
+| Method | Params | Description |
+|--------|--------|-------------|
 | `SelectProxy` | `group: string, tag: string` | Select a proxy node in a group |
+| `TestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
 | `SetMode` | `mode: string` | Set routing mode: `rule` / `global` / `direct` |
+| `SetGroupExpand` | `group: string, expand: bool` | Set group expand state |
+
+#### Queries
+
+| Method | Params | Description |
+|--------|--------|-------------|
 | `QueryProxies` | | Query proxy groups (JSON) |
 | `QueryTraffic` | | Query traffic stats (JSON) |
 | `QueryLogs` | | Query recent logs (JSON) |
 | `QueryConnections` | | Query active connections (JSON) |
-| `TestDelay` | `name: string` | Test proxy delay. Uses URL from group config |
-| `SetOnEvent` | `handler: EventHandler` | Set event handler. Implement the `EventHandler` interface: `void OnEvent(int eventType, String jsonPayload)` |
+| `ClearLogs` | | Clear the log buffer |
+| `GetStartedAt` | | Get start timestamp (int64) |
+
+#### Connection Management
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `CloseConnection` | `id: string` | Close a connection by ID |
+| `CloseAllConnections` | | Close all active connections |
+
+#### Platform Queries
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `NeedWIFIState` | → `bool` | Whether WIFI state monitoring is required |
+| `NeedFindProcess` | → `bool` | Whether process finding is required |
+| `UpdateWIFIState` | | Trigger WIFI state update |
+| `FlushSystemDNS` | | Flush system DNS cache |
+| `QueryMemoryStats` | | Query Go runtime memory stats (JSON) |
+
+#### Memory
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `SetMemoryLimit` | `bytes: int64` | Set Go runtime soft memory limit (0=disable) |
+
+#### Events
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `SetOnEvent` | `handler: EventHandler` | Set event handler (`void OnEvent(int eventType, String jsonPayload)`) |
+
+#### Utilities
+
+| Method | Params | Description |
+|--------|--------|-------------|
 | `Version` | | Get version info (JSON) |
+| `FormatBytes` | `length: int64` | Format byte count as human-readable string (static) |
+| `FormatDuration` | `duration: int64` | Format duration (ms) as human-readable string (static) |
+| `AvailablePort` | `startPort: int32` | Find next available TCP port (static) |
+| `SetLocale` | `localeID: string` | Set locale for error messages (static) |
 
 ### Mobile TUN Integration
 
 **Android (Kotlin):**
 ```kotlin
 val singcast = Singcast()
-singcast.init(homeDir)
+singcast.init("""{"home_dir":"$homeDir"}""")
 
 // When user connects — start VpnService and pass the TUN fd
 val fd = vpnService.Builder()
@@ -276,7 +429,7 @@ singcast.startWithContent(yamlContent, "")
 **iOS (Swift):**
 ```swift
 let singcast = Singcast()
-singcast.init(homeDir)
+singcast.init("{\"home_dir\":\"\(homeDir)\"}")
 
 // When user connects — extract fd from NEPacketTunnelProvider
 let fd = tunnelFileDescriptor  // from NetworkExtension
