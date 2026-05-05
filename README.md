@@ -131,12 +131,10 @@ All functions return JSON strings. Exported as C-compatible symbols.
 |----------|--------|-------------|
 | `CoreQueryProxies` | | Query proxy groups and nodes (JSON) |
 | `CoreQueryTraffic` | | Query real-time traffic stats (JSON) |
-| `CoreQueryLogs` | | Query recent log entries (JSON) |
+| `CoreQueryLogs` | `clear: int` | Query recent log entries (JSON). Pass `1` to clear buffer after query |
 | `CoreQueryConnections` | | Query active connections (JSON) |
 | `CoreQueryTunOptions` | | Query TUN configuration (JSON) |
 | `CoreQueryMemoryStats` | | Query Go runtime memory stats (JSON) |
-| `CoreClearLogs` | | Clear the log buffer |
-| `CoreGetStartedAt` | | Get start timestamp (JSON) |
 
 ### Connection Management
 
@@ -149,11 +147,8 @@ All functions return JSON strings. Exported as C-compatible symbols.
 
 | Function | Params | Description |
 |----------|--------|-------------|
-| `CoreNeedWIFIState` | → `int` | Whether WIFI state monitoring is required |
 | `CoreNeedFindProcess` | → `int` | Whether process finding is required |
-| `CoreUpdateWIFIState` | | Trigger WIFI state update |
-| `CoreSetIncludeAllNetworks` | `v: int` | Set iOS includeAllNetworks |
-| `CoreSetWIFIState` | `ssid: string, bssid: string` | Report current WiFi state |
+| `CoreWriteMessage` | `level: int, message: string` | Write custom log message |
 | `CoreFlushSystemDNS` | | Flush system DNS cache |
 
 ### Memory
@@ -169,9 +164,6 @@ All functions return JSON strings. Exported as C-compatible symbols.
 | `CoreGetVersion` | | Get version info (JSON) |
 | `CoreSetCallback` | `cb: pointer` | Set event callback (`void (*)(int eventType, const char* jsonPayload)`) |
 | `CoreSetLocale` | `localeID: string` | Set locale for error messages |
-| `CoreFormatBytes` | `length: int64` | Format byte count as human-readable string |
-| `CoreFormatDuration` | `duration: int64` | Format duration (ms) as human-readable string |
-| `CoreAvailablePort` | `startPort: int` | Find next available TCP port |
 
 ### Event Callback
 
@@ -196,7 +188,8 @@ The callback receives `(eventType, jsonPayload)`. Event types:
   "memory": 33554432,
   "goroutines": 42,
   "connections_in": 10,
-  "connections_out": 15
+  "connections_out": 15,
+  "started_at": 1746000000
 }
 ```
 
@@ -210,6 +203,7 @@ The callback receives `(eventType, jsonPayload)`. Event types:
 | `goroutines` | int32 | Number of goroutines |
 | `connections_in` | int32 | Inbound connections |
 | `connections_out` | int32 | Outbound connections |
+| `started_at` | int64 | Service start time (unix timestamp) |
 
 #### LogEntry
 
@@ -367,10 +361,8 @@ task mobile-all             # All mobile targets
 |--------|--------|-------------|
 | `QueryProxies` | | Query proxy groups (JSON) |
 | `QueryTraffic` | | Query traffic stats (JSON) |
-| `QueryLogs` | | Query recent logs (JSON) |
+| `QueryLogs` | `clear: bool` | Query recent logs (JSON). Pass `true` to clear buffer after query |
 | `QueryConnections` | | Query active connections (JSON) |
-| `ClearLogs` | | Clear the log buffer |
-| `GetStartedAt` | | Get start timestamp (int64) |
 
 #### Connection Management
 
@@ -386,8 +378,8 @@ task mobile-all             # All mobile targets
 | `NeedWIFIState` | → `bool` | Whether WIFI state monitoring is required |
 | `NeedFindProcess` | → `bool` | Whether process finding is required |
 | `UpdateWIFIState` | | Trigger WIFI state update |
-| `FlushSystemDNS` | | Flush system DNS cache |
 | `QueryMemoryStats` | | Query Go runtime memory stats (JSON) |
+| `FlushSystemDNS` | | Flush system DNS cache |
 
 #### Memory
 
@@ -406,9 +398,6 @@ task mobile-all             # All mobile targets
 | Method | Params | Description |
 |--------|--------|-------------|
 | `Version` | | Get version info (JSON) |
-| `FormatBytes` | `length: int64` | Format byte count as human-readable string (static) |
-| `FormatDuration` | `duration: int64` | Format duration (ms) as human-readable string (static) |
-| `AvailablePort` | `startPort: int32` | Find next available TCP port (static) |
 | `SetLocale` | `localeID: string` | Set locale for error messages (static) |
 
 ### Mobile TUN Integration

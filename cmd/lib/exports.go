@@ -110,23 +110,12 @@ func CoreQueryProxies() *C.char { return cString(api.QueryProxies()) }
 func CoreQueryTraffic() *C.char { return cString(api.QueryTraffic()) }
 
 //export CoreQueryLogs
-func CoreQueryLogs() *C.char { return cString(api.QueryLogs()) }
+func CoreQueryLogs(clear C.int) *C.char {
+	return cString(api.QueryLogs(clear != 0))
+}
 
 //export CoreQueryConnections
 func CoreQueryConnections() *C.char { return cString(api.QueryConnections()) }
-
-//export CoreClearLogs
-func CoreClearLogs() *C.char { return resultJSON(api.ClearLogs()) }
-
-//export CoreGetStartedAt
-func CoreGetStartedAt() *C.char {
-	ts, err := api.GetStartedAt()
-	if err != nil {
-		return resultJSON(err)
-	}
-	data, _ := json.Marshal(map[string]int64{"started_at": ts})
-	return cString(string(data))
-}
 
 // --- Connection Management ---
 
@@ -142,14 +131,6 @@ func CoreCloseAllConnections() *C.char {
 
 // --- Platform Queries ---
 
-//export CoreNeedWIFIState
-func CoreNeedWIFIState() C.int {
-	if api.NeedWIFIState() {
-		return 1
-	}
-	return 0
-}
-
 //export CoreNeedFindProcess
 func CoreNeedFindProcess() C.int {
 	if api.NeedFindProcess() {
@@ -158,22 +139,13 @@ func CoreNeedFindProcess() C.int {
 	return 0
 }
 
-//export CoreUpdateWIFIState
-func CoreUpdateWIFIState() { api.UpdateWIFIState() }
-
-//export CoreSetIncludeAllNetworks
-func CoreSetIncludeAllNetworks(v C.int) { api.SetIncludeAllNetworks(v != 0) }
-
-//export CoreSetWIFIState
-func CoreSetWIFIState(ssid, bssid *C.char) { api.SetWIFIState(goString(ssid), goString(bssid)) }
-
-//export CoreQueryTunOptions
-func CoreQueryTunOptions() *C.char { return cString(api.QueryTunOptions()) }
-
 //export CoreWriteMessage
 func CoreWriteMessage(level C.int, message *C.char) {
 	api.WriteMessage(int32(level), goString(message))
 }
+
+//export CoreQueryTunOptions
+func CoreQueryTunOptions() *C.char { return cString(api.QueryTunOptions()) }
 
 //export CoreFlushSystemDNS
 func CoreFlushSystemDNS() { api.FlushSystemDNS() }
@@ -199,27 +171,7 @@ func CoreGetVersion() *C.char { return cString(api.Version()) }
 //export CoreSetCallback
 func CoreSetCallback(cb unsafe.Pointer) { setCallback(cb) }
 
-// --- Package-level Utilities ---
-
-//export CoreFormatBytes
-func CoreFormatBytes(length C.longlong) *C.char {
-	return cString(ffi.FormatBytes(int64(length)))
-}
-
-//export CoreFormatDuration
-func CoreFormatDuration(duration C.longlong) *C.char {
-	return cString(ffi.FormatDuration(int64(duration)))
-}
-
-//export CoreAvailablePort
-func CoreAvailablePort(startPort C.int) *C.char {
-	port, err := ffi.AvailablePort(int32(startPort))
-	if err != nil {
-		return resultJSON(err)
-	}
-	data, _ := json.Marshal(map[string]any{"ok": true, "port": int64(port)})
-	return cString(string(data))
-}
+// --- Locale ---
 
 //export CoreSetLocale
 func CoreSetLocale(localeID *C.char) { ffi.SetLocale(goString(localeID)) }

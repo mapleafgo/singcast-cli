@@ -26,6 +26,8 @@ type ClientHandler struct {
 	onEvent func(eventType int32, jsonPayload string)
 	mu      sync.Mutex
 
+	startedAt int64 // set after successful service start
+
 	// cached data for query APIs
 	cachedGroups []ProxyGroup
 	cachedStatus *TrafficSnapshot
@@ -37,6 +39,13 @@ type ClientHandler struct {
 // Call SetOnEvent to register the callback.
 func NewClientHandler() *ClientHandler {
 	return &ClientHandler{}
+}
+
+// SetStartedAt records the service start timestamp for inclusion in traffic snapshots.
+func (h *ClientHandler) SetStartedAt(ts int64) {
+	h.mu.Lock()
+	h.startedAt = ts
+	h.mu.Unlock()
 }
 
 // SetOnEvent replaces the event callback.
@@ -161,6 +170,9 @@ func (h *ClientHandler) WriteLogs(messageList libbox.LogIterator) {
 
 // WriteStatus receives traffic and resource usage statistics.
 func (h *ClientHandler) WriteStatus(message *libbox.StatusMessage) {
+	h.mu.Lock()
+	startedAt := h.startedAt
+	h.mu.Unlock()
 	snapshot := TrafficSnapshot{
 		Up:         message.Uplink,
 		Down:       message.Downlink,
@@ -170,6 +182,7 @@ func (h *ClientHandler) WriteStatus(message *libbox.StatusMessage) {
 		Goroutines: message.Goroutines,
 		ConnsIn:    message.ConnectionsIn,
 		ConnsOut:   message.ConnectionsOut,
+		StartedAt:  startedAt,
 	}
 	h.emit(EventTraffic, snapshot)
 }

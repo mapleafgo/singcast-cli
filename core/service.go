@@ -282,6 +282,7 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 	}
 
 	s.commandClient = newClient
+	s.handler.SetStartedAt(time.Now().Unix())
 	// Only update override snapshot on success; on failure they remain unchanged.
 	s.overrideAutoRoute = autoRoute
 	s.overrideInclude = include
@@ -562,17 +563,6 @@ func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
 	return s.withClient(func(c *libbox.CommandClient) error {
 		return c.SetGroupExpand(groupTag, isExpand)
 	})
-}
-
-// GetStartedAt returns the unix timestamp when the service was started.
-func (s *Service) GetStartedAt() (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c, err := s.client()
-	if err != nil {
-		return 0, err
-	}
-	return c.GetStartedAt()
 }
 
 // serverHandler implements libbox.CommandServerHandler with no-op methods.

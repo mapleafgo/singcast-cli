@@ -51,29 +51,23 @@ extern char* CoreSetGroupExpand(const char* group, int expand);
 // --- Queries ---
 extern char* CoreQueryProxies();
 extern char* CoreQueryTraffic();
-extern char* CoreQueryLogs();
+extern char* CoreQueryLogs(int clear);
 extern char* CoreQueryConnections();
-extern char* CoreClearLogs();
-extern char* CoreGetStartedAt();
+extern char* CoreQueryMemoryStats();
 
 // --- Connection Management ---
 extern char* CoreCloseConnection(const char* id);
 extern char* CoreCloseAllConnections();
 
 // --- Platform ---
-extern int  CoreNeedWIFIState();
 extern int  CoreNeedFindProcess();
-extern void CoreUpdateWIFIState();
-extern void CoreSetIncludeAllNetworks(int v);
-extern void CoreSetWIFIState(const char* ssid, const char* bssid);
 extern void CoreWriteMessage(int level, const char* message);
+extern void CoreFlushSystemDNS();
 
 // --- Logging ---
 extern void CoreSetLogLevel(int level);
 extern void CoreSetError(const char* message);
 extern char* CoreSetMemoryLimit(int64_t bytes);
-extern char* CoreQueryMemoryStats();
-extern void CoreFlushSystemDNS();
 
 // --- Version ---
 extern char* CoreGetVersion();
@@ -81,11 +75,8 @@ extern char* CoreGetVersion();
 // --- Events ---
 extern void CoreSetCallback(void* cb);
 
-// --- Utilities ---
-extern char* CoreFormatBytes(int64_t length);
-extern char* CoreFormatDuration(int64_t duration);
-extern char* CoreAvailablePort(int startPort);
-extern void  CoreSetLocale(const char* localeID);
+// --- Locale ---
+extern void CoreSetLocale(const char* localeID);
 
 // --- Memory Management ---
 extern void CoreFreeString(char* s);

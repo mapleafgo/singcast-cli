@@ -180,10 +180,14 @@ func (s *Singcast) QueryTraffic() string {
 }
 
 // QueryLogs returns combined sing-box and core internal logs as JSON.
-func (s *Singcast) QueryLogs() string { return s.svc.QueryLogs() }
-
-// ClearLogs clears the server-side log buffer.
-func (s *Singcast) ClearLogs() error { return s.svc.ClearLogs() }
+// If clear is true, the log buffer is cleared after querying.
+func (s *Singcast) QueryLogs(clear bool) string {
+	result := s.svc.QueryLogs()
+	if clear {
+		_ = s.svc.ClearLogs()
+	}
+	return result
+}
 
 // QueryConnections returns cached connections as JSON.
 func (s *Singcast) QueryConnections() string {
@@ -222,11 +226,6 @@ func (s *Singcast) FlushSystemDNS() { s.svc.FlushSystemDNS() }
 // QueryMemoryStats returns current Go runtime memory statistics as JSON.
 func (s *Singcast) QueryMemoryStats() string { return s.svc.QueryMemoryStats() }
 
-// GetStartedAt returns the unix timestamp when the service was started.
-func (s *Singcast) GetStartedAt() (int64, error) {
-	return s.svc.GetStartedAt()
-}
-
 // --- Memory ---
 
 // SetMemoryLimit sets a soft memory limit for Go runtime OOM protection.
@@ -250,15 +249,6 @@ func (s *Singcast) SetOnEvent(handler EventHandler) {
 }
 
 // --- Package-level Utilities ---
-
-// FormatBytes formats a byte count as a human-readable string.
-func FormatBytes(length int64) string { return libbox.FormatBytes(length) }
-
-// FormatDuration formats a millisecond duration as a human-readable string.
-func FormatDuration(duration int64) string { return libbox.FormatDuration(duration) }
-
-// AvailablePort finds the next available TCP port starting from startPort.
-func AvailablePort(startPort int32) (int32, error) { return libbox.AvailablePort(startPort) }
 
 // SetLocale sets the locale for sing-box internal error messages.
 func SetLocale(localeID string) { libbox.SetLocale(localeID) }

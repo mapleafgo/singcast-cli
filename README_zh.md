@@ -131,12 +131,10 @@ task all
 |------|------|------|
 | `CoreQueryProxies` | | 查询代理组和节点（JSON） |
 | `CoreQueryTraffic` | | 查询实时流量统计（JSON） |
-| `CoreQueryLogs` | | 查询最近日志（JSON） |
+| `CoreQueryLogs` | `clear: int` | 查询最近日志（JSON）。传入 `1` 可在查询后清空缓冲区 |
 | `CoreQueryConnections` | | 查询活跃连接（JSON） |
 | `CoreQueryTunOptions` | | 查询 TUN 配置（JSON） |
 | `CoreQueryMemoryStats` | | 查询 Go 运行时内存统计（JSON） |
-| `CoreClearLogs` | | 清空日志缓冲区 |
-| `CoreGetStartedAt` | | 获取启动时间戳（JSON） |
 
 ### 连接管理
 
@@ -149,11 +147,8 @@ task all
 
 | 函数 | 参数 | 说明 |
 |------|------|------|
-| `CoreNeedWIFIState` | → `int` | 是否需要 WiFi 状态监听 |
 | `CoreNeedFindProcess` | → `int` | 是否需要进程查找 |
-| `CoreUpdateWIFIState` | | 触发 WiFi 状态更新 |
-| `CoreSetIncludeAllNetworks` | `v: int` | 设置 iOS includeAllNetworks |
-| `CoreSetWIFIState` | `ssid: string, bssid: string` | 上报当前 WiFi 状态 |
+| `CoreWriteMessage` | `level: int, message: string` | 写入自定义日志消息 |
 | `CoreFlushSystemDNS` | | 刷新系统 DNS 缓存 |
 
 ### 内存
@@ -169,9 +164,6 @@ task all
 | `CoreGetVersion` | | 获取版本信息（JSON） |
 | `CoreSetCallback` | `cb: pointer` | 设置事件回调（`void (*)(int eventType, const char* jsonPayload)`） |
 | `CoreSetLocale` | `localeID: string` | 设置错误消息语言 |
-| `CoreFormatBytes` | `length: int64` | 格式化字节数为可读字符串 |
-| `CoreFormatDuration` | `duration: int64` | 格式化时长（毫秒）为可读字符串 |
-| `CoreAvailablePort` | `startPort: int` | 查找下一个可用 TCP 端口 |
 
 ### 事件回调
 
@@ -196,7 +188,8 @@ task all
   "memory": 33554432,
   "goroutines": 42,
   "connections_in": 10,
-  "connections_out": 15
+  "connections_out": 15,
+  "started_at": 1746000000
 }
 ```
 
@@ -210,6 +203,7 @@ task all
 | `goroutines` | int32 | 协程数量 |
 | `connections_in` | int32 | 入站连接数 |
 | `connections_out` | int32 | 出站连接数 |
+| `started_at` | int64 | 服务启动时间（unix 时间戳） |
 
 #### LogEntry
 
@@ -367,10 +361,8 @@ task mobile-all             # 所有移动端目标
 |------|------|------|
 | `QueryProxies` | | 查询代理组（JSON） |
 | `QueryTraffic` | | 查询流量统计（JSON） |
-| `QueryLogs` | | 查询最近日志（JSON） |
+| `QueryLogs` | `clear: bool` | 查询最近日志（JSON）。传入 `true` 可在查询后清空缓冲区 |
 | `QueryConnections` | | 查询活跃连接（JSON） |
-| `ClearLogs` | | 清空日志缓冲区 |
-| `GetStartedAt` | | 获取启动时间戳（int64） |
 
 #### 连接管理
 
@@ -386,8 +378,8 @@ task mobile-all             # 所有移动端目标
 | `NeedWIFIState` | → `bool` | 是否需要 WiFi 状态监听 |
 | `NeedFindProcess` | → `bool` | 是否需要进程查找 |
 | `UpdateWIFIState` | | 触发 WiFi 状态更新 |
-| `FlushSystemDNS` | | 刷新系统 DNS 缓存 |
 | `QueryMemoryStats` | | 查询 Go 运行时内存统计（JSON） |
+| `FlushSystemDNS` | | 刷新系统 DNS 缓存 |
 
 #### 内存
 
@@ -406,9 +398,6 @@ task mobile-all             # 所有移动端目标
 | 方法 | 参数 | 说明 |
 |------|------|------|
 | `Version` | | 获取版本信息（JSON） |
-| `FormatBytes` | `length: int64` | 格式化字节数为可读字符串（静态方法） |
-| `FormatDuration` | `duration: int64` | 格式化时长（毫秒）为可读字符串（静态方法） |
-| `AvailablePort` | `startPort: int32` | 查找下一个可用 TCP 端口（静态方法） |
 | `SetLocale` | `localeID: string` | 设置错误消息语言（静态方法） |
 
 ### 移动端 TUN 集成

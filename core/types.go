@@ -10,6 +10,7 @@ type TrafficSnapshot struct {
 	Goroutines int32 `json:"goroutines"`
 	ConnsIn    int32 `json:"connections_in"`
 	ConnsOut   int32 `json:"connections_out"`
+	StartedAt  int64 `json:"started_at,omitempty"`
 }
 
 // ProxyGroup represents a proxy group with its items.
