@@ -259,12 +259,14 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 		s.commandClient = nil
 	}
 
+	slog.Info("[DIAG] calling StartOrReloadService", "bytes", len(jsonContent))
 	if err := s.commandServer.StartOrReloadService(jsonContent, override); err != nil {
 		slog.Error("StartOrReloadService failed", "error", err)
 		s.currentConfig = oldConfig
 		s.state = StateInitialized
 		return fmt.Errorf("start service: %w", err)
 	}
+	slog.Info("[DIAG] StartOrReloadService returned OK")
 
 	opts := &libbox.CommandClientOptions{StatusInterval: int64(time.Second)}
 	opts.AddCommand(libbox.CommandLog)
@@ -273,6 +275,7 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 	opts.AddCommand(libbox.CommandConnections)
 
 	newClient := libbox.NewCommandClient(s.handler, opts)
+	slog.Info("[DIAG] calling commandClient.Connect")
 	if err := newClient.Connect(); err != nil {
 		slog.Error("command client Connect failed", "error", err)
 		s.commandServer.CloseService()
@@ -280,6 +283,7 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 		s.state = StateInitialized
 		return fmt.Errorf("connect command client: %w", err)
 	}
+	slog.Info("[DIAG] commandClient.Connect returned OK")
 
 	s.commandClient = newClient
 	s.handler.SetStartedAt(time.Now().Unix())
