@@ -12,7 +12,7 @@ import (
 	"github.com/mapleafgo/singcast/ffi"
 )
 
-var api = ffi.New()
+var api = ffi.Create()
 
 func resultJSON(err error) *C.char {
 	if err != nil {
