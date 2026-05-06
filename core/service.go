@@ -140,6 +140,11 @@ func (s *Service) Init(optionsJSON string) error {
 
 	slog.Debug("[init] parsed options", "homeDir", opts.HomeDir, "logMaxLines", opts.LogMaxLines, "debug", opts.Debug)
 
+	if opts.Debug {
+		SetLogLevel(5) // Debug
+		slog.Debug("[init] debug mode enabled, log level set to Debug")
+	}
+
 	tempDir := filepath.Join(opts.HomeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -264,6 +269,9 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 // autoRoute/include/exclude are stored as the current override snapshot on success.
 func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOptions, autoRoute bool, include, exclude []string) error {
 	slog.Debug("[startWithJSON] begin", "bytes", len(jsonContent), "state", s.state)
+
+	// 从 config 的 log.level 同步到 coreLogLevel，让 sing-box 日志和内核日志联动。
+	syncLogLevelFromConfig(jsonContent)
 
 	oldConfig := s.currentConfig
 	s.currentConfig = jsonContent

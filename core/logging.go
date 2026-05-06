@@ -112,6 +112,34 @@ func setLogCallback(fn func(int32, string)) {
 	coreLogMu.Unlock()
 }
 
+// syncLogLevelFromConfig parses log.level from sing-box JSON config and
+// sets coreLogLevel to match, so kernel diagnostic logs follow the config.
+func syncLogLevelFromConfig(jsonContent string) {
+	var cfg struct {
+		Log struct {
+			Level string `json:"level"`
+		} `json:"log"`
+	}
+	if err := json.Unmarshal([]byte(jsonContent), &cfg); err != nil {
+		return
+	}
+	switch cfg.Log.Level {
+	case "trace":
+		SetLogLevel(6)
+	case "debug":
+		SetLogLevel(5)
+	case "info":
+		SetLogLevel(4)
+	case "warn":
+		SetLogLevel(3)
+	case "error":
+		SetLogLevel(2)
+	default:
+		return
+	}
+	slog.Debug("[syncLogLevel] synced from config", "configLevel", cfg.Log.Level, "coreLevel", GetLogLevel())
+}
+
 func queryCoreLogs() string {
 	entries := queryCoreLogEntries()
 	if len(entries) == 0 {
