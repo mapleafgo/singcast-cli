@@ -83,7 +83,7 @@ func (p *PlatformIO) ResetTunFd() {
 func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	slog.Info("set socket protector", "registered", fn != nil)
+	slog.Debug("[SetSocketProtector]", "registered", fn != nil)
 	p.protectFn = fn
 }
 
@@ -163,10 +163,10 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	p.mu.Unlock()
 
 	if fd != 0 {
-		slog.Debug("OpenTun", "fd", fd)
+		slog.Debug("[OpenTun] returning fd", "fd", fd, "mtu", options.GetMTU(), "autoRoute", options.GetAutoRoute())
 		return fd, nil
 	}
-	slog.Warn("OpenTun: no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
+	slog.Warn("[OpenTun] no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
 	return 0, os.ErrInvalid
 }
 
@@ -249,18 +249,19 @@ func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdat
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.ifaceListener = listener
-	slog.Debug("StartDefaultInterfaceMonitor", "hasPendingUpdate", p.pendingUpdate != nil)
+	slog.Debug("[StartDefaultInterfaceMonitor] begin", "hasPendingUpdate", p.pendingUpdate != nil, "os", runtime.GOOS)
 
 	if p.pendingUpdate != nil {
-		slog.Debug("applying pending interface update", "name", p.pendingUpdate.name, "index", p.pendingUpdate.index)
+		slog.Debug("[StartDefaultInterfaceMonitor] applying pending update", "name", p.pendingUpdate.name, "index", p.pendingUpdate.index)
 		listener.UpdateDefaultInterface(p.pendingUpdate.name, p.pendingUpdate.index, p.pendingUpdate.expensive, false)
 		p.pendingUpdate = nil
 	} else if runtime.GOOS != "android" && runtime.GOOS != "ios" {
+		slog.Debug("[StartDefaultInterfaceMonitor] starting desktop auto-detect goroutine")
 		ctx, cancel := context.WithCancel(context.Background())
 		p.cancelDetect = cancel
 		go detectDefaultInterface(ctx, listener)
 	} else {
-		slog.Debug("StartDefaultInterfaceMonitor: waiting for UpdateDefaultInterface call")
+		slog.Debug("[StartDefaultInterfaceMonitor] mobile: waiting for UpdateDefaultInterface call")
 	}
 	return nil
 }

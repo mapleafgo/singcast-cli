@@ -122,6 +122,7 @@ func (s *Service) PlatformIO() *PlatformIO { return s.platformIO }
 // Init initializes the libbox runtime and command server.
 // Must be called once after NewService.
 func (s *Service) Init(optionsJSON string) error {
+	slog.Debug("[init] begin", "optionsJSON", optionsJSON)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -137,7 +138,7 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("init: home_dir is required")
 	}
 
-	slog.Info("service init", "homeDir", opts.HomeDir)
+	slog.Debug("[init] parsed options", "homeDir", opts.HomeDir, "logMaxLines", opts.LogMaxLines, "debug", opts.Debug)
 
 	tempDir := filepath.Join(opts.HomeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
@@ -146,6 +147,7 @@ func (s *Service) Init(optionsJSON string) error {
 
 	libboxSetupMu.Lock()
 	if !libboxReady {
+		slog.Debug("[init] calling libbox.Setup")
 		if err := libbox.Setup(&libbox.SetupOptions{
 			BasePath:        opts.HomeDir,
 			WorkingPath:     opts.HomeDir,
@@ -158,14 +160,19 @@ func (s *Service) Init(optionsJSON string) error {
 			return fmt.Errorf("libbox setup: %w", err)
 		}
 		libboxReady = true
+		slog.Debug("[init] libbox.Setup done")
+	} else {
+		slog.Debug("[init] libbox already set up, skipping")
 	}
 	libboxSetupMu.Unlock()
 
+	slog.Debug("[init] creating CommandServer")
 	handler := NewClientHandler()
 	commandServer, err := libbox.NewCommandServer(defaultServerHandler, s.platformIO)
 	if err != nil {
 		return fmt.Errorf("create command server: %w", err)
 	}
+	slog.Debug("[init] starting CommandServer")
 	if err := commandServer.Start(); err != nil {
 		return fmt.Errorf("start command server: %w", err)
 	}
@@ -180,6 +187,7 @@ func (s *Service) Init(optionsJSON string) error {
 
 // StartWithContent starts or restarts the service with raw YAML or JSON config.
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
+	slog.Debug("[StartWithContent] begin", "bytes", len(content), "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -194,13 +202,17 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 }
 
 func (s *Service) startWithContent(content, ruleSetProxy string) error {
-	slog.Info("startWithContent", "bytes", len(content), "proxy", ruleSetProxy, "state", s.state)
+	slog.Debug("[startWithContent] begin", "bytes", len(content), "proxy", ruleSetProxy, "state", s.state)
 
 	data := []byte(content)
-	jsonContent, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
+	format := translator.DetectFormat(data)
+	slog.Debug("[startWithContent] detected format", "format", format)
+
+	jsonContent, err := s.translateConfig(data, format, ruleSetProxy)
 	if err != nil {
 		return err
 	}
+	slog.Debug("[startWithContent] config translated", "jsonBytes", len(jsonContent))
 
 	return s.startWithJSON(jsonContent, &libbox.OverrideOptions{}, false, nil, nil)
 }
@@ -234,13 +246,16 @@ func buildOverrideFromSnapshot(autoRoute bool, include, exclude []string) *libbo
 
 func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, error) {
 	if format == translator.FormatYAML {
+		slog.Debug("[translate] YAML detected, translating to JSON", "proxy", ruleSetProxy)
 		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
 		result, _, err := translator.TranslateWithOptions(data, opts)
 		if err != nil {
 			return "", fmt.Errorf("translate config: %w", err)
 		}
+		slog.Debug("[translate] done", "jsonBytes", len(result))
 		return result, nil
 	}
+	slog.Debug("[translate] already JSON, skipping", "bytes", len(data))
 	return string(data), nil
 }
 
@@ -248,26 +263,28 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 // the command client. Caller must hold s.mu.
 // autoRoute/include/exclude are stored as the current override snapshot on success.
 func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOptions, autoRoute bool, include, exclude []string) error {
-	slog.Info("starting/reloading service", "bytes", len(jsonContent))
+	slog.Debug("[startWithJSON] begin", "bytes", len(jsonContent), "state", s.state)
 
 	oldConfig := s.currentConfig
 	s.currentConfig = jsonContent
 
 	// Disconnect old client BEFORE starting new service to avoid stale callbacks.
 	if s.commandClient != nil {
+		slog.Debug("[startWithJSON] disconnecting old command client")
 		s.commandClient.Disconnect()
 		s.commandClient = nil
 	}
 
-	slog.Info("[DIAG] calling StartOrReloadService", "bytes", len(jsonContent))
+	slog.Debug("[startWithJSON] calling StartOrReloadService")
 	if err := s.commandServer.StartOrReloadService(jsonContent, override); err != nil {
 		slog.Error("StartOrReloadService failed", "error", err)
 		s.currentConfig = oldConfig
 		s.state = StateInitialized
 		return fmt.Errorf("start service: %w", err)
 	}
-	slog.Info("[DIAG] StartOrReloadService returned OK")
+	slog.Debug("[startWithJSON] StartOrReloadService OK")
 
+	slog.Debug("[startWithJSON] creating CommandClient")
 	opts := &libbox.CommandClientOptions{StatusInterval: int64(time.Second)}
 	opts.AddCommand(libbox.CommandLog)
 	opts.AddCommand(libbox.CommandStatus)
@@ -275,7 +292,7 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 	opts.AddCommand(libbox.CommandConnections)
 
 	newClient := libbox.NewCommandClient(s.handler, opts)
-	slog.Info("[DIAG] calling commandClient.Connect")
+	slog.Debug("[startWithJSON] calling CommandClient.Connect")
 	if err := newClient.Connect(); err != nil {
 		slog.Error("command client Connect failed", "error", err)
 		s.commandServer.CloseService()
@@ -283,11 +300,10 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 		s.state = StateInitialized
 		return fmt.Errorf("connect command client: %w", err)
 	}
-	slog.Info("[DIAG] commandClient.Connect returned OK")
+	slog.Debug("[startWithJSON] CommandClient.Connect OK")
 
 	s.commandClient = newClient
 	s.handler.SetStartedAt(time.Now().Unix())
-	// Only update override snapshot on success; on failure they remain unchanged.
 	s.overrideAutoRoute = autoRoute
 	s.overrideInclude = include
 	s.overrideExclude = exclude
@@ -298,21 +314,24 @@ func (s *Service) startWithJSON(jsonContent string, override *libbox.OverrideOpt
 
 // Stop stops the running service. No-op if not running.
 func (s *Service) Stop() error {
+	slog.Debug("[Stop] begin", "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.state != StateRunning {
+		slog.Debug("[Stop] not running, no-op")
 		return nil
 	}
 
-	slog.Info("stopping service")
 	s.platformIO.ResetTunFd()
 
 	if s.commandClient != nil {
+		slog.Debug("[Stop] disconnecting command client")
 		s.commandClient.Disconnect()
 		s.commandClient = nil
 	}
 
+	slog.Debug("[Stop] closing service")
 	err := s.commandServer.CloseService()
 	if err != nil {
 		slog.Error("stop: CloseService error", "error", err)
@@ -329,6 +348,7 @@ func (s *Service) Stop() error {
 
 // Destroy releases all resources. The instance cannot be reused.
 func (s *Service) Destroy() {
+	slog.Debug("[Destroy] begin", "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -336,19 +356,20 @@ func (s *Service) Destroy() {
 		return
 	}
 
-	slog.Info("destroying service")
-
 	if s.state == StateRunning {
+		slog.Debug("[Destroy] closing running service")
 		s.platformIO.ResetTunFd()
 		s.commandServer.CloseService()
 	}
 
 	if s.commandClient != nil {
+		slog.Debug("[Destroy] disconnecting command client")
 		s.commandClient.Disconnect()
 		s.commandClient = nil
 	}
 
 	if s.commandServer != nil {
+		slog.Debug("[Destroy] closing command server")
 		s.commandServer.Close()
 		s.commandServer = nil
 	}
@@ -360,6 +381,7 @@ func (s *Service) Destroy() {
 // ReloadConfig reloads the service with new configuration content.
 // Also works from StateInitialized (first profile activation).
 func (s *Service) ReloadConfig(content, ruleSetProxy string) error {
+	slog.Debug("[ReloadConfig] begin", "bytes", len(content), "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -371,6 +393,7 @@ func (s *Service) ReloadConfig(content, ruleSetProxy string) error {
 
 // ReloadTUN restarts the TUN interface without changing configuration.
 func (s *Service) ReloadTUN() error {
+	slog.Debug("[ReloadTUN] begin", "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -381,7 +404,7 @@ func (s *Service) ReloadTUN() error {
 		return fmt.Errorf("reload TUN: no configuration stored")
 	}
 
-	slog.Info("reloading TUN with existing config", "configBytes", len(s.currentConfig))
+	slog.Debug("[ReloadTUN] reloading with existing config", "configBytes", len(s.currentConfig))
 	override := buildOverrideFromSnapshot(s.overrideAutoRoute, s.overrideInclude, s.overrideExclude)
 	return s.startWithJSON(s.currentConfig, override, s.overrideAutoRoute, s.overrideInclude, s.overrideExclude)
 }
@@ -392,6 +415,7 @@ func (s *Service) ReloadTUN() error {
 // Note: this triggers a full service reload (including TUN rebuild on mobile).
 // Mobile callers must ensure a fresh TUN fd is set via SetTunFd before calling this.
 func (s *Service) SetOverridePackages(overrideJSON string) error {
+	slog.Debug("[SetOverridePackages] begin", "state", s.state)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -406,7 +430,7 @@ func (s *Service) SetOverridePackages(overrideJSON string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("updating override packages", "include", len(cfg.IncludePackages), "exclude", len(cfg.ExcludePackages))
+	slog.Debug("[SetOverridePackages] parsed", "include", len(cfg.IncludePackages), "exclude", len(cfg.ExcludePackages))
 	return s.startWithJSON(s.currentConfig, override, cfg.AutoRedirect, cfg.IncludePackages, cfg.ExcludePackages)
 }
 
