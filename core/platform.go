@@ -163,7 +163,7 @@ func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	p.mu.Unlock()
 
 	if fd != 0 {
-		slog.Debug("[OpenTun] returning fd", "fd", fd, "mtu", options.GetMTU(), "autoRoute", options.GetAutoRoute())
+		slog.Debug("[OpenTun] returning fd", "fd", fd)
 		return fd, nil
 	}
 	slog.Warn("[OpenTun] no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
