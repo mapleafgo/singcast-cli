@@ -354,11 +354,12 @@ func (s *Service) Destroy() {
 }
 
 // ReloadConfig reloads the service with new configuration content.
+// Also works from StateInitialized (first profile activation).
 func (s *Service) ReloadConfig(content, ruleSetProxy string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.state != StateRunning {
+	if s.state != StateInitialized && s.state != StateRunning {
 		return fmt.Errorf("reload config: invalid state %s", s.state)
 	}
 	return s.startWithContent(content, ruleSetProxy)
