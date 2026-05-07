@@ -1,5 +1,7 @@
 package proxy
 
+import "math"
+
 // TranslateTransport translates mihomo transport/underlay configuration to a sing-box
 // transport object. Returns nil if no transport is needed (plain TCP).
 //
@@ -29,7 +31,7 @@ func TranslateTransport(m map[string]any) map[string]any {
 
 	switch network {
 	case "ws":
-		return translateWS(m, wsOpts)
+		return translateWS(wsOpts)
 	case "http":
 		return translateHTTP(m)
 	case "h2":
@@ -42,7 +44,7 @@ func TranslateTransport(m map[string]any) map[string]any {
 }
 
 // translateWS builds a WebSocket transport from ws-opts.
-func translateWS(m map[string]any, wsOpts map[string]any) map[string]any {
+func translateWS(wsOpts map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "ws",
 	}
@@ -58,7 +60,7 @@ func translateWS(m map[string]any, wsOpts map[string]any) map[string]any {
 		transport["headers"] = headers
 	}
 	if maxEarlyData := GetInt(wsOpts, "max-early-data"); maxEarlyData > 0 {
-		transport["max_early_data"] = min(maxEarlyData, 4294967295)
+		transport["max_early_data"] = min(maxEarlyData, math.MaxUint32)
 	}
 
 	return transport

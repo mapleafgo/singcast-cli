@@ -543,25 +543,25 @@ func TestResetTunFd_ClearsCachedOptions(t *testing.T) {
 
 type noOpTunOptions struct{}
 
-func (noOpTunOptions) GetInet4Address() libbox.RoutePrefixIterator              { return nil }
-func (noOpTunOptions) GetInet6Address() libbox.RoutePrefixIterator              { return nil }
-func (noOpTunOptions) GetDNSServerAddress() (*libbox.StringBox, error)          { return nil, nil }
-func (noOpTunOptions) GetMTU() int32                                            { return 0 }
-func (noOpTunOptions) GetAutoRoute() bool                                       { return false }
-func (noOpTunOptions) GetStrictRoute() bool                                     { return false }
-func (noOpTunOptions) GetInet4RouteAddress() libbox.RoutePrefixIterator         { return nil }
-func (noOpTunOptions) GetInet6RouteAddress() libbox.RoutePrefixIterator         { return nil }
-func (noOpTunOptions) GetInet4RouteExcludeAddress() libbox.RoutePrefixIterator  { return nil }
-func (noOpTunOptions) GetInet6RouteExcludeAddress() libbox.RoutePrefixIterator  { return nil }
-func (noOpTunOptions) GetInet4RouteRange() libbox.RoutePrefixIterator           { return nil }
-func (noOpTunOptions) GetInet6RouteRange() libbox.RoutePrefixIterator           { return nil }
-func (noOpTunOptions) GetIncludePackage() libbox.StringIterator                 { return nil }
-func (noOpTunOptions) GetExcludePackage() libbox.StringIterator                 { return nil }
-func (noOpTunOptions) IsHTTPProxyEnabled() bool                                 { return false }
-func (noOpTunOptions) GetHTTPProxyServer() string                               { return "" }
-func (noOpTunOptions) GetHTTPProxyServerPort() int32                            { return 0 }
-func (noOpTunOptions) GetHTTPProxyBypassDomain() libbox.StringIterator          { return nil }
-func (noOpTunOptions) GetHTTPProxyMatchDomain() libbox.StringIterator           { return nil }
+func (noOpTunOptions) GetInet4Address() libbox.RoutePrefixIterator             { return nil }
+func (noOpTunOptions) GetInet6Address() libbox.RoutePrefixIterator             { return nil }
+func (noOpTunOptions) GetDNSServerAddress() (*libbox.StringBox, error)         { return nil, nil }
+func (noOpTunOptions) GetMTU() int32                                           { return 0 }
+func (noOpTunOptions) GetAutoRoute() bool                                      { return false }
+func (noOpTunOptions) GetStrictRoute() bool                                    { return false }
+func (noOpTunOptions) GetInet4RouteAddress() libbox.RoutePrefixIterator        { return nil }
+func (noOpTunOptions) GetInet6RouteAddress() libbox.RoutePrefixIterator        { return nil }
+func (noOpTunOptions) GetInet4RouteExcludeAddress() libbox.RoutePrefixIterator { return nil }
+func (noOpTunOptions) GetInet6RouteExcludeAddress() libbox.RoutePrefixIterator { return nil }
+func (noOpTunOptions) GetInet4RouteRange() libbox.RoutePrefixIterator          { return nil }
+func (noOpTunOptions) GetInet6RouteRange() libbox.RoutePrefixIterator          { return nil }
+func (noOpTunOptions) GetIncludePackage() libbox.StringIterator                { return nil }
+func (noOpTunOptions) GetExcludePackage() libbox.StringIterator                { return nil }
+func (noOpTunOptions) IsHTTPProxyEnabled() bool                                { return false }
+func (noOpTunOptions) GetHTTPProxyServer() string                              { return "" }
+func (noOpTunOptions) GetHTTPProxyServerPort() int32                           { return 0 }
+func (noOpTunOptions) GetHTTPProxyBypassDomain() libbox.StringIterator         { return nil }
+func (noOpTunOptions) GetHTTPProxyMatchDomain() libbox.StringIterator          { return nil }
 
 // --- WiFi state ---
 

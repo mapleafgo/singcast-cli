@@ -337,13 +337,13 @@ func TestTranslateHysteria2(t *testing.T) {
 func TestTranslateTUIC(t *testing.T) {
 	warn, warnings := captureWarn()
 	m := map[string]any{
-		"name":                "tuic-test",
-		"server":              "tuic.example.com",
-		"port":                443,
-		"uuid":                "tuic-uuid",
-		"password":            "tuic-pass",
+		"name":                  "tuic-test",
+		"server":                "tuic.example.com",
+		"port":                  443,
+		"uuid":                  "tuic-uuid",
+		"password":              "tuic-pass",
 		"congestion-controller": "cubic",
-		"sni":                 "tuic.example.com",
+		"sni":                   "tuic.example.com",
 	}
 
 	out := TranslateTUIC(m, warn)

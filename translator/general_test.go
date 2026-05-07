@@ -100,8 +100,8 @@ func TestTranslateGeneralMultiplePorts(t *testing.T) {
 	}
 
 	wantTypes := []struct {
-		typ string
-		tag string
+		typ  string
+		tag  string
 		port int
 	}{
 		{"mixed", "mixed-in", 7890},
@@ -125,9 +125,9 @@ func TestTranslateGeneralMultiplePorts(t *testing.T) {
 
 func TestTranslateGeneralFindProcess(t *testing.T) {
 	tests := []struct {
-		name  string
-		mode  string
-		want  bool
+		name string
+		mode string
+		want bool
 	}{
 		{"always enables find_process", "always", true},
 		{"strict enables find_process", "strict", true},
@@ -154,7 +154,7 @@ func TestTranslateGeneralFindProcess(t *testing.T) {
 
 func TestTranslateGeneralInterface(t *testing.T) {
 	cfg := &RawConfig{
-		Interface:  "eth0",
+		Interface:   "eth0",
 		RoutingMark: 1234,
 	}
 	result := &singboxConfig{}

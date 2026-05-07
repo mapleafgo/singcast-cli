@@ -73,8 +73,8 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	fmt.Fprintln(os.Stderr, b.String())
 
 	entry := LogEntry{
-		Level:   slogToCoreLevel(r.Level),
-		Message: b.String(),
+		Level:     slogToCoreLevel(r.Level),
+		Message:   b.String(),
 		Timestamp: r.Time.UnixMilli(),
 	}
 
@@ -183,7 +183,7 @@ func queryCoreLogEntries() []LogEntry {
 	}
 	entries := make([]LogEntry, 0, coreLogLen)
 	start := (coreLogPos - coreLogLen + maxCoreLogEntries) % maxCoreLogEntries
-	for i := 0; i < coreLogLen; i++ {
+	for i := range coreLogLen {
 		entries = append(entries, coreLogRing[(start+i)%maxCoreLogEntries])
 	}
 	return entries

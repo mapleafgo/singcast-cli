@@ -1,7 +1,15 @@
 package translator
 
 import (
+	"math"
+
 	"github.com/mapleafgo/singcast/translator/proxy"
+)
+
+const (
+	maxGroupInterval    = 86400 // 24 hours
+	maxGroupIdleTimeout = 1800  // 30 minutes
+	maxTolerance        = math.MaxUint16
 )
 
 // translateGroups translates mihomo proxy-groups to sing-box outbounds.
@@ -101,12 +109,12 @@ func translateURLTestGroup(name string, proxies []string, g map[string]any) map[
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval, 1800)),
+		"idle_timeout":                proxy.SecondsToDuration(max(interval, maxGroupIdleTimeout)),
 		"interrupt_exist_connections": true,
 	}
 
 	if tol, ok := toInt(g["tolerance"]); ok && tol > 0 {
-		result["tolerance"] = min(tol, 65535)
+		result["tolerance"] = min(tol, maxTolerance)
 	}
 
 	return result
@@ -121,8 +129,8 @@ func translateFallbackGroup(name string, proxies []string, g map[string]any) map
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval, 1800)),
-		"tolerance":                   65535, // uint16 max, approx 65s
+		"idle_timeout":                proxy.SecondsToDuration(max(interval, maxGroupIdleTimeout)),
+		"tolerance":                   maxTolerance,
 		"interrupt_exist_connections": true,
 	}
 }
@@ -134,7 +142,7 @@ func groupURLDefaults(g map[string]any) (string, int) {
 	}
 	interval := 180
 	if iv, ok := toInt(g["interval"]); ok && iv > 0 {
-		interval = min(iv, 86400)
+		interval = min(iv, maxGroupInterval)
 	}
 	return url, interval
 }

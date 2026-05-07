@@ -84,12 +84,12 @@ func resetLibboxForTesting() {
 //	  └── Stop ←─────────────────────────────────────────────────────┘
 //	Destroy is terminal; the instance cannot be reused.
 type Service struct {
-	mu              sync.Mutex
-	state           State
-	commandServer   *libbox.CommandServer
-	commandClient   *libbox.CommandClient
-	handler         *ClientHandler
-	platformIO      *PlatformIO
+	mu                sync.Mutex
+	state             State
+	commandServer     *libbox.CommandServer
+	commandClient     *libbox.CommandClient
+	handler           *ClientHandler
+	platformIO        *PlatformIO
 	currentConfig     string // translated sing-box JSON (kept for ReloadTUN)
 	overrideAutoRoute bool
 	overrideInclude   []string
@@ -142,7 +142,7 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
-if !libboxReady {
+	if !libboxReady {
 		slog.Debug("[init] calling libbox.Setup")
 		if err := libbox.Setup(&libbox.SetupOptions{
 			BasePath:        opts.HomeDir,

@@ -14,8 +14,8 @@ type mockLogIterator struct {
 	index int
 }
 
-func (m *mockLogIterator) Len() int32     { return int32(len(m.items)) }
-func (m *mockLogIterator) HasNext() bool  { return m.index < len(m.items) }
+func (m *mockLogIterator) Len() int32    { return int32(len(m.items)) }
+func (m *mockLogIterator) HasNext() bool { return m.index < len(m.items) }
 func (m *mockLogIterator) Next() *libbox.LogEntry {
 	if m.index >= len(m.items) {
 		return nil
@@ -128,11 +128,11 @@ func TestHandler_WriteLogsLevelFilter(t *testing.T) {
 
 	h.WriteLogs(&mockLogIterator{
 		items: []*libbox.LogEntry{
-			{Level: 2, Message: "error"},  // Error → pass
-			{Level: 3, Message: "warn"},   // Warn → pass
-			{Level: 4, Message: "info"},   // Info → pass
-			{Level: 5, Message: "debug"},  // Debug → filtered
-			{Level: 6, Message: "trace"},  // Trace → filtered
+			{Level: 2, Message: "error"}, // Error → pass
+			{Level: 3, Message: "warn"},  // Warn → pass
+			{Level: 4, Message: "info"},  // Info → pass
+			{Level: 5, Message: "debug"}, // Debug → filtered
+			{Level: 6, Message: "trace"}, // Trace → filtered
 		},
 	})
 

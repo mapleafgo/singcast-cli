@@ -1,6 +1,10 @@
 package proxy
 
-import "strings"
+import (
+	"strings"
+)
+
+const maxHopInterval = 3600 // 1 hour
 
 // TranslateHysteria2 translates a mihomo Hysteria2 proxy config to a sing-box outbound.
 // TLS is always enabled for Hysteria2.
@@ -52,7 +56,7 @@ func TranslateHysteria2(m map[string]any, warn func(string)) map[string]any {
 
 	// Hop interval (seconds -> duration string)
 	if hopInterval := GetInt(m, "hop-interval"); hopInterval > 0 {
-		outbound["hop_interval"] = SecondsToDuration(min(hopInterval, 3600))
+		outbound["hop_interval"] = SecondsToDuration(min(hopInterval, maxHopInterval))
 	}
 
 	outbound["tls"] = BuildAlwaysOnTLS(m)

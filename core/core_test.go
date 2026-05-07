@@ -208,7 +208,8 @@ func TestServiceDoubleInit(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewService()
 
-	if err := svc.Init(initJSON(filepath.Join(tmpDir, "home1"))); err != nil {		t.Fatalf("first Init: %v", err)
+	if err := svc.Init(initJSON(filepath.Join(tmpDir, "home1"))); err != nil {
+		t.Fatalf("first Init: %v", err)
 	}
 	if err := svc.Init(initJSON(filepath.Join(tmpDir, "home2"))); err == nil {
 		t.Fatal("second Init on same instance should return error")

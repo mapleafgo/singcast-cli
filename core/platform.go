@@ -27,6 +27,9 @@ type PlatformIO struct {
 	// Socket protector from mobile platform (Android VpnService.protect).
 	protectFn func(fd int32) bool
 
+	// noProtectorLogged suppresses repeated "no socket protector" warnings.
+	noProtectorLogged bool
+
 	// Interface data from mobile platform (JSON string).
 	interfacesJSON string
 
@@ -85,6 +88,7 @@ func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
 	defer p.mu.Unlock()
 	slog.Debug("[SetSocketProtector]", "registered", fn != nil)
 	p.protectFn = fn
+	p.noProtectorLogged = false
 }
 
 // SetIncludeAllNetworks sets whether the VPN configuration uses includeAllNetworks (iOS).
@@ -150,8 +154,9 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
 		if !ok {
 			return fmt.Errorf("protect fd %d failed", fd)
 		}
-	} else {
-		slog.Warn("AutoDetectInterfaceControl: no socket protector", "fd", fd)
+	} else if !p.noProtectorLogged {
+		p.noProtectorLogged = true
+		slog.Warn("AutoDetectInterfaceControl: no socket protector registered, subsequent warnings suppressed")
 	}
 	return nil
 }
@@ -362,7 +367,7 @@ func detectDefaultInterface(ctx context.Context, listener libbox.InterfaceUpdate
 		return
 	}
 	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := range 5 {
 		select {
 		case <-ctx.Done():
 			slog.Debug("detect interface: cancelled")
@@ -451,6 +456,16 @@ func parseInterfacesJSON(jsonStr string) (libbox.NetworkInterfaceIterator, error
 	return &networkInterfaceIterator{items: result}, nil
 }
 
+// POSIX network interface flag bits (decimal values for cross-platform portability).
+const (
+	iffUP           int32 = 0x1
+	iffBroadcast    int32 = 0x2
+	iffLoopback     int32 = 0x8
+	iffPointToPoint int32 = 0x10
+	iffRunning      int32 = 0x40
+	iffMulticast    int32 = 0x1000
+)
+
 func buildDesktopInterfaces(ifaces []net.Interface) (libbox.NetworkInterfaceIterator, error) {
 	var result []*libbox.NetworkInterface
 	for _, iface := range ifaces {
@@ -469,22 +484,22 @@ func buildDesktopInterfaces(ifaces []net.Interface) (libbox.NetworkInterfaceIter
 
 		var flags int32
 		if iface.Flags&net.FlagUp != 0 {
-			flags |= 0x1 // IFF_UP
+			flags |= iffUP
 		}
 		if iface.Flags&net.FlagRunning != 0 {
-			flags |= 0x40 // IFF_RUNNING
+			flags |= iffRunning
 		}
 		if iface.Flags&net.FlagBroadcast != 0 {
-			flags |= 0x2 // IFF_BROADCAST
+			flags |= iffBroadcast
 		}
 		if iface.Flags&net.FlagLoopback != 0 {
-			flags |= 0x8 // IFF_LOOPBACK
+			flags |= iffLoopback
 		}
 		if iface.Flags&net.FlagPointToPoint != 0 {
-			flags |= 0x10 // IFF_POINTOPOINT
+			flags |= iffPointToPoint
 		}
 		if iface.Flags&net.FlagMulticast != 0 {
-			flags |= 0x1000 // IFF_MULTICAST
+			flags |= iffMulticast
 		}
 
 		result = append(result, &libbox.NetworkInterface{

@@ -8,31 +8,31 @@ import (
 
 // supportedSSCiphers lists the Shadowsocks ciphers supported by sing-box.
 var supportedSSCiphers = map[string]bool{
-	"aes-128-gcm":                      true,
-	"aes-192-gcm":                      true,
-	"aes-256-gcm":                      true,
-	"chacha20-ietf-poly1305":           true,
-	"xchacha20-ietf-poly1305":          true,
-	"2022-blake3-aes-128-gcm":          true,
-	"2022-blake3-aes-256-gcm":          true,
-	"2022-blake3-chacha20-poly1305":    true,
+	"aes-128-gcm":                   true,
+	"aes-192-gcm":                   true,
+	"aes-256-gcm":                   true,
+	"chacha20-ietf-poly1305":        true,
+	"xchacha20-ietf-poly1305":       true,
+	"2022-blake3-aes-128-gcm":       true,
+	"2022-blake3-aes-256-gcm":       true,
+	"2022-blake3-chacha20-poly1305": true,
 }
 
 // unsupportedSSCiphers lists ciphers that sing-box does not support.
 var unsupportedSSCiphers = map[string]bool{
-	"rc4-md5":            true,
-	"chacha20-ietf":      true,
-	"aes-128-cfb":        true,
-	"aes-192-cfb":        true,
-	"aes-256-cfb":        true,
-	"aes-128-ctr":        true,
-	"aes-192-ctr":        true,
-	"aes-256-ctr":        true,
-	"none":               true,
-	"chacha20":           true,
-	"aes-128-ofb":        true,
-	"aes-192-ofb":        true,
-	"aes-256-ofb":        true,
+	"rc4-md5":       true,
+	"chacha20-ietf": true,
+	"aes-128-cfb":   true,
+	"aes-192-cfb":   true,
+	"aes-256-cfb":   true,
+	"aes-128-ctr":   true,
+	"aes-192-ctr":   true,
+	"aes-256-ctr":   true,
+	"none":          true,
+	"chacha20":      true,
+	"aes-128-ofb":   true,
+	"aes-192-ofb":   true,
+	"aes-256-ofb":   true,
 }
 
 // TranslateShadowsocks translates a mihomo Shadowsocks proxy config to a sing-box outbound.
@@ -91,7 +91,7 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 	}
 
 	// Multiplex
-	applyMultiplex(m, outbound, warn)
+	applyMultiplex(m, outbound)
 
 	return outbound
 }

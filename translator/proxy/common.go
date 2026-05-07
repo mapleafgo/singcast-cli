@@ -45,15 +45,8 @@ func GetInt(m map[string]any, key string) int {
 
 // GetBool retrieves a bool value from a map. Returns false if key is missing or not a bool.
 func GetBool(m map[string]any, key string) bool {
-	v, ok := m[key]
-	if !ok {
-		return false
-	}
-	b, ok := v.(bool)
-	if ok {
-		return b
-	}
-	return false
+	b, _ := m[key].(bool)
+	return b
 }
 
 // GetMap retrieves a map[string]any value from a map. Returns nil if key is missing or not a map.
@@ -176,7 +169,7 @@ func ParseBandwidth(s string) int {
 
 // applyMultiplex translates mihomo smux configuration to sing-box multiplex.
 // See mapping doc section B.4.
-func applyMultiplex(m map[string]any, outbound map[string]any, warn func(string)) {
+func applyMultiplex(m map[string]any, outbound map[string]any) {
 	smux := GetMap(m, "smux")
 	if smux == nil {
 		return

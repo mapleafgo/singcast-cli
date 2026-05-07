@@ -10,13 +10,13 @@ type singboxConfig struct {
 }
 
 type singboxRoute struct {
-	Rules                []map[string]any  `json:"rules"`
-	RuleSet              []map[string]any  `json:"rule_set,omitempty"`
-	Final                string            `json:"final,omitempty"`
-	AutoDetectInterface  bool              `json:"auto_detect_interface,omitempty"`
-	FindProcess          bool              `json:"find_process,omitempty"`
-	DefaultInterface     string            `json:"default_interface,omitempty"`
-	DefaultMark          uint32            `json:"default_mark,omitempty"`
+	Rules                 []map[string]any `json:"rules"`
+	RuleSet               []map[string]any `json:"rule_set,omitempty"`
+	Final                 string           `json:"final,omitempty"`
+	AutoDetectInterface   bool             `json:"auto_detect_interface,omitempty"`
+	FindProcess           bool             `json:"find_process,omitempty"`
+	DefaultInterface      string           `json:"default_interface,omitempty"`
+	DefaultMark           uint32           `json:"default_mark,omitempty"`
 	DefaultDomainResolver string           `json:"default_domain_resolver,omitempty"`
 }
 

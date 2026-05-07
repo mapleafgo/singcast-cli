@@ -9,12 +9,12 @@ import (
 
 // Event type constants passed to the onEvent callback.
 const (
-	EventTraffic     = 0
-	EventLogs        = 1
-	EventConnections = 2
-	EventProxyUpdate = 3
-	EventModeUpdate  = 4
-	EventCoreLog     = 6
+	EventTraffic      = 0
+	EventLogs         = 1
+	EventConnections  = 2
+	EventProxyUpdate  = 3
+	EventModeUpdate   = 4
+	EventCoreLog      = 6
 	EventConnected    = 7
 	EventDisconnected = 8
 )

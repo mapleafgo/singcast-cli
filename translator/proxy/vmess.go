@@ -59,7 +59,7 @@ func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
 	}
 
 	// Multiplex
-	applyMultiplex(m, outbound, warn)
+	applyMultiplex(m, outbound)
 
 	return outbound
 }
