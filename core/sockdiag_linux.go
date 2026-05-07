@@ -22,6 +22,12 @@ const (
 
 var sockDiagMu sync.Mutex
 
+// netlinkUnavailable is set true after the first EPERM/EPFNOSUPPORT
+// from syscall.Socket(AF_NETLINK), so we stop retrying on Android where
+// untrusted_app SELinux denies netlink_tcpdiag_socket.
+var netlinkUnavailable bool
+var netlinkUnavailableErr error
+
 // sockDiagPool reuses 64KB read buffers across queries to avoid per-call allocation.
 // Although queries are serialized by sockDiagMu (reducing concurrent Pool benefit),
 // the Pool still eliminates heap allocation on every call.
@@ -71,8 +77,14 @@ func querySockDiag(family, protocol uint8, srcIP net.IP, srcPort uint16, dstIP n
 	sockDiagMu.Lock()
 	defer sockDiagMu.Unlock()
 
+	if netlinkUnavailable {
+		return 0, 0, fmt.Errorf("open netlink: unavailable (previously: %w)", netlinkUnavailableErr)
+	}
+
 	fd, err := syscall.Socket(syscall.AF_NETLINK, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, syscall.NETLINK_INET_DIAG)
 	if err != nil {
+		netlinkUnavailable = true
+		netlinkUnavailableErr = err
 		return 0, 0, fmt.Errorf("open netlink: %w", err)
 	}
 	defer syscall.Close(fd)

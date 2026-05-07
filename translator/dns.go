@@ -48,7 +48,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	if len(psnTags) > 0 {
 		domainResolverTags = psnTags
 	}
-	_ = buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result, warn)
+	directNSTags := buildDNSServerEntries(dns.DirectNameserver, "dn-", "", result, warn)
 
 	// Set route.default_domain_resolver: used by sing-box to resolve outbound (proxy) server domains.
 	// This is the official sing-box mechanism for the DNS chicken-and-egg problem.
@@ -208,12 +208,18 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		fbTag := fallbackTags[0]
 		ff := dns.FallbackFilter
 
-		// geosite rules → route to fallback
+		// geosite rules → route to direct-nameserver if available (avoids proxy
+		geositeSrvTag := fbTag
+		if len(directNSTags) > 0 {
+			geositeSrvTag = directNSTags[0]
+		} else if len(defaultServerTags) > 0 {
+			geositeSrvTag = preferUDPServer(defaultServerTags, result)
+		}
 		for _, gs := range ff.GeoSite {
 			rsName := "geosite-" + gs
 			result.Rules = append(result.Rules, map[string]any{
 				"rule_set": []string{rsName},
-				"server":   fbTag,
+				"server":   geositeSrvTag,
 			})
 			ensureRuleSetDef(rsName, "geosite", gs, t)
 		}
