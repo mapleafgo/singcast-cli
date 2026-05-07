@@ -50,13 +50,16 @@ func TestOpenTun_ReturnsExternalFd(t *testing.T) {
 	}
 }
 
-func TestOpenTun_ConsumesFd(t *testing.T) {
+func TestOpenTun_ReusesFd(t *testing.T) {
 	p := newPlatform()
 	p.SetTunFd(42)
-	_, _ = p.OpenTun(nil)
 	_, err := p.OpenTun(nil)
-	if err == nil {
-		t.Fatal("second OpenTun should fail after fd was consumed")
+	if err != nil {
+		t.Fatalf("first OpenTun failed: %v", err)
+	}
+	_, err = p.OpenTun(nil)
+	if err != nil {
+		t.Fatalf("second OpenTun should succeed, fd is retained: %v", err)
 	}
 }
 
