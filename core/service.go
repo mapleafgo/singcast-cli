@@ -376,19 +376,6 @@ func (s *Service) Destroy() {
 	slog.Info("service destroyed")
 }
 
-// ReloadConfig reloads the service with new configuration content.
-// Also works from StateInitialized (first profile activation).
-func (s *Service) ReloadConfig(content, ruleSetProxy string) error {
-	slog.Debug("[ReloadConfig] begin", "bytes", len(content), "state", s.state)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state != StateInitialized && s.state != StateRunning {
-		return fmt.Errorf("reload config: invalid state %s", s.state)
-	}
-	return s.startWithContent(content, ruleSetProxy)
-}
-
 // ReloadTUN restarts the TUN interface without changing configuration.
 func (s *Service) ReloadTUN() error {
 	slog.Debug("[ReloadTUN] begin", "state", s.state)

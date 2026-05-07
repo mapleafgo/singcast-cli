@@ -124,11 +124,6 @@ func (s *Singcast) ResetNetwork() { s.svc.ResetNetwork() }
 
 // --- Config ---
 
-// ReloadConfig reloads the service with new configuration.
-func (s *Singcast) ReloadConfig(content, ruleSetProxy string) error {
-	return s.svc.ReloadConfig(content, ruleSetProxy)
-}
-
 // ReloadTUN restarts the TUN interface without changing configuration.
 func (s *Singcast) ReloadTUN() error { return s.svc.ReloadTUN() }
 

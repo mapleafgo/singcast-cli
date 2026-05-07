@@ -227,19 +227,6 @@ func TestDetectFormat_PassThrough(t *testing.T) {
 	}
 }
 
-// TestReloadConfig_NotInitialized verifies ReloadConfig returns error on uninitialized service.
-func TestReloadConfig_NotInitialized(t *testing.T) {
-	svc := NewService() // StateCreated
-
-	err := svc.ReloadConfig(minimalYAML, "")
-	if err == nil {
-		t.Fatal("ReloadConfig should return error when not initialized")
-	}
-	if !strings.Contains(err.Error(), "invalid state") {
-		t.Errorf("ReloadConfig error = %q, want state error", err.Error())
-	}
-}
-
 // TestReloadTUN_NotInitialized verifies ReloadTUN returns error on uninitialized service.
 func TestReloadTUN_NotInitialized(t *testing.T) {
 	svc := NewService() // StateCreated

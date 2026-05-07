@@ -47,11 +47,6 @@ func CoreCheckConfig(content *C.char) *C.char {
 	return resultJSON(api.CheckConfig(goString(content)))
 }
 
-//export CoreReloadConfig
-func CoreReloadConfig(content, ruleSetProxy *C.char) *C.char {
-	return resultJSON(api.ReloadConfig(goString(content), goString(ruleSetProxy)))
-}
-
 //export CoreReloadTUN
 func CoreReloadTUN() *C.char { return resultJSON(api.ReloadTUN()) }
 
