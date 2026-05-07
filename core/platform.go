@@ -64,9 +64,6 @@ func NewPlatformIO() *PlatformIO {
 func (p *PlatformIO) SetTunFd(fd int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.tunFd != 0 && p.tunFd != fd {
-		closeFd(p.tunFd)
-	}
 	p.tunFd = fd
 	if fd != 0 {
 		p.externalTun = true
@@ -78,9 +75,6 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 func (p *PlatformIO) ResetTunFd() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.tunFd != 0 {
-		closeFd(p.tunFd)
-	}
 	oldFd := p.tunFd
 	p.tunFd = 0
 	p.externalTun = false
@@ -170,17 +164,15 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int32) error {
 func (p *PlatformIO) OpenTun(options libbox.TunOptions) (int32, error) {
 	p.mu.Lock()
 	fd := p.tunFd
+	if fd != 0 {
+		p.tunFd = 0
+	}
 	p.tunOptions = options
 	p.mu.Unlock()
 
 	if fd != 0 {
-		duped, err := dupFd(fd)
-		if err != nil {
-			slog.Error("[OpenTun] dup failed", "fd", fd, "error", err)
-			return 0, fmt.Errorf("dup tun fd: %w", err)
-		}
-		slog.Debug("[OpenTun] returning duped fd", "original", fd, "duped", duped)
-		return duped, nil
+		slog.Debug("[OpenTun] returning fd", "fd", fd)
+		return fd, nil
 	}
 	slog.Warn("[OpenTun] no TUN fd available; mobile platforms must call SetTunFd before starting/reloading")
 	return 0, os.ErrInvalid
