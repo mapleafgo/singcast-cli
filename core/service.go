@@ -68,16 +68,11 @@ func (s State) String() string {
 	}
 }
 
-// libboxSetupMu guards the process-wide libbox.Setup call.
-var libboxSetupMu sync.Mutex
-
 // libboxReady is true after a successful libbox.Setup.
 var libboxReady bool
 
 func resetLibboxForTesting() {
-	libboxSetupMu.Lock()
 	libboxReady = false
-	libboxSetupMu.Unlock()
 }
 
 // Service manages the sing-box service lifecycle.
@@ -147,8 +142,7 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
-	libboxSetupMu.Lock()
-	if !libboxReady {
+if !libboxReady {
 		slog.Debug("[init] calling libbox.Setup")
 		if err := libbox.Setup(&libbox.SetupOptions{
 			BasePath:        opts.HomeDir,
@@ -158,7 +152,6 @@ func (s *Service) Init(optionsJSON string) error {
 			Debug:           opts.Debug,
 			FixAndroidStack: opts.FixAndroidStack,
 		}); err != nil {
-			libboxSetupMu.Unlock()
 			return fmt.Errorf("libbox setup: %w", err)
 		}
 		libboxReady = true
@@ -166,7 +159,6 @@ func (s *Service) Init(optionsJSON string) error {
 	} else {
 		slog.Debug("[init] libbox already set up, skipping")
 	}
-	libboxSetupMu.Unlock()
 
 	slog.Debug("[init] creating CommandServer")
 	handler := NewClientHandler()
