@@ -115,16 +115,19 @@ func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
 // detected by the mobile platform.
 func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	slog.Debug("UpdateDefaultInterface", "name", name, "index", index, "expensive", expensive, "hasListener", p.ifaceListener != nil)
 	upd := &ifaceUpdate{name: name, index: int32(index), expensive: expensive}
-	if p.ifaceListener != nil {
-		slog.Debug("UpdateDefaultInterface: calling listener")
-		p.ifaceListener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
-	} else {
+	if p.ifaceListener == nil {
 		slog.Debug("UpdateDefaultInterface: storing pending update")
 		p.pendingUpdate = upd
+		p.mu.Unlock()
+		return
 	}
+	listener := p.ifaceListener
+	p.mu.Unlock()
+
+	slog.Debug("UpdateDefaultInterface: calling listener")
+	listener.UpdateDefaultInterface(upd.name, upd.index, upd.expensive, false)
 }
 
 // libbox.PlatformInterface implementation.
@@ -247,22 +250,29 @@ func (p *PlatformIO) UseProcFS() bool { return false }
 
 func (p *PlatformIO) StartDefaultInterfaceMonitor(listener libbox.InterfaceUpdateListener) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.ifaceListener = listener
 	slog.Debug("[StartDefaultInterfaceMonitor] begin", "hasPendingUpdate", p.pendingUpdate != nil, "os", runtime.GOOS)
 
+	var pending *ifaceUpdate
 	if p.pendingUpdate != nil {
-		slog.Debug("[StartDefaultInterfaceMonitor] applying pending update", "name", p.pendingUpdate.name, "index", p.pendingUpdate.index)
-		listener.UpdateDefaultInterface(p.pendingUpdate.name, p.pendingUpdate.index, p.pendingUpdate.expensive, false)
+		pending = p.pendingUpdate
 		p.pendingUpdate = nil
 	} else if runtime.GOOS != "android" && runtime.GOOS != "ios" {
 		slog.Debug("[StartDefaultInterfaceMonitor] starting desktop auto-detect goroutine")
 		ctx, cancel := context.WithCancel(context.Background())
 		p.cancelDetect = cancel
+		p.mu.Unlock()
 		go detectDefaultInterface(ctx, listener)
+		return nil
 	} else {
 		slog.Debug("[StartDefaultInterfaceMonitor] mobile: waiting for UpdateDefaultInterface call")
+		p.mu.Unlock()
+		return nil
 	}
+	p.mu.Unlock()
+
+	slog.Debug("[StartDefaultInterfaceMonitor] applying pending update", "name", pending.name, "index", pending.index)
+	listener.UpdateDefaultInterface(pending.name, pending.index, pending.expensive, false)
 	return nil
 }
 
