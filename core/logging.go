@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,6 +68,9 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 		fmt.Fprintf(&b, " %s=%v", a.Key, a.Value)
 		return true
 	})
+
+	// Always mirror to stderr for debugging (gomobile forwards to Android logcat).
+	fmt.Fprintln(os.Stderr, b.String())
 
 	entry := LogEntry{
 		Level:   slogToCoreLevel(r.Level),
