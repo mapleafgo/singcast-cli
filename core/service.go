@@ -122,7 +122,6 @@ func (s *Service) PlatformIO() *PlatformIO { return s.platformIO }
 // Init initializes the libbox runtime and command server.
 // Must be called once after NewService.
 func (s *Service) Init(optionsJSON string) error {
-	slog.Debug("[init] begin", "optionsJSON", optionsJSON)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -138,12 +137,10 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("init: home_dir is required")
 	}
 
-	slog.Debug("[init] parsed options", "homeDir", opts.HomeDir, "logMaxLines", opts.LogMaxLines, "debug", opts.Debug)
-
 	if opts.Debug {
-		SetLogLevel(5) // Debug
-		slog.Debug("[init] debug mode enabled, log level set to Debug")
+		SetLogLevel(LogLevelDebug)
 	}
+	slog.Debug("[init] begin", "homeDir", opts.HomeDir, "logMaxLines", opts.LogMaxLines, "debug", opts.Debug)
 
 	tempDir := filepath.Join(opts.HomeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
@@ -215,6 +212,7 @@ func (s *Service) startWithContent(content, ruleSetProxy string) error {
 
 	jsonContent, err := s.translateConfig(data, format, ruleSetProxy)
 	if err != nil {
+		slog.Error("[startWithContent] config translation failed", "format", format, "error", err)
 		return err
 	}
 	slog.Debug("[startWithContent] config translated", "jsonBytes", len(jsonContent))
@@ -436,6 +434,7 @@ func (s *Service) SetOverridePackages(overrideJSON string) error {
 
 	override, cfg, err := parseOverrideOptions(overrideJSON)
 	if err != nil {
+		slog.Error("[SetOverridePackages] parse override failed", "error", err)
 		return err
 	}
 	slog.Debug("[SetOverridePackages] parsed", "include", len(cfg.IncludePackages), "exclude", len(cfg.ExcludePackages))

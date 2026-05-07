@@ -31,8 +31,9 @@ type ProxyGroupItem struct {
 
 // LogEntry represents a single log message.
 type LogEntry struct {
-	Level   int32  `json:"level"`
-	Message string `json:"message"`
+	Level     int32  `json:"level"`
+	Message   string `json:"message"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 // ConnectionEventSnapshot represents a connection event for external consumers.

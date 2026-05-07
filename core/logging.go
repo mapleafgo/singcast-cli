@@ -12,6 +12,15 @@ import (
 
 const maxCoreLogEntries = 500
 
+// Log level constants. Lower number = higher severity.
+const (
+	LogLevelError int32 = 2
+	LogLevelWarn  int32 = 3
+	LogLevelInfo  int32 = 4
+	LogLevelDebug int32 = 5
+	LogLevelTrace int32 = 6
+)
+
 var (
 	coreLogMu sync.Mutex
 	coreLogCb func(eventType int32, jsonPayload string)
@@ -27,7 +36,7 @@ var (
 )
 
 func init() {
-	coreLogLevel.Store(4) // Info
+	coreLogLevel.Store(LogLevelInfo)
 	slog.SetDefault(slog.New(&coreLogHandler{}))
 }
 
@@ -62,6 +71,7 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	entry := LogEntry{
 		Level:   slogToCoreLevel(r.Level),
 		Message: b.String(),
+		Timestamp: r.Time.UnixMilli(),
 	}
 
 	coreLogMu.Lock()
@@ -91,18 +101,37 @@ func (h *coreLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *coreLogHandler) WithGroup(name string) slog.Handler { return h }
 
+// parseLogLevel converts a log level string to its numeric value.
+// Returns (0, false) for unrecognized strings.
+func parseLogLevel(s string) (int32, bool) {
+	switch s {
+	case "trace":
+		return LogLevelTrace, true
+	case "debug":
+		return LogLevelDebug, true
+	case "info":
+		return LogLevelInfo, true
+	case "warn":
+		return LogLevelWarn, true
+	case "error":
+		return LogLevelError, true
+	default:
+		return 0, false
+	}
+}
+
 func slogToCoreLevel(level slog.Level) int32 {
 	switch {
 	case level >= slog.LevelError:
-		return 2 // Error
+		return LogLevelError
 	case level >= slog.LevelWarn:
-		return 3 // Warn
+		return LogLevelWarn
 	case level >= slog.LevelInfo:
-		return 4 // Info
+		return LogLevelInfo
 	case level >= slog.LevelDebug:
-		return 5 // Debug
+		return LogLevelDebug
 	default:
-		return 6 // Trace
+		return LogLevelTrace
 	}
 }
 
@@ -121,23 +150,16 @@ func syncLogLevelFromConfig(jsonContent string) {
 		} `json:"log"`
 	}
 	if err := json.Unmarshal([]byte(jsonContent), &cfg); err != nil {
+		slog.Debug("[syncLogLevel] parse config failed", "error", err)
 		return
 	}
-	switch cfg.Log.Level {
-	case "trace":
-		SetLogLevel(6)
-	case "debug":
-		SetLogLevel(5)
-	case "info":
-		SetLogLevel(4)
-	case "warn":
-		SetLogLevel(3)
-	case "error":
-		SetLogLevel(2)
-	default:
+	newLevel, ok := parseLogLevel(cfg.Log.Level)
+	if !ok {
 		return
 	}
-	slog.Debug("[syncLogLevel] synced from config", "configLevel", cfg.Log.Level, "coreLevel", GetLogLevel())
+	oldLevel := GetLogLevel()
+	slog.Info("[syncLogLevel] syncing log level", "configLevel", cfg.Log.Level, "oldLevel", oldLevel, "newLevel", newLevel)
+	SetLogLevel(newLevel)
 }
 
 func queryCoreLogs() string {
