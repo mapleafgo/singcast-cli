@@ -30,10 +30,12 @@ func translateTUN(cfg *RawConfig, t *translation) {
 	} else {
 		addresses = append(addresses, "172.18.0.1/30")
 	}
-	if cfg.Tun.Inet6Address != "" {
-		addresses = append(addresses, cfg.Tun.Inet6Address)
-	} else {
-		addresses = append(addresses, "fdfe:dcba:9876::1/126")
+	if cfg.IPv6 {
+		if cfg.Tun.Inet6Address != "" {
+			addresses = append(addresses, cfg.Tun.Inet6Address)
+		} else {
+			addresses = append(addresses, "fdfe:dcba:9876::1/126")
+		}
 	}
 	tunInbound["address"] = addresses
 

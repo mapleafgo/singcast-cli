@@ -45,14 +45,11 @@ func TestTranslateTUNEnabled(t *testing.T) {
 	if !ok {
 		t.Fatalf("address is not []string: %T", ib["address"])
 	}
-	if len(addresses) != 2 {
-		t.Fatalf("expected 2 addresses, got %d", len(addresses))
+	if len(addresses) != 1 {
+		t.Fatalf("expected 1 address (IPv4 only), got %d", len(addresses))
 	}
 	if addresses[0] != "172.18.0.1/30" {
 		t.Errorf("address[0] = %v, want 172.18.0.1/30", addresses[0])
-	}
-	if addresses[1] != "fdfe:dcba:9876::1/126" {
-		t.Errorf("address[1] = %v, want fdfe:dcba:9876::1/126", addresses[1])
 	}
 }
 
@@ -71,8 +68,54 @@ func TestTranslateTUNDisabled(t *testing.T) {
 	}
 }
 
+func TestTranslateTUNIPv6Default(t *testing.T) {
+	cfg := &RawConfig{
+		IPv6: true,
+		Tun: RawTun{
+			Enable: true,
+		},
+	}
+	tt := newTestTranslation()
+
+	translateTUN(cfg, tt)
+
+	ib := tt.config.Inbounds[0]
+	addresses := ib["address"].([]string)
+	if len(addresses) != 2 {
+		t.Fatalf("expected 2 addresses (v4+v6), got %d", len(addresses))
+	}
+	if addresses[0] != "172.18.0.1/30" {
+		t.Errorf("address[0] = %v, want 172.18.0.1/30", addresses[0])
+	}
+	if addresses[1] != "fdfe:dcba:9876::1/126" {
+		t.Errorf("address[1] = %v, want fdfe:dcba:9876::1/126", addresses[1])
+	}
+}
+
+func TestTranslateTUNIPv6Disabled(t *testing.T) {
+	cfg := &RawConfig{
+		IPv6: false,
+		Tun: RawTun{
+			Enable: true,
+		},
+	}
+	tt := newTestTranslation()
+
+	translateTUN(cfg, tt)
+
+	ib := tt.config.Inbounds[0]
+	addresses := ib["address"].([]string)
+	if len(addresses) != 1 {
+		t.Fatalf("expected 1 address (IPv4 only), got %d", len(addresses))
+	}
+	if addresses[0] != "172.18.0.1/30" {
+		t.Errorf("address[0] = %v, want 172.18.0.1/30", addresses[0])
+	}
+}
+
 func TestTranslateTUNCustom(t *testing.T) {
 	cfg := &RawConfig{
+		IPv6: true,
 		Tun: RawTun{
 			Enable:       true,
 			Inet4Address: "10.0.0.1/24",
