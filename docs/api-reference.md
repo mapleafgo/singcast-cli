@@ -7,7 +7,7 @@ cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 | Capability | Desktop | Mobile |
 |------------|---------|--------|
 | Service lifecycle | CoreInit / Start / Stop / Destroy | Init / Start / Stop / Destroy |
-| Config management | Check / Reload / Override | Check / Reload / Override |
+| Config management | Check / ReloadTUN / Override | Check / ReloadTUN / Override |
 | Proxy control | Select / Test / Mode | Select / Test / Mode |
 | Real-time events | CoreCallback | EventHandler |
 | Connection tracking | Query / Close | Query / Close |
@@ -35,8 +35,7 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreCheckConfig` | `char* CoreCheckConfig(const char* content)` | Validate Clash YAML or sing-box JSON |
-| `CoreReloadConfig` | `char* CoreReloadConfig(const char* content, const char* ruleSetProxy)` | Hot-reload with new config |
-| `CoreReloadTUN` | `char* CoreReloadTUN()` | Restart TUN interface without config change |
+| `CoreReloadTUN` | `char* CoreReloadTUN()` | Restart TUN interface with same config |
 | `CoreSetOverridePackages` | `char* CoreSetOverridePackages(const char* overrideJSON)` | Update VPN split-tunneling package list |
 
 ### Logging
@@ -143,8 +142,7 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | Method | Description |
 |--------|-------------|
 | `CheckConfig(content string) error` | Validate config |
-| `ReloadConfig(content, ruleSetProxy string) error` | Hot-reload config |
-| `ReloadTUN() error` | Restart TUN interface |
+| `ReloadTUN() error` | Restart TUN interface with same config |
 | `SetOverridePackages(overrideJSON string) error` | Update VPN split-tunneling |
 
 ### Logging
