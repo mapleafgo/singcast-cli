@@ -54,13 +54,60 @@ func translateTUN(cfg *RawConfig, t *translation) {
 		tunInbound["auto_redirect"] = true
 	}
 
-	// Optional: endpoint-independent NAT
-	tunInbound["endpoint_independent_nat"] = cfg.Tun.EndpointIndependentNat
-
 	// Optional: UDP NAT timeout (mihomo: seconds -> sing-box: duration string)
 	if cfg.Tun.UDPTimeout > 0 {
 		tunInbound["udp_timeout"] = proxy.SecondsToDuration(int(cfg.Tun.UDPTimeout))
 	}
+
+	// Route addresses: specify which networks go through TUN
+	if len(cfg.Tun.RouteAddress) > 0 {
+		tunInbound["route_address"] = cfg.Tun.RouteAddress
+	}
+	if len(cfg.Tun.RouteExcludeAddress) > 0 {
+		tunInbound["route_exclude_address"] = cfg.Tun.RouteExcludeAddress
+	}
+
+	// Linux: iproute2 table/rule index
+	if cfg.Tun.IPRoute2TableIndex > 0 {
+		tunInbound["iproute2_table_index"] = cfg.Tun.IPRoute2TableIndex
+	}
+	if cfg.Tun.IPRoute2RuleIndex > 0 {
+		tunInbound["iproute2_rule_index"] = cfg.Tun.IPRoute2RuleIndex
+	}
+
+	// Linux: UID-based traffic filtering
+	if len(cfg.Tun.IncludeUID) > 0 {
+		tunInbound["include_uid"] = cfg.Tun.IncludeUID
+	}
+	if len(cfg.Tun.IncludeUIDRange) > 0 {
+		tunInbound["include_uid_range"] = cfg.Tun.IncludeUIDRange
+	}
+	if len(cfg.Tun.ExcludeUID) > 0 {
+		tunInbound["exclude_uid"] = cfg.Tun.ExcludeUID
+	}
+	if len(cfg.Tun.ExcludeUIDRange) > 0 {
+		tunInbound["exclude_uid_range"] = cfg.Tun.ExcludeUIDRange
+	}
+
+	// Android: user and package filtering
+	if len(cfg.Tun.IncludeAndroidUser) > 0 {
+		tunInbound["include_android_user"] = cfg.Tun.IncludeAndroidUser
+	}
+	if len(cfg.Tun.IncludePackage) > 0 {
+		tunInbound["include_package"] = cfg.Tun.IncludePackage
+	}
+	if len(cfg.Tun.ExcludePackage) > 0 {
+		tunInbound["exclude_package"] = cfg.Tun.ExcludePackage
+	}
+
+	// Route-level: auto-detect-interface (mihomo tun field → sing-box route field).
+	// Depends on general.go having already set Route.AutoDetectInterface = true;
+	// we only override to false here when the user explicitly disables it.
+	if !cfg.Tun.AutoDetectInterface {
+		t.config.Route.AutoDetectInterface = false
+	}
+
+	// Note: dns-hijack is handled by assemble() default rule {"protocol":"dns","action":"hijack-dns"}
 
 	t.config.Inbounds = append(t.config.Inbounds, tunInbound)
 }

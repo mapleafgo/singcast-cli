@@ -87,6 +87,16 @@ type RawTun struct {
 	Inet4Address           string   `yaml:"inet4-address" json:"inet4-address"`
 	Inet6Address           string   `yaml:"inet6-address" json:"inet6-address"`
 	StrictRoute            bool     `yaml:"strict-route" json:"strict-route"`
-	EndpointIndependentNat bool     `yaml:"endpoint-independent-nat" json:"endpoint-independent-nat"`
 	UDPTimeout             int64    `yaml:"udp-timeout" json:"udp-timeout"`
+	RouteAddress           []string `yaml:"route-address" json:"route-address"`
+	RouteExcludeAddress    []string `yaml:"route-exclude-address" json:"route-exclude-address"`
+	IPRoute2TableIndex     int      `yaml:"iproute2-table-index" json:"iproute2-table-index"`
+	IPRoute2RuleIndex      int      `yaml:"iproute2-rule-index" json:"iproute2-rule-index"`
+	IncludeUID             []int    `yaml:"include-uid" json:"include-uid"`
+	IncludeUIDRange        []string `yaml:"include-uid-range" json:"include-uid-range"`
+	ExcludeUID             []int    `yaml:"exclude-uid" json:"exclude-uid"`
+	ExcludeUIDRange        []string `yaml:"exclude-uid-range" json:"exclude-uid-range"`
+	IncludeAndroidUser     []int    `yaml:"include-android-user" json:"include-android-user"`
+	IncludePackage         []string `yaml:"include-package" json:"include-package"`
+	ExcludePackage         []string `yaml:"exclude-package" json:"exclude-package"`
 }

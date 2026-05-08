@@ -443,26 +443,34 @@ sing-box:
 
 ## F. TUN 映射
 
-| mihomo tun | sing-box inbound tun | 翻译说明 |
-|---|---|---|
-| `enable: true` | 添加 `type:"tun"` inbound | 存在即启用 |
-| `stack: system/gvisor/mixed` | `stack: "system"/"gvisor"/"mixed"` | 直接映射 |
-| `device: utun0` | `interface_name: "utun0"` | **字段名不同** |
-| `auto-route: true` | `auto_route: true` | 直接 |
-| `auto-redirect: true` | `auto_redirect: true` | 直接 |
-| `auto-detect-interface: true` | `route.auto_detect_interface: true` | 移到 route 顶层 |
-| `dns-hijack: [any:53]` | DNS rule 中处理 | 通过 DNS 规则 |
-| `strict-route: true` | `strict_route: true` | 直接 |
-| `mtu: 9000` | `mtu: 9000` | 直接 |
-| `gso: true` | (1.11.0 后移除) | 忽略 |
-| `udp-timeout: 300` | `udp_timeout: "5m"` | **秒 → Go Duration** |
-| `route-address: [...]` | `route_address: [...]` | 直接 |
-| `route-exclude-address: [...]` | `route_exclude_address: [...]` | 直接 |
-| `include-package: [...]` | `include_package: [...]` | Android |
-| `exclude-package: [...]` | `exclude_package: [...]` | Android |
-| `include-uid: [...]` | `include_uid: [...]` | Linux |
-| `exclude-uid: [...]` | `exclude_uid: [...]` | Linux |
-| `inet4-route-address` (旧) | `route_address` (1.10.0+) | 合并 |
+翻译器：`translator/tun.go` → `translateTUN()`。所有可选字段仅在非零值时写入输出。
+
+| mihomo tun | sing-box inbound tun | 翻译说明 | 默认值 |
+|---|---|---|---|
+| `enable: true` | 添加 `type:"tun"` inbound | `false` 时不生成 TUN inbound | `false` |
+| `stack: system/gvisor/mixed` | `stack` | 空值时默认 `"mixed"` | `"mixed"` |
+| `device: utun0` | `interface_name` | **字段名不同**，空值时不写入 | — |
+| `auto-route: true` | `auto_route` | 无条件写入（含 `false`） | `false` |
+| `strict-route: true` | `strict_route` | 无条件写入（含 `false`） | `false` |
+| `auto-detect-interface` | `route.auto_detect_interface` | **route 顶层字段**。`general.go` 默认设 `true`，仅当 mihomo 显式 `false` 时覆盖为 `false` | `true` |
+| `dns-hijack: [any:53]` | `assemble()` 默认规则 | 结构体中有字段，但翻译器不处理——由 `assemble()` 统一注入 `{"protocol":"dns","action":"hijack-dns"}` | 自动 |
+| `inet4-address` | `address[]` | 空值时默认 `"172.18.0.1/30"` | `"172.18.0.1/30"` |
+| `inet6-address` | `address[]` | 仅当全局 `ipv6: true` 时追加；空值默认 `"fdfe:dcba:9876::1/126"` | `"fdfe:dcba:9876::1/126"` |
+| `mtu: 9000` | `mtu` | `0` 时不写入（sing-box 使用自身默认值） | — |
+| `auto-redirect: true` | `auto_redirect` | 仅 `true` 时写入，仅 Linux 有效 | — |
+| `udp-timeout: 300` | `udp_timeout: "5m"` | **秒 → Go Duration 字符串**，`0` 时不写入 | — |
+| `route-address: [...]` | `route_address` | 空切片不写入 | — |
+| `route-exclude-address: [...]` | `route_exclude_address` | 空切片不写入 | — |
+| `iproute2-table-index` | `iproute2_table_index` | Linux，`0` 时不写入 | — |
+| `iproute2-rule-index` | `iproute2_rule_index` | Linux，`0` 时不写入 | — |
+| `include-uid: [...]` | `include_uid` | Linux，空切片不写入 | — |
+| `include-uid-range: [...]` | `include_uid_range` | Linux，空切片不写入 | — |
+| `exclude-uid: [...]` | `exclude_uid` | Linux，空切片不写入 | — |
+| `exclude-uid-range: [...]` | `exclude_uid_range` | Linux，空切片不写入 | — |
+| `include-android-user: [...]` | `include_android_user` | Android，空切片不写入 | — |
+| `include-package: [...]` | `include_package` | Android，空切片不写入 | — |
+| `exclude-package: [...]` | `exclude_package` | Android，空切片不写入 | — |
+| `gso: true` | (1.11.0 后移除) | 忽略 | — |
 
 ---
 
@@ -887,59 +895,46 @@ sing-box 等价：
 
 ## O. 补全：TUN 平台特有字段
 
+以下字段已在 `translateTUN()` 中实现，与通用字段（节 F）共用同一翻译函数。
+
 ### O.1 Linux 特有
 
-| mihomo tun | sing-box tun inbound | 翻译说明 |
-|---|---|---|
-| `auto-redirect: true` | `auto_redirect: true` | 仅 Linux |
-| (无) | `auto_redirect_input_mark: 0` | nftables 标记 |
-| (无) | `auto_redirect_output_mark: 0` | nftables 标记 |
-| (无) | `auto_redirect_reset_mark: 0` | nftables 标记 |
-| (无) | `auto_redirect_nfqueue: 0` | NFQueue |
-| (无) | `auto_redirect_iproute2_fallback_rule_index: 0` | 回退规则索引 |
-| `iproute2-table-index: 2022` | `iproute2_table_index: 2022` | 直接 |
-| `iproute2-rule-index: 9000` | `iproute2_rule_index: 9000` | 直接 |
-| `endpoint-independent-nat: false` | (无对应) | 通过 NAT 行为配置 |
-| `include-uid: [0]` | `include_uid: [0]` | 直接 |
-| `include-uid-range: ["1000:9999"]` | `include_uid_range: ["1000:9999"]` | 直接 |
-| `exclude-uid: [1000]` | `exclude_uid: [1000]` | 直接 |
-| `exclude-uid-range: ["1000:9999"]` | `exclude_uid_range: ["1000:9999"]` | 直接 |
-| `gso: true` | (1.11.0 后移除) | 忽略 |
-| `gso-max-size: 65536` | (1.11.0 后移除) | 忽略 |
+| mihomo tun | sing-box tun inbound | 翻译说明 | 状态 |
+|---|---|---|---|
+| `auto-redirect: true` | `auto_redirect: true` | 仅 `true` 时写入 | ✅ |
+| (无) | `auto_redirect_input_mark` | mihomo 无对应，sing-box 特有 | — |
+| (无) | `auto_redirect_output_mark` | 同上 | — |
+| (无) | `auto_redirect_reset_mark` | 同上 | — |
+| (无) | `auto_redirect_nfqueue` | 同上 | — |
+| `iproute2-table-index` | `iproute2_table_index` | `> 0` 时写入 | ✅ |
+| `iproute2-rule-index` | `iproute2_rule_index` | `> 0` 时写入 | ✅ |
+| `include-uid` | `include_uid` | 空切片不写入 | ✅ |
+| `include-uid-range` | `include_uid_range` | 空切片不写入 | ✅ |
+| `exclude-uid` | `exclude_uid` | 空切片不写入 | ✅ |
+| `exclude-uid-range` | `exclude_uid_range` | 空切片不写入 | ✅ |
+| `gso` / `gso-max-size` | (1.11.0 后移除) | 忽略 | — |
 
 ### O.2 Android 特有
 
-| mihomo tun | sing-box tun inbound | 翻译说明 |
-|---|---|---|
-| `include-android-user: [0, 10]` | `include_android_user: [0, 10]` | 直接 |
-| `include-package: ["com.android.chrome"]` | `include_package: ["com.android.chrome"]` | 直接 |
-| `exclude-package: ["com.android.captiveportallogin"]` | `exclude_package: [...]` | 直接 |
+| mihomo tun | sing-box tun inbound | 翻译说明 | 状态 |
+|---|---|---|---|
+| `include-android-user` | `include_android_user` | 空切片不写入 | ✅ |
+| `include-package` | `include_package` | 空切片不写入 | ✅ |
+| `exclude-package` | `exclude_package` | 空切片不写入 | ✅ |
 
 ### O.3 macOS 特有
 
-| mihomo tun | sing-box tun inbound | 翻译说明 |
-|---|---|---|
-| `device: utun0` | `interface_name: "utun0"` | macOS 必须 utun 开头 |
+| mihomo tun | sing-box tun inbound | 翻译说明 | 状态 |
+|---|---|---|---|
+| `device: utun0` | `interface_name: "utun0"` | macOS 必须 `utun` 开头 | ✅ |
 
 ### O.4 TUN 嵌入平台选项 (sing-box)
 
-sing-box tun inbound 有 `platform` 对象，用于移动端：
+sing-box tun inbound 支持 `platform` 对象（`TunPlatformOptions`），但**仅包含 `http_proxy` 子对象**，不包含 `auto_route` / `strict_route`。
 
-```json
-{
-  "platform": {
-    "auto_route": true,          // Android
-    "strict_route": false,       // iOS
-    "http_proxy": {              // iOS/Android
-      "enabled": false,
-      "server": "",
-      "server_port": 0
-    }
-  }
-}
-```
+`auto_route` 和 `strict_route` 是 TUN inbound 顶层字段，移动端通过 `libbox.TunOptions` 接口的 `GetAutoRoute()` / `GetStrictRoute()` 获取（来源是 `tun.Options`，非 platform）。
 
-mihomo 无此概念，翻译时按平台生成默认值。
+翻译器**不生成** `platform` 对象——mihomo 无 `http_proxy` 配置，无需映射。
 
 ---
 
