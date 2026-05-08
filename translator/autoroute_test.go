@@ -28,21 +28,44 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	generateGeoRoute("cn", "PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 3 {
-		t.Fatalf("expected 3 geo rules for CN, got %d", len(rules))
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 geo rules for CN, got %d", len(rules))
 	}
 
-	// Rule 0: geolocation-!cn → PROXY
-	assertRuleSet(t, rules[0], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
+	// Rule 0: geolocation-cn → DIRECT
+	assertRuleSet(t, rules[0], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
 
-	// Rule 1: geoip-cn → DIRECT
-	assertRuleSet(t, rules[1], "geoip-cn", "DIRECT", "geoip-cn")
-
-	// Rule 2: geosite-geolocation-cn → DIRECT
-	assertRuleSet(t, rules[2], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
+	// Rule 1: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
+	logical := rules[1]
+	if logical["type"] != "logical" {
+		t.Fatalf("rule 1 type = %v, want logical", logical["type"])
+	}
+	if logical["mode"] != "and" {
+		t.Fatalf("rule 1 mode = %v, want and", logical["mode"])
+	}
+	if logical["outbound"] != "DIRECT" {
+		t.Fatalf("rule 1 outbound = %v, want DIRECT", logical["outbound"])
+	}
+	subRules, ok := logical["rules"].([]map[string]any)
+	if !ok || len(subRules) != 2 {
+		t.Fatalf("rule 1 sub-rules: ok=%v len=%d", ok, len(subRules))
+	}
+	// Sub-rule 0: geolocation-!cn inverted
+	if subRules[0]["invert"] != true {
+		t.Error("sub-rule 0 should have invert=true")
+	}
+	rs0, _ := subRules[0]["rule_set"].([]string)
+	if len(rs0) != 1 || rs0[0] != "geosite-geolocation-!cn" {
+		t.Errorf("sub-rule 0 rule_set = %v, want [geosite-geolocation-!cn]", rs0)
+	}
+	// Sub-rule 1: geoip-cn
+	rs1, _ := subRules[1]["rule_set"].([]string)
+	if len(rs1) != 1 || rs1[0] != "geoip-cn" {
+		t.Errorf("sub-rule 1 rule_set = %v, want [geoip-cn]", rs1)
+	}
 
 	// Verify rule_set definitions
-	expectedDefs := []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-geolocation-cn"}
+	expectedDefs := []string{"geosite-geolocation-cn", "geosite-geolocation-!cn", "geoip-cn"}
 	for _, tag := range expectedDefs {
 		if _, ok := tr.ruleSetDefs[tag]; !ok {
 			t.Errorf("missing rule_set definition for %q", tag)

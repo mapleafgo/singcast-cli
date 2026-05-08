@@ -25,6 +25,7 @@ func translateExperimental(cfg *RawConfig, result *singboxConfig) {
 		"enabled":      true,
 		"path":         "cache.db",
 		"store_fakeip": cfg.Profile.StoreFakeIP,
+		"store_rdrc":   true,
 	}
 
 	exp := map[string]any{

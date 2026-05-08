@@ -230,9 +230,9 @@ proxy-groups:
 	}
 
 	rules := route["rules"].([]any)
-	// sniff + hijack-dns + ip_is_private + geolocation-!cn + geoip-cn + geolocation-cn = 6
-	if len(rules) != 6 {
-		t.Fatalf("expected 6 rules for CN, got %d", len(rules))
+	// sniff + hijack-dns + ip_is_private + geolocation-cn + logical(geoip-cn AND NOT !cn) = 5
+	if len(rules) != 5 {
+		t.Fatalf("expected 5 rules for CN, got %d", len(rules))
 	}
 
 	// Verify ip_is_private rule
