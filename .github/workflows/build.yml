@@ -36,11 +36,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: go test -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" ./...
+      - uses: go-task/setup-task@v2
+      - run: task test
 
   # ── CLI 二进制 ──────────────────────────────────────────
 
@@ -52,54 +55,42 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
-            ext: ""
           - os: ubuntu-latest
             goos: linux
             goarch: arm64
-            ext: ""
           - os: macos-latest
             goos: darwin
             goarch: amd64
-            ext: ""
           - os: macos-latest
             goos: darwin
             goarch: arm64
-            ext: ""
           - os: windows-latest
             goos: windows
             goarch: amd64
-            ext: ".exe"
           - os: windows-latest
             goos: windows
             goarch: arm64
-            ext: ".exe"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: go-task/setup-task@v2
       - name: Build
-        shell: bash
-        env:
-          VERSION: ${{ needs.get-release.outputs.tag_name }}
-          CGO_ENABLED: 0
-        run: |
-          mkdir -p build
-          go build -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
-            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
-            -o build/singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
-            ./cmd/singcast
+        run: task cli-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Package
         shell: bash
         run: |
-          cd build
+          cd bin
           tar -czf singcast-${{ needs.get-release.outputs.tag_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz *
       - name: Upload
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ needs.get-release.outputs.upload_url }}
-          asset_path: build/*.tar.gz
+          asset_path: bin/*.tar.gz
           overwrite: true
 
   # ── FFI 共享库 (桌面) ───────────────────────────────────
@@ -136,39 +127,30 @@ jobs:
             prefix: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: go-task/setup-task@v2
       - name: Install cross-compilation toolchain
         if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build
-        shell: bash
         env:
-          VERSION: ${{ needs.get-release.outputs.tag_name }}
-          CGO_ENABLED: 1
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          mkdir -p build
-          if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "arm64" ]; then
-            export CC=aarch64-linux-gnu-gcc
-          fi
-          go build -buildmode=c-shared -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
-            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
-            -o build/${{ matrix.prefix }}singcast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} \
-            ./cmd/lib
+          CC: ${{ matrix.goarch == 'arm64' && matrix.goos == 'linux' && 'aarch64-linux-gnu-gcc' || '' }}
+        run: task ffi-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Package
         shell: bash
         run: |
-          cd build
+          cd bin
           tar -czf libsingcast-${{ needs.get-release.outputs.tag_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz *
       - name: Upload
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ needs.get-release.outputs.upload_url }}
-          asset_path: build/*.tar.gz
+          asset_path: bin/*.tar.gz
           overwrite: true
 
   # ── FFI 共享库 (Android) ────────────────────────────────
@@ -178,45 +160,37 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: android/arm64
-            goarch: arm64
-          - target: android/amd64
-            goarch: amd64
+          - goarch: arm64
+          - goarch: amd64
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: go-task/setup-task@v2
       - uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27
           add-to-path: false
           local-cache: true
-      - name: Build
-        env:
-          VERSION: ${{ needs.get-release.outputs.tag_name }}
+      - name: Setup gomobile
         run: |
-          go mod download
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
-          mkdir -p build
-          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
-            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s -checklinkname=0" \
-            -o build/libsingcast-${{ matrix.goarch }}.aar \
-            -target=${{ matrix.target }} \
-            -androidapi 29 \
-            -javapkg cn.mapleafgo \
-            ./ffi
+      - name: Build
+        run: task mobile-android-${{ matrix.goarch }}
       - name: Package
         run: |
-          cd build
+          cd bin
           tar -czf libsingcast-${{ needs.get-release.outputs.tag_name }}-android-${{ matrix.goarch }}.tar.gz *
       - name: Upload
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ needs.get-release.outputs.upload_url }}
-          asset_path: build/*.tar.gz
+          asset_path: bin/*.tar.gz
           overwrite: true
 
   # ── FFI 共享库 (iOS) ───────────────────────────────────
@@ -225,30 +199,26 @@ jobs:
     runs-on: macos-latest
     needs: [get-release, test]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Build
-        env:
-          VERSION: ${{ needs.get-release.outputs.tag_name }}
+      - uses: go-task/setup-task@v2
+      - name: Setup gomobile
         run: |
-          go mod download
           go install golang.org/x/mobile/cmd/gomobile@latest
           gomobile init
-          mkdir -p build
-          gomobile bind -trimpath -tags "with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api" \
-            -ldflags="-X ${{ env.MODULE }}/core.Version=${VERSION} -w -s" \
-            -o build/singcast.xcframework \
-            -target=ios \
-            ./ffi
+      - name: Build
+        run: task mobile-ios-arm64
       - name: Package
         run: |
-          cd build
+          cd bin
           tar -czf libsingcast-${{ needs.get-release.outputs.tag_name }}-ios.tar.gz *
       - name: Upload
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ needs.get-release.outputs.upload_url }}
-          asset_path: build/*.tar.gz
+          asset_path: bin/*.tar.gz
           overwrite: true
