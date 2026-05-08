@@ -45,7 +45,7 @@ type RawSniffer struct {
 type RawDNS struct {
 	Enable                bool              `yaml:"enable" json:"enable"`
 	IPv6                  *bool             `yaml:"ipv6" json:"ipv6"`
-	UseHosts              bool              `yaml:"use-hosts" json:"use-hosts"`
+	UseHosts              *bool             `yaml:"use-hosts" json:"use-hosts"`
 	NameServer            []string          `yaml:"nameserver" json:"nameserver"`
 	Fallback              []string          `yaml:"fallback" json:"fallback"`
 	FallbackFilter        RawFallbackFilter `yaml:"fallback-filter" json:"fallback-filter"`

@@ -4,6 +4,8 @@ import (
 	"testing"
 )
 
+func ptrBool(v bool) *bool { return &v }
+
 func TestTranslateDNSEnabled(t *testing.T) {
 	tr := newTestTranslation()
 	tr.groupTagOrder = []string{"PROXY"}
@@ -330,5 +332,107 @@ func TestExtractHostPort(t *testing.T) {
 				t.Errorf("scheme = %q, want %q", scheme, tt.wantScheme)
 			}
 		})
+	}
+}
+
+func TestTranslateDNSPreferH3(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.groupTags["PROXY"] = true
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:            true,
+			PreferH3:          true,
+			NameServer:        []string{"https://dns.google/dns-query"},
+			DefaultNameserver: []string{"223.5.5.5"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	for _, srv := range tr.config.DNS.Servers {
+		if srv["type"] == "https" {
+			t.Errorf("found https server after prefer-h3, should be upgraded to h3: %v", srv)
+		}
+		if srv["server"] == "dns.google" && srv["type"] != "h3" {
+			t.Errorf("dns.google type = %v, want h3", srv["type"])
+		}
+	}
+}
+
+func TestTranslateDNSFakeIPWhitelist(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.groupTags["PROXY"] = true
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:            true,
+			EnhancedMode:      "fake-ip",
+			FakeIPFilter:      []string{"*.example.com", "test.local"},
+			FakeIPFilterMode:  "whitelist",
+			NameServer:        []string{"8.8.8.8"},
+			DefaultNameserver: []string{"223.5.5.5"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	if tr.config.DNS == nil {
+		t.Fatal("DNS config should not be nil")
+	}
+
+	rules := tr.config.DNS.Rules
+	if len(rules) < 3 {
+		t.Fatalf("expected at least 3 rules for whitelist mode, got %d", len(rules))
+	}
+
+	// First rule: suffix match -> fakeip
+	if rules[0]["server"] != "fakeip-dns" {
+		t.Errorf("whitelist suffix rule server = %v, want fakeip-dns", rules[0]["server"])
+	}
+
+	// Last rule: catch-all -> nameserver
+	last := rules[len(rules)-1]
+	if last["server"] != "ns-0" {
+		t.Errorf("whitelist catch-all server = %v, want ns-0", last["server"])
+	}
+}
+
+func TestTranslateDNSUseHostsFalse(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+
+	cfg := &RawConfig{
+		Hosts: map[string]string{
+			"local.test": "127.0.0.1",
+		},
+		DNS: RawDNS{
+			Enable:            true,
+			UseHosts:          ptrBool(false),
+			NameServer:        []string{"8.8.8.8"},
+			DefaultNameserver: []string{"223.5.5.5"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	for _, srv := range tr.config.DNS.Servers {
+		if srv["type"] == "hosts" {
+			t.Error("hosts DNS server should not be created when use-hosts is false")
+		}
+	}
+}
+
+func TestPreferUDPServerEmpty(t *testing.T) {
+	result := &singboxDNS{Servers: []map[string]any{}}
+	tag := preferUDPServer(nil, result)
+	if tag != "" {
+		t.Errorf("expected empty string for nil candidates, got %q", tag)
+	}
+	tag = preferUDPServer([]string{}, result)
+	if tag != "" {
+		t.Errorf("expected empty string for empty candidates, got %q", tag)
 	}
 }

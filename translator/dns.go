@@ -119,7 +119,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		}
 		result.Servers = append(result.Servers, fakeipSrv)
 
-		// Add DNS rules for fake-ip-filter domains → route to non-fakeip server.
+		// FakeIP filter rules
 		if len(dns.FakeIPFilter) > 0 && firstNSTag != "" {
 			var suffixes []string
 			var domains []string
@@ -128,31 +128,50 @@ func translateDNS(cfg *RawConfig, t *translation) {
 				if strings.HasPrefix(f, "*.") {
 					suffixes = append(suffixes, f[1:]) // "*.lan" -> ".lan"
 				} else if strings.Contains(f, "*") {
-					// Wildcard patterns that are not simple suffix
-					// Convert to keyword or suffix as best effort
 					suffixes = append(suffixes, "."+strings.TrimPrefix(f, "*"))
 				} else {
 					domains = append(domains, f)
 				}
 			}
 
-			if len(suffixes) > 0 {
+			if dns.FakeIPFilterMode == "whitelist" {
+				// Whitelist: only matched domains use FakeIP, rest use nameserver
+				if len(suffixes) > 0 {
+					result.Rules = append(result.Rules, map[string]any{
+						"domain_suffix": suffixes,
+						"server":        fakeipTag,
+					})
+				}
+				if len(domains) > 0 {
+					result.Rules = append(result.Rules, map[string]any{
+						"domain": domains,
+						"server": fakeipTag,
+					})
+				}
+				// Default all other domains to non-fakeip nameserver
 				result.Rules = append(result.Rules, map[string]any{
-					"domain_suffix": suffixes,
-					"server":        firstNSTag,
-				})
-			}
-			if len(domains) > 0 {
-				result.Rules = append(result.Rules, map[string]any{
-					"domain": domains,
 					"server": firstNSTag,
 				})
+			} else {
+				// Blacklist (default): matched domains bypass FakeIP → nameserver
+				if len(suffixes) > 0 {
+					result.Rules = append(result.Rules, map[string]any{
+						"domain_suffix": suffixes,
+						"server":        firstNSTag,
+					})
+				}
+				if len(domains) > 0 {
+					result.Rules = append(result.Rules, map[string]any{
+						"domain": domains,
+						"server": firstNSTag,
+					})
+				}
 			}
 		}
 	}
 
 	// Step 6b: Hosts mapping (mihomo hosts -> sing-box hosts DNS server + rules)
-	if len(cfg.Hosts) > 0 {
+	if len(cfg.Hosts) > 0 && (dns.UseHosts == nil || *dns.UseHosts) {
 		hostsTag := "hosts"
 		predefined := make(map[string]any)
 		var domains []string
@@ -270,6 +289,15 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		if _, hasAction := rule["action"]; !hasAction {
 			if _, hasServer := rule["server"]; hasServer {
 				rule["action"] = "route"
+			}
+		}
+	}
+
+	// Global prefer-h3: upgrade all HTTPS DNS servers to H3
+	if dns.PreferH3 {
+		for _, srv := range result.Servers {
+			if srv["type"] == "https" {
+				srv["type"] = "h3"
 			}
 		}
 	}
@@ -585,6 +613,9 @@ func buildDNSServerEntries(servers []string, prefix string, detour string, resul
 // preferUDPServer returns the tag of the first UDP-type DNS server from candidates,
 // falling back to the first candidate if none is UDP.
 func preferUDPServer(candidates []string, result *singboxDNS) string {
+	if len(candidates) == 0 {
+		return ""
+	}
 	for _, tag := range candidates {
 		for _, srv := range result.Servers {
 			if srv["tag"] == tag && srv["type"] == "udp" {
