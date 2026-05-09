@@ -38,12 +38,14 @@ func init() {
 		func(mode string) {
 			if cModeUpdateCB != nil {
 				cs := C.CString(mode)
+				defer C.free(unsafe.Pointer(cs))
 				C.invokeStringCB(C.StringCallback(cModeUpdateCB), cs)
 			}
 		},
 		func(eventType int32, connJSON string) {
 			if cConnEventCB != nil {
 				cs := C.CString(connJSON)
+				defer C.free(unsafe.Pointer(cs))
 				C.invokeIntStringCB(C.IntStringCallback(cConnEventCB), C.int(eventType), cs)
 			}
 		},
