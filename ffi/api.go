@@ -6,14 +6,8 @@ import (
 	runtimeDebug "runtime/debug"
 
 	"github.com/mapleafgo/singcast/core"
-	"github.com/sagernet/sing-box/experimental/libbox"
 	_ "golang.org/x/mobile/bind" // retained for gomobile bind
 )
-
-// EventHandler receives event callbacks from the core runtime.
-type EventHandler interface {
-	OnEvent(eventType int32, jsonPayload string)
-}
 
 // SocketProtector protects socket file descriptors from VPN routing.
 // On Android, implement this to call VpnService.protect(fd).
@@ -34,7 +28,6 @@ type Singcast struct {
 }
 
 // Create creates a new Singcast instance.
-// Use this instead of the zero-value constructor to ensure svc is initialized.
 func Create() *Singcast {
 	return &Singcast{svc: core.NewService()}
 }
@@ -51,14 +44,10 @@ func (s *Singcast) StartWithContent(content, ruleSetProxy string) error {
 }
 
 // Stop stops the running service. Safe to call multiple times.
-func (s *Singcast) Stop() error {
-	return s.svc.Stop()
-}
+func (s *Singcast) Stop() error { return s.svc.Stop() }
 
 // Destroy releases all resources. The instance cannot be reused.
-func (s *Singcast) Destroy() {
-	s.svc.Destroy()
-}
+func (s *Singcast) Destroy() { s.svc.Destroy() }
 
 // --- Platform IO ---
 
@@ -87,7 +76,7 @@ func (s *Singcast) UpdateDefaultInterface(name string, index int64, expensive bo
 	s.svc.PlatformIO().UpdateDefaultInterface(name, index, expensive)
 }
 
-// SetIncludeAllNetworks sets whether the VPN configuration uses includeAllNetworks (iOS).
+// SetIncludeAllNetworks sets whether the VPN uses includeAllNetworks (iOS).
 func (s *Singcast) SetIncludeAllNetworks(v bool) {
 	s.svc.PlatformIO().SetIncludeAllNetworks(v)
 }
@@ -97,27 +86,12 @@ func (s *Singcast) SetWIFIState(ssid, bssid string) {
 	s.svc.PlatformIO().SetWIFIState(ssid, bssid)
 }
 
-// QueryTunOptions returns TUN configuration as JSON for mobile consumers.
-// Call after the service has started (OpenTun has been invoked by sing-box).
-func (s *Singcast) QueryTunOptions() string {
-	return s.svc.PlatformIO().QueryTunOptions()
-}
-
 // --- Logging ---
 
 // SetLogLevel sets the minimum log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace).
 func (s *Singcast) SetLogLevel(level int32) { s.svc.SetLogLevel(level) }
 
-// SetError pushes an error message to connected clients.
-func (s *Singcast) SetError(message string) { s.svc.SetError(message) }
-
-// --- Pause / Wake / Network ---
-
-// Pause suspends network activity. On iOS, auto-wakes after 1 minute.
-func (s *Singcast) Pause() { s.svc.Pause() }
-
-// Wake resumes network activity after Pause.
-func (s *Singcast) Wake() { s.svc.Wake() }
+// --- Network ---
 
 // ResetNetwork resets all connections, DNS cache, and forces outbounds to reconnect.
 func (s *Singcast) ResetNetwork() { s.svc.ResetNetwork() }
@@ -128,8 +102,6 @@ func (s *Singcast) ResetNetwork() { s.svc.ResetNetwork() }
 func (s *Singcast) ReloadTUN() error { return s.svc.ReloadTUN() }
 
 // SetOverridePackages updates the include/exclude package lists for VPN split tunneling.
-// The service restarts with the current config and new package overrides.
-// Pass empty string to clear all overrides.
 func (s *Singcast) SetOverridePackages(overrideJSON string) error {
 	return s.svc.SetOverridePackages(overrideJSON)
 }
@@ -160,42 +132,17 @@ func (s *Singcast) SetGroupExpand(group string, expand bool) error {
 
 // --- Queries ---
 
-// QueryProxies returns cached proxy groups as JSON.
-func (s *Singcast) QueryProxies() string {
-	h := s.svc.Handler()
-	if h == nil {
-		return "[]"
-	}
-	return h.GetCachedGroupsJSON()
-}
+// QueryProxies returns proxy groups as JSON.
+func (s *Singcast) QueryProxies() string { return s.svc.QueryProxies() }
 
-// QueryTraffic returns cached traffic stats as JSON.
-func (s *Singcast) QueryTraffic() string {
-	h := s.svc.Handler()
-	if h == nil {
-		return "{}"
-	}
-	return h.GetCachedStatusJSON()
-}
+// QueryTraffic returns traffic stats as JSON.
+func (s *Singcast) QueryTraffic() string { return s.svc.QueryTraffic() }
 
 // QueryLogs returns combined sing-box and core internal logs as JSON.
-// If clear is true, the log buffer is cleared after querying.
-func (s *Singcast) QueryLogs(clear bool) string {
-	result := s.svc.QueryLogs()
-	if clear {
-		_ = s.svc.ClearLogs()
-	}
-	return result
-}
+func (s *Singcast) QueryLogs() string { return s.svc.QueryLogs() }
 
-// QueryConnections returns cached connections as JSON.
-func (s *Singcast) QueryConnections() string {
-	h := s.svc.Handler()
-	if h == nil {
-		return "[]"
-	}
-	return h.GetCachedConnectionsJSON()
-}
+// QueryConnections returns active connections as JSON.
+func (s *Singcast) QueryConnections() string { return s.svc.QueryConnections() }
 
 // CloseConnection closes a connection by ID.
 func (s *Singcast) CloseConnection(id string) error { return s.svc.CloseConnection(id) }
@@ -203,21 +150,7 @@ func (s *Singcast) CloseConnection(id string) error { return s.svc.CloseConnecti
 // CloseAllConnections closes all active connections.
 func (s *Singcast) CloseAllConnections() error { return s.svc.CloseConnections() }
 
-// --- Platform Queries ---
-
-// NeedWIFIState reports whether the current config requires WIFI state monitoring.
-func (s *Singcast) NeedWIFIState() bool { return s.svc.NeedWIFIState() }
-
-// NeedFindProcess reports whether the current config requires process finding.
-func (s *Singcast) NeedFindProcess() bool { return s.svc.NeedFindProcess() }
-
-// UpdateWIFIState triggers the platform to report current WIFI state.
-func (s *Singcast) UpdateWIFIState() { s.svc.UpdateWIFIState() }
-
-// WriteMessage writes a log message to the core at the given level.
-func (s *Singcast) WriteMessage(level int32, message string) {
-	s.svc.WriteMessage(level, message)
-}
+// --- System ---
 
 // FlushSystemDNS attempts to flush the system DNS cache.
 func (s *Singcast) FlushSystemDNS() { s.svc.FlushSystemDNS() }
@@ -235,19 +168,3 @@ func (s *Singcast) SetMemoryLimit(bytes int64) {
 
 // Version returns version info as JSON.
 func (s *Singcast) Version() string { return core.VersionJSON() }
-
-// --- Events ---
-
-// SetOnEvent registers an event handler. Call after Init.
-func (s *Singcast) SetOnEvent(handler EventHandler) {
-	s.svc.SetOnEvent(func(eventType int32, jsonPayload string) {
-		if handler != nil {
-			handler.OnEvent(eventType, jsonPayload)
-		}
-	})
-}
-
-// --- Package-level Utilities ---
-
-// SetLocale sets the locale for sing-box internal error messages.
-func SetLocale(localeID string) { libbox.SetLocale(localeID) }

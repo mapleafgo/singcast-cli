@@ -12,7 +12,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/sagernet/sing-box/experimental/libbox"
+	"github.com/sagernet/sing-box/adapter"
 )
 
 const (
@@ -20,12 +20,8 @@ const (
 	sockDiagResponseMinSize = 72
 )
 
-// netlinkUnavailable is set true after the first EPERM/EPFNOSUPPORT
-// from syscall.Socket(AF_NETLINK), so we stop retrying on Android where
-// untrusted_app SELinux denies netlink_tcpdiag_socket.
 var netlinkUnavailable bool
 
-// sockDiagPool reuses 64KB read buffers across queries to avoid per-call allocation.
 var sockDiagPool = sync.Pool{
 	New: func() any {
 		buf := make([]byte, 64<<10)
@@ -33,7 +29,7 @@ var sockDiagPool = sync.Pool{
 	},
 }
 
-func findConnectionOwnerImpl(ipProtocol int32, srcAddr string, srcPort int32, dstAddr string, dstPort int32) (*libbox.ConnectionOwner, error) {
+func findConnectionOwnerImpl(ipProtocol int32, srcAddr string, srcPort int32, dstAddr string, dstPort int32) (*adapter.ConnectionOwner, error) {
 	srcIP := net.ParseIP(srcAddr)
 	dstIP := net.ParseIP(dstAddr)
 	if srcIP == nil || dstIP == nil {
@@ -59,10 +55,10 @@ func findConnectionOwnerImpl(ipProtocol int32, srcAddr string, srcPort int32, ds
 
 	processPath, pathErr := resolveProcessPathByInode(inode, uid)
 	if pathErr != nil {
-		return &libbox.ConnectionOwner{UserId: int32(uid)}, nil
+		return &adapter.ConnectionOwner{UserId: int32(uid)}, nil
 	}
 
-	return &libbox.ConnectionOwner{
+	return &adapter.ConnectionOwner{
 		UserId:      int32(uid),
 		ProcessPath: processPath,
 	}, nil
@@ -126,18 +122,14 @@ func querySockDiag(family, protocol uint8, srcIP net.IP, srcPort uint16, dstIP n
 func packSockDiagRequest(family, protocol uint8, srcIP net.IP, srcPort uint16, dstIP net.IP, dstPort uint16) [72]byte {
 	var req [72]byte
 
-	// nlmsghdr (16 bytes)
 	binary.NativeEndian.PutUint32(req[0:4], 72)
 	binary.NativeEndian.PutUint16(req[4:6], sockDiagByFamily)
 	binary.NativeEndian.PutUint16(req[6:8], syscall.NLM_F_REQUEST)
 
-	// inet_diag_req_v2 (56 bytes starting at offset 16)
 	req[16] = family
 	req[17] = protocol
-	// idiag_ext = 0, pad = 0
-	binary.NativeEndian.PutUint32(req[20:24], 0x02) // TCP_ESTABLISHED
+	binary.NativeEndian.PutUint32(req[20:24], 0x02)
 
-	// inet_diag_sockid (starting at offset 24)
 	binary.BigEndian.PutUint16(req[24:26], srcPort)
 	binary.BigEndian.PutUint16(req[26:28], dstPort)
 
@@ -153,15 +145,12 @@ func packSockDiagRequest(family, protocol uint8, srcIP net.IP, srcPort uint16, d
 		copy(req[44:60], dstIP.To16())
 	}
 
-	// idiag_cookie = [0xFFFFFFFF, 0xFFFFFFFF]
 	binary.NativeEndian.PutUint32(req[64:68], 0xFFFFFFFF)
 	binary.NativeEndian.PutUint32(req[68:72], 0xFFFFFFFF)
 
 	return req
 }
 
-// resolveProcessPathByInode finds the process path for a socket inode owned by uid.
-// The uid filter from netlink narrows candidates significantly before /proc scanning.
 func resolveProcessPathByInode(targetInode, uid uint32) (string, error) {
 	procEntries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -176,7 +165,6 @@ func resolveProcessPathByInode(targetInode, uid uint32) (string, error) {
 			continue
 		}
 
-		// Filter by uid first (skip non-matching processes)
 		stat, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
 		if err != nil {
 			continue
@@ -185,7 +173,6 @@ func resolveProcessPathByInode(targetInode, uid uint32) (string, error) {
 			continue
 		}
 
-		// Check file descriptors for the target inode
 		fdPath := fmt.Sprintf("/proc/%d/fd", pid)
 		fds, err := os.ReadDir(fdPath)
 		if err != nil {

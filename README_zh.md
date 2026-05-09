@@ -76,7 +76,7 @@ task ffi-ios-arm64
 task all
 ```
 
-构建标签：`with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
+构建标签：`with_clash_api,with_utls,with_quic,with_gisor,with_v2ray_api`
 
 ## FFI 接口
 
@@ -85,38 +85,23 @@ task all
 ### 核心能力
 
 - **服务生命周期** — 初始化、启动、停止、销毁，支持热重载
-- **配置管理** — 校验、重载、TUN 重启、VPN 分流
+- **配置管理** — 校验、TUN 重载、VPN 分流
 - **代理控制** — 节点选择、URL 延迟测试、路由模式切换
-- **实时事件** — 流量、日志、连接、代理组、模式变更回调
-- **连接追踪** — 全生命周期连接元数据
+- **查询 API** — 代理组、流量、日志、连接、内存统计，返回 JSON
 - **平台 IO** — TUN fd、Socket 保护、WiFi 状态（移动端）
 - **资源监控** — 内存统计、协程数、OOM 保护
-
-### 构建
-
-```bash
-# 桌面端动态库
-task ffi-darwin-arm64
-task ffi-linux-amd64
-task ffi-windows-amd64
-
-# 移动端 SDK
-task mobile-android-arm64   # Android AAR
-task mobile-ios-arm64       # iOS xcframework
-```
 
 ### 快速上手（桌面端）
 
 ```c
 #include "cff_core.h"
 
-CoreSetCallback(my_callback);
 CoreInit("{\"home_dir\":\"/tmp/singcast\"}");
 CoreStartWithContent(yaml_content, "");
 
 // 查询状态
-char* traffic = CoreQueryTraffic();  // 包含 up/down/memory/started_at 的 JSON
-CoreFreeString(traffic);
+char* proxies = CoreQueryProxies();
+CoreFreeString(proxies);
 
 CoreStop();
 CoreDestroy();
@@ -127,7 +112,7 @@ CoreDestroy();
 **Android（Kotlin）：**
 ```kotlin
 val singcast = Singcast()
-singcast.init("""{"home_dir":"$homeDir"}""")
+singcast.init("""{"home_dir":"$homeDir"}""}")
 
 val fd = vpnService.Builder()
     .addAddress("172.18.0.1", 30)

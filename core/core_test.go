@@ -163,8 +163,6 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 
 // TestServiceLifecycle tests Init/StartWithContent/Stop/Destroy with a minimal config.
 func TestServiceLifecycle(t *testing.T) {
-	resetLibboxForTesting()
-
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
@@ -203,8 +201,6 @@ func TestServiceLifecycle(t *testing.T) {
 
 // TestServiceDoubleInit verifies calling Init twice on the same instance returns an error.
 func TestServiceDoubleInit(t *testing.T) {
-	resetLibboxForTesting()
-
 	tmpDir := t.TempDir()
 	svc := NewService()
 
@@ -242,8 +238,6 @@ func TestReloadTUN_NotInitialized(t *testing.T) {
 
 // TestReloadTUN_NoConfigStored verifies ReloadTUN returns error when service is not running.
 func TestReloadTUN_NoConfigStored(t *testing.T) {
-	resetLibboxForTesting()
-
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
@@ -268,8 +262,6 @@ func TestReloadTUN_NoConfigStored(t *testing.T) {
 
 // TestStartWithJSON_RollbackOnFailure verifies currentConfig is rolled back when startWithJSON fails.
 func TestStartWithJSON_RollbackOnFailure(t *testing.T) {
-	resetLibboxForTesting()
-
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {

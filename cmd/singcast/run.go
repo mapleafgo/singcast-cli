@@ -15,27 +15,6 @@ import (
 	"github.com/mapleafgo/singcast/translator"
 )
 
-func parseLogLevel(s string) int32 {
-	switch s {
-	case "panic":
-		return 0
-	case "fatal":
-		return 1
-	case "error":
-		return 2
-	case "warn", "warning":
-		return 3
-	case "info":
-		return 4
-	case "debug":
-		return 5
-	case "trace":
-		return 6
-	default:
-		return 4
-	}
-}
-
 func runCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "run",
@@ -115,51 +94,20 @@ func runCommand() *cli.Command {
 				}
 			}
 
-			maxLevel := parseConfigLogLevel(jsonContent)
-
 			if daemon {
 				return startDaemon(homeDir, outPath, proxyPrefix, apiAddr)
 			}
-			return runForeground(homeDir, outPath, maxLevel, jsonContent)
+			return runForeground(homeDir, outPath, jsonContent)
 		},
 	}
 }
 
-// parseConfigLogLevel parses the log.level field from sing-box JSON config string.
-func parseConfigLogLevel(jsonContent string) int32 {
-	var cfg struct {
-		Log struct {
-			Level string `json:"level"`
-		} `json:"log"`
-	}
-	if json.Unmarshal([]byte(jsonContent), &cfg) != nil {
-		return 4
-	}
-	return parseLogLevel(cfg.Log.Level)
-}
-
-func runForeground(homeDir, configPath string, maxLevel int32, jsonContent string) error {
+func runForeground(homeDir, configPath string, jsonContent string) error {
 	svc := core.NewService()
 	if err := svc.Init(`{"home_dir":"` + homeDir + `"}`); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
 	defer svc.Destroy()
-
-	svc.SetOnEvent(func(eventType int32, jsonPayload string) {
-		if eventType != core.EventLogs {
-			return
-		}
-		var entries []core.LogEntry
-		if json.Unmarshal([]byte(jsonPayload), &entries) != nil {
-			return
-		}
-		for _, e := range entries {
-			if e.Level > maxLevel {
-				continue
-			}
-			fmt.Println(e.Message)
-		}
-	})
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {

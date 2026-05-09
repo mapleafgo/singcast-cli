@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/sagernet/sing-box/experimental/libbox"
+	"github.com/sagernet/sing-box/option"
 )
 
 func newPlatform() *PlatformIO {
@@ -26,201 +26,109 @@ func TestResetTunFd_WithoutSetDoesNotPanic(t *testing.T) {
 	p.ResetTunFd()
 }
 
-func TestResetTunFd_ClearsState(t *testing.T) {
+// --- UsePlatformInterface ---
+
+func TestUsePlatformInterface_DefaultFalse(t *testing.T) {
 	p := newPlatform()
-	p.SetTunFd(42)
-	p.ResetTunFd()
-	_, err := p.OpenTun(nil)
+	if p.UsePlatformInterface() {
+		t.Error("default should be desktop (false)")
+	}
+}
+
+func TestUsePlatformInterface_MobileTrue(t *testing.T) {
+	p := newPlatform()
+	p.SetMobile(true)
+	if !p.UsePlatformInterface() {
+		t.Error("should be true after SetMobile(true)")
+	}
+	p.SetMobile(false)
+	if p.UsePlatformInterface() {
+		t.Error("should be false after SetMobile(false)")
+	}
+}
+
+// --- UsePlatformDefaultInterfaceMonitor ---
+
+func TestUsePlatformDefaultInterfaceMonitor_Desktop(t *testing.T) {
+	p := newPlatform()
+	if p.UsePlatformDefaultInterfaceMonitor() {
+		t.Error("desktop should not use platform interface monitor")
+	}
+}
+
+func TestUsePlatformDefaultInterfaceMonitor_Mobile(t *testing.T) {
+	p := newPlatform()
+	p.SetMobile(true)
+	if !p.UsePlatformDefaultInterfaceMonitor() {
+		t.Error("mobile should use platform interface monitor")
+	}
+}
+
+// --- CreateDefaultInterfaceMonitor ---
+
+func TestCreateDefaultInterfaceMonitor_DesktopNil(t *testing.T) {
+	p := newPlatform()
+	if p.CreateDefaultInterfaceMonitor(nil) != nil {
+		t.Error("desktop should return nil monitor")
+	}
+}
+
+func TestCreateDefaultInterfaceMonitor_MobileNonNil(t *testing.T) {
+	p := newPlatform()
+	p.SetMobile(true)
+	m := p.CreateDefaultInterfaceMonitor(nil)
+	if m == nil {
+		t.Fatal("mobile should return non-nil monitor")
+	}
+}
+
+// --- UsePlatformNetworkInterfaces ---
+
+func TestUsePlatformNetworkInterfaces_Desktop(t *testing.T) {
+	p := newPlatform()
+	if p.UsePlatformNetworkInterfaces() {
+		t.Error("desktop should not use platform network interfaces")
+	}
+}
+
+func TestUsePlatformNetworkInterfaces_Mobile(t *testing.T) {
+	p := newPlatform()
+	p.SetMobile(true)
+	if !p.UsePlatformNetworkInterfaces() {
+		t.Error("mobile should use platform network interfaces")
+	}
+}
+
+// --- NetworkInterfaces ---
+
+func TestNetworkInterfaces_NoData(t *testing.T) {
+	p := newPlatform()
+	_, err := p.NetworkInterfaces()
 	if err == nil {
-		t.Fatal("OpenTun should fail after ResetTunFd")
+		t.Error("expected error when no interfaces data")
 	}
 }
 
-// --- OpenTun consumes fd ---
-
-func TestOpenTun_ReturnsExternalFd(t *testing.T) {
+func TestNetworkInterfaces_ValidJSON(t *testing.T) {
 	p := newPlatform()
-	p.SetTunFd(42)
-	fd, err := p.OpenTun(nil)
+	p.SetInterfacesJSON(`[{"name":"wlan0","index":3,"mtu":1500,"addresses":["192.168.1.2/24"],"flags":1,"type":1}]`)
+
+	ifaces, err := p.NetworkInterfaces()
 	if err != nil {
-		t.Fatalf("OpenTun: %v", err)
+		t.Fatalf("NetworkInterfaces: %v", err)
 	}
-	if fd != 42 {
-		t.Fatalf("OpenTun returned fd=%d, want 42", fd)
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %d", len(ifaces))
 	}
-}
-
-func TestOpenTun_ConsumesFd(t *testing.T) {
-	p := newPlatform()
-	p.SetTunFd(42)
-	_, _ = p.OpenTun(nil)
-	_, err := p.OpenTun(nil)
-	if err == nil {
-		t.Fatal("second OpenTun should fail after fd was consumed")
+	if ifaces[0].Name != "wlan0" {
+		t.Errorf("Name = %q, want wlan0", ifaces[0].Name)
+	}
+	if ifaces[0].Index != 3 {
+		t.Errorf("Index = %d, want 3", ifaces[0].Index)
 	}
 }
 
-func TestOpenTun_NoFdReturnsError(t *testing.T) {
-	p := newPlatform()
-	_, err := p.OpenTun(nil)
-	if err == nil {
-		t.Fatal("OpenTun without prior SetTunFd should return error")
-	}
-}
-
-// --- GetInterfaces ---
-
-func TestGetInterfaces_OnDesktopReturnsHostInterfaces(t *testing.T) {
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		t.Skip("test only runs on desktop platforms")
-	}
-	p := newPlatform()
-	iter, err := p.GetInterfaces()
-	if err != nil {
-		t.Fatalf("GetInterfaces: %v", err)
-	}
-	_ = iter
-}
-
-func TestGetInterfaces_SetsFlags(t *testing.T) {
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		t.Skip("test only runs on desktop platforms")
-	}
-	p := newPlatform()
-	iter, err := p.GetInterfaces()
-	if err != nil {
-		t.Fatalf("GetInterfaces: %v", err)
-	}
-	// Verify that returned interfaces have non-zero Flags (IFF_UP must be set).
-	for iter.HasNext() {
-		iface := iter.Next()
-		if iface.Flags == 0 {
-			t.Fatalf("interface %q has Flags=0, expected IFF_UP to be set", iface.Name)
-		}
-		if iface.Flags&1 == 0 { // syscall.IFF_UP = 0x1
-			t.Fatalf("interface %q Flags=%d missing IFF_UP bit", iface.Name, iface.Flags)
-		}
-	}
-}
-
-// --- StartDefaultInterfaceMonitor ---
-
-func TestStartDefaultInterfaceMonitor_ReturnsNil(t *testing.T) {
-	p := newPlatform()
-	err := p.StartDefaultInterfaceMonitor(nil)
-	if err != nil {
-		t.Fatalf("StartDefaultInterfaceMonitor: %v", err)
-	}
-}
-
-// --- UnderNetworkExtension ---
-
-func TestUnderNetworkExtension_NonIosReturnsFalse(t *testing.T) {
-	if runtime.GOOS == "ios" {
-		t.Skip("test only runs on non-iOS")
-	}
-	p := newPlatform()
-	p.SetTunFd(42)
-	if p.UnderNetworkExtension() {
-		t.Fatal("UnderNetworkExtension should return false on non-iOS even with externalTun")
-	}
-}
-
-// --- concurrency safety ---
-
-func TestTunState_ConcurrentAccess(t *testing.T) {
-	p := newPlatform()
-	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(3)
-		go func() { defer wg.Done(); p.SetTunFd(int32(i%2) * 10) }()
-		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
-		go func() { defer wg.Done(); p.ResetTunFd() }()
-	}
-	wg.Wait()
-}
-
-// --- parseInterfacesJSON ---
-
-func TestParseInterfacesJSON_Valid(t *testing.T) {
-	input := `[{"name":"wlan0","index":3,"mtu":1500,"addresses":["192.168.1.2/24","fe80::1/64"],"flags":1,"type":1}]`
-	iter, err := parseInterfacesJSON(input)
-	if err != nil {
-		t.Fatalf("parseInterfacesJSON: %v", err)
-	}
-	if !iter.HasNext() {
-		t.Fatal("expected at least one interface")
-	}
-	iface := iter.Next()
-	if iface.Name != "wlan0" {
-		t.Errorf("Name = %q, want wlan0", iface.Name)
-	}
-	if iface.Index != 3 {
-		t.Errorf("Index = %d, want 3", iface.Index)
-	}
-	if iface.MTU != 1500 {
-		t.Errorf("MTU = %d, want 1500", iface.MTU)
-	}
-	if iface.Flags != 1 {
-		t.Errorf("Flags = %d, want 1", iface.Flags)
-	}
-	if iface.Type != 1 {
-		t.Errorf("Type = %d, want 1", iface.Type)
-	}
-	// Verify addresses iterator.
-	addrs := iface.Addresses
-	if addrs.Len() != 2 {
-		t.Fatalf("addresses Len = %d, want 2", addrs.Len())
-	}
-	a1 := addrs.Next()
-	if a1 != "192.168.1.2/24" {
-		t.Errorf("addr[0] = %q, want 192.168.1.2/24", a1)
-	}
-	if addrs.Next() != "fe80::1/64" {
-		t.Error("addr[1] mismatch")
-	}
-	if addrs.HasNext() {
-		t.Error("should be exhausted")
-	}
-}
-
-func TestParseInterfacesJSON_Empty(t *testing.T) {
-	iter, err := parseInterfacesJSON("[]")
-	if err != nil {
-		t.Fatalf("parseInterfacesJSON: %v", err)
-	}
-	if iter.HasNext() {
-		t.Error("expected no interfaces for empty array")
-	}
-}
-
-func TestParseInterfacesJSON_Invalid(t *testing.T) {
-	_, err := parseInterfacesJSON("not-json")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
-}
-
-// --- SetInterfacesJSON + GetInterfaces interaction ---
-
-func TestGetInterfaces_UsesCachedJSON(t *testing.T) {
-	p := newPlatform()
-	p.SetInterfacesJSON(`[{"name":"rmnet0","index":5,"mtu":1400,"addresses":["10.0.0.1/32"],"flags":1,"type":0}]`)
-
-	iter, err := p.GetInterfaces()
-	if err != nil {
-		t.Fatalf("GetInterfaces: %v", err)
-	}
-	if !iter.HasNext() {
-		t.Fatal("expected one interface from cached JSON")
-	}
-	iface := iter.Next()
-	if iface.Name != "rmnet0" {
-		t.Errorf("Name = %q, want rmnet0", iface.Name)
-	}
-}
-
-// --- SetSocketProtector + AutoDetectInterfaceControl ---
+// --- AutoDetectInterfaceControl ---
 
 func TestAutoDetectInterfaceControl_WithProtector(t *testing.T) {
 	p := newPlatform()
@@ -240,7 +148,6 @@ func TestAutoDetectInterfaceControl_WithProtector(t *testing.T) {
 
 func TestAutoDetectInterfaceControl_NoProtector(t *testing.T) {
 	p := newPlatform()
-	// Should not panic, just warn.
 	if err := p.AutoDetectInterfaceControl(42); err != nil {
 		t.Fatalf("AutoDetectInterfaceControl without protector: %v", err)
 	}
@@ -261,215 +168,123 @@ func TestAutoDetectInterfaceControl_NilProtectorClears(t *testing.T) {
 	p.SetSocketProtector(func(fd int32) bool { return true })
 	p.SetSocketProtector(nil)
 
-	// Should not panic, should behave as no protector.
 	if err := p.AutoDetectInterfaceControl(42); err != nil {
 		t.Fatalf("AutoDetectInterfaceControl: %v", err)
 	}
 }
 
-// --- IncludeAllNetworks ---
+// --- UnderNetworkExtension ---
 
-func TestIncludeAllNetworks(t *testing.T) {
+func TestUnderNetworkExtension_NonIosReturnsFalse(t *testing.T) {
+	if runtime.GOOS == "ios" {
+		t.Skip("test only runs on non-iOS")
+	}
 	p := newPlatform()
-	if p.IncludeAllNetworks() {
+	p.SetTunFd(42)
+	if p.UnderNetworkExtension() {
+		t.Fatal("UnderNetworkExtension should return false on non-iOS")
+	}
+}
+
+// --- NetworkExtensionIncludeAllNetworks ---
+
+func TestNetworkExtensionIncludeAllNetworks(t *testing.T) {
+	p := newPlatform()
+	if p.NetworkExtensionIncludeAllNetworks() {
 		t.Error("default should be false")
 	}
 	p.SetIncludeAllNetworks(true)
-	if !p.IncludeAllNetworks() {
+	if !p.NetworkExtensionIncludeAllNetworks() {
 		t.Error("should be true after set")
 	}
-	p.SetIncludeAllNetworks(false)
-	if p.IncludeAllNetworks() {
-		t.Error("should be false after clear")
+}
+
+// --- WiFi state ---
+
+func TestSetWIFIState_ReadRoundTrip(t *testing.T) {
+	p := newPlatform()
+	state := p.ReadWIFIState()
+	if state.SSID != "" {
+		t.Error("should be empty before set")
+	}
+	p.SetWIFIState("MyWiFi", "aa:bb:cc:dd:ee:ff")
+	state = p.ReadWIFIState()
+	if state.SSID != "MyWiFi" || state.BSSID != "aa:bb:cc:dd:ee:ff" {
+		t.Errorf("got SSID=%q BSSID=%q", state.SSID, state.BSSID)
 	}
 }
 
-// --- UpdateDefaultInterface + pending path ---
+// --- UpdateDefaultInterface ---
 
-type mockIfaceListener struct {
-	name      string
-	index     int32
-	expensive bool
-	called    atomic.Int32
-}
-
-func (m *mockIfaceListener) UpdateDefaultInterface(name string, index int32, expensive bool, cell bool) {
-	m.name = name
-	m.index = index
-	m.expensive = expensive
-	m.called.Add(1)
-}
-
-func TestUpdateDefaultInterface_WithListener(t *testing.T) {
+func TestUpdateDefaultInterface_UpdatesMonitor(t *testing.T) {
 	p := newPlatform()
-	listener := &mockIfaceListener{}
-	p.ifaceListener = listener // set directly for test
+	p.SetMobile(true)
+	m := p.CreateDefaultInterfaceMonitor(nil)
+	if m == nil {
+		t.Fatal("expected non-nil monitor")
+	}
 
 	p.UpdateDefaultInterface("wlan0", 3, false)
 
-	if listener.called.Load() != 1 {
-		t.Fatal("listener should have been called")
+	iface := m.DefaultInterface()
+	if iface == nil {
+		t.Fatal("expected non-nil interface after update")
 	}
-	if listener.name != "wlan0" || listener.index != 3 {
-		t.Errorf("listener got name=%q index=%d, want wlan0/3", listener.name, listener.index)
+	if iface.Name != "wlan0" || iface.Index != 3 {
+		t.Errorf("got name=%q index=%d, want wlan0/3", iface.Name, iface.Index)
 	}
 }
 
-func TestUpdateDefaultInterface_PendingWhenNoListener(t *testing.T) {
+// --- concurrency safety ---
+
+func TestTunState_ConcurrentAccess(t *testing.T) {
 	p := newPlatform()
-	p.UpdateDefaultInterface("rmnet0", 5, true)
-
-	p.mu.Lock()
-	upd := p.pendingUpdate
-	p.mu.Unlock()
-	if upd == nil {
-		t.Fatal("expected pending update to be stored")
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(3)
+		go func() { defer wg.Done(); p.SetTunFd(int32(i%2) * 10) }()
+		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
+		go func() { defer wg.Done(); p.ResetTunFd() }()
 	}
-	if upd.name != "rmnet0" || upd.index != 5 || !upd.expensive {
-		t.Errorf("pending = %+v, want rmnet0/5/expensive", upd)
+	wg.Wait()
+}
+
+// --- parseAdapterInterfaces ---
+
+func TestParseAdapterInterfaces_Valid(t *testing.T) {
+	input := `[{"name":"wlan0","index":3,"mtu":1500,"addresses":["192.168.1.2/24","fe80::1/64"],"flags":1,"type":1}]`
+	ifaces, err := parseAdapterInterfaces(input)
+	if err != nil {
+		t.Fatalf("parseAdapterInterfaces: %v", err)
+	}
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %d", len(ifaces))
+	}
+	if ifaces[0].Name != "wlan0" {
+		t.Errorf("Name = %q, want wlan0", ifaces[0].Name)
+	}
+	if ifaces[0].Index != 3 {
+		t.Errorf("Index = %d, want 3", ifaces[0].Index)
+	}
+	if ifaces[0].MTU != 1500 {
+		t.Errorf("MTU = %d, want 1500", ifaces[0].MTU)
 	}
 }
 
-func TestStartDefaultInterfaceMonitor_AppliesPendingUpdate(t *testing.T) {
-	p := newPlatform()
-	p.UpdateDefaultInterface("wlan0", 3, false)
-
-	listener := &mockIfaceListener{}
-	if err := p.StartDefaultInterfaceMonitor(listener); err != nil {
-		t.Fatalf("StartDefaultInterfaceMonitor: %v", err)
+func TestParseAdapterInterfaces_Empty(t *testing.T) {
+	ifaces, err := parseAdapterInterfaces("[]")
+	if err != nil {
+		t.Fatalf("parseAdapterInterfaces: %v", err)
 	}
-
-	if listener.called.Load() != 1 {
-		t.Fatal("pending update should have been applied to listener")
-	}
-	if listener.name != "wlan0" {
-		t.Errorf("listener name = %q, want wlan0", listener.name)
-	}
-
-	// pendingUpdate should be cleared.
-	p.mu.Lock()
-	if p.pendingUpdate != nil {
-		t.Error("pendingUpdate should be nil after being applied")
-	}
-	p.mu.Unlock()
-
-	// Cleanup.
-	if err := p.CloseDefaultInterfaceMonitor(nil); err != nil {
-		t.Fatalf("CloseDefaultInterfaceMonitor: %v", err)
+	if len(ifaces) != 0 {
+		t.Error("expected no interfaces for empty array")
 	}
 }
 
-// --- CloseDefaultInterfaceMonitor ---
-
-func TestCloseDefaultInterfaceMonitor_ClearsListener(t *testing.T) {
-	p := newPlatform()
-	p.ifaceListener = &mockIfaceListener{}
-	if err := p.CloseDefaultInterfaceMonitor(nil); err != nil {
-		t.Fatalf("CloseDefaultInterfaceMonitor: %v", err)
-	}
-
-	p.mu.Lock()
-	if p.ifaceListener != nil {
-		t.Error("listener should be nil after close")
-	}
-	p.mu.Unlock()
-}
-
-// --- stringIterator ---
-
-func TestStringIterator(t *testing.T) {
-	s := &stringIterator{items: []string{"a", "b", "c"}}
-	if s.Len() != 3 {
-		t.Errorf("Len = %d, want 3", s.Len())
-	}
-	if !s.HasNext() {
-		t.Error("should have next")
-	}
-	if s.Next() != "a" || s.Next() != "b" || s.Next() != "c" {
-		t.Error("iteration order wrong")
-	}
-	if s.HasNext() {
-		t.Error("should be exhausted")
-	}
-	if s.Next() != "" {
-		t.Error("exhausted should return empty string")
-	}
-}
-
-func TestStringIterator_Empty(t *testing.T) {
-	s := &stringIterator{}
-	if s.Len() != 0 {
-		t.Errorf("Len = %d, want 0", s.Len())
-	}
-	if s.HasNext() {
-		t.Error("empty should not have next")
-	}
-}
-
-// --- networkInterfaceIterator ---
-
-func TestNetworkInterfaceIterator(t *testing.T) {
-	items := []*libbox.NetworkInterface{
-		{Name: "eth0", Index: 1},
-		{Name: "wlan0", Index: 2},
-	}
-	it := &networkInterfaceIterator{items: items}
-	if !it.HasNext() {
-		t.Error("should have next")
-	}
-	first := it.Next()
-	if first.Name != "eth0" {
-		t.Errorf("first = %q, want eth0", first.Name)
-	}
-	second := it.Next()
-	if second.Name != "wlan0" {
-		t.Errorf("second = %q, want wlan0", second.Name)
-	}
-	if it.HasNext() {
-		t.Error("should be exhausted")
-	}
-	if it.Next() != nil {
-		t.Error("exhausted should return nil")
-	}
-}
-
-// --- ClearDNSCache / FlushSystemDNS ---
-
-func TestFlushSystemDNS_NoPanic(t *testing.T) {
-	p := newPlatform()
-	p.ClearDNSCache()
-	p.FlushSystemDNS()
-}
-
-// --- ReadWIFIState / SystemCertificates / SendNotification / LocalDNSTransport ---
-
-func TestPlatformIO_NoPanicStubs(t *testing.T) {
-	p := newPlatform()
-	if p.ReadWIFIState() != nil {
-		t.Error("ReadWIFIState should return nil")
-	}
-	if p.SystemCertificates() != nil {
-		t.Error("SystemCertificates should return nil")
-	}
-	if p.LocalDNSTransport() != nil {
-		t.Error("LocalDNSTransport should return nil")
-	}
-	if err := p.SendNotification(nil); err != nil {
-		t.Errorf("SendNotification: %v", err)
-	}
-}
-
-func TestUsePlatformAutoDetectInterfaceControl(t *testing.T) {
-	p := newPlatform()
-	if !p.UsePlatformAutoDetectInterfaceControl() {
-		t.Error("should return true")
-	}
-}
-
-func TestUseProcFS(t *testing.T) {
-	p := newPlatform()
-	if p.UseProcFS() {
-		t.Error("UseProcFS should return false (using netlink)")
+func TestParseAdapterInterfaces_Invalid(t *testing.T) {
+	_, err := parseAdapterInterfaces("not-json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
 	}
 }
 
@@ -496,91 +311,108 @@ func TestMobileInterfaceJSON(t *testing.T) {
 	}
 }
 
-// --- TUN options caching ---
+// --- FlushSystemDNS / ClearDNSCache ---
 
-func TestGetTunOptions_NilBeforeOpen(t *testing.T) {
+func TestFlushSystemDNS_NoPanic(t *testing.T) {
 	p := newPlatform()
-	if p.GetTunOptions() != nil {
-		t.Error("expected nil before OpenTun")
-	}
+	p.ClearDNSCache()
+	flushSystemDNS()
 }
 
-func TestQueryTunOptions_EmptyBeforeOpen(t *testing.T) {
+// --- Stub methods ---
+
+func TestPlatformIO_NoPanicStubs(t *testing.T) {
 	p := newPlatform()
-	got := p.QueryTunOptions()
-	if got != "{}" {
-		t.Errorf("QueryTunOptions before open = %q, want {}", got)
+	if p.ReadWIFIState().SSID != "" {
+		t.Error("ReadWIFIState should return empty SSID by default")
+	}
+	if p.SystemCertificates() != nil {
+		t.Error("SystemCertificates should return nil")
+	}
+	if err := p.SendNotification(nil); err != nil {
+		t.Errorf("SendNotification: %v", err)
+	}
+	if p.MyInterfaceAddress() != nil {
+		t.Error("MyInterfaceAddress should return nil")
 	}
 }
 
-func TestRoutePrefixSlice_Nil(t *testing.T) {
-	if routePrefixSlice(nil) != nil {
-		t.Error("nil iterator should return nil")
-	}
-}
-
-func TestStringIterSlice_Nil(t *testing.T) {
-	if stringIterSlice(nil) != nil {
-		t.Error("nil iterator should return nil")
-	}
-}
-
-func TestResetTunFd_ClearsCachedOptions(t *testing.T) {
+func TestUsePlatformAutoDetectInterfaceControl(t *testing.T) {
 	p := newPlatform()
-	// Use any non-nil TunOptions to verify ResetTunFd clears it.
-	// A simple wrapper suffices since we only test nil/non-nil.
-	p.mu.Lock()
-	p.tunOptions = noOpTunOptions{}
-	p.mu.Unlock()
-	if p.GetTunOptions() == nil {
-		t.Fatal("expected non-nil after setting tunOptions")
-	}
-	p.ResetTunFd()
-	if p.GetTunOptions() != nil {
-		t.Error("ResetTunFd should clear cached tunOptions")
+	if !p.UsePlatformAutoDetectInterfaceControl() {
+		t.Error("should return true")
 	}
 }
 
-type noOpTunOptions struct{}
-
-func (noOpTunOptions) GetInet4Address() libbox.RoutePrefixIterator             { return nil }
-func (noOpTunOptions) GetInet6Address() libbox.RoutePrefixIterator             { return nil }
-func (noOpTunOptions) GetDNSServerAddress() (*libbox.StringBox, error)         { return nil, nil }
-func (noOpTunOptions) GetMTU() int32                                           { return 0 }
-func (noOpTunOptions) GetAutoRoute() bool                                      { return false }
-func (noOpTunOptions) GetStrictRoute() bool                                    { return false }
-func (noOpTunOptions) GetInet4RouteAddress() libbox.RoutePrefixIterator        { return nil }
-func (noOpTunOptions) GetInet6RouteAddress() libbox.RoutePrefixIterator        { return nil }
-func (noOpTunOptions) GetInet4RouteExcludeAddress() libbox.RoutePrefixIterator { return nil }
-func (noOpTunOptions) GetInet6RouteExcludeAddress() libbox.RoutePrefixIterator { return nil }
-func (noOpTunOptions) GetInet4RouteRange() libbox.RoutePrefixIterator          { return nil }
-func (noOpTunOptions) GetInet6RouteRange() libbox.RoutePrefixIterator          { return nil }
-func (noOpTunOptions) GetIncludePackage() libbox.StringIterator                { return nil }
-func (noOpTunOptions) GetExcludePackage() libbox.StringIterator                { return nil }
-func (noOpTunOptions) IsHTTPProxyEnabled() bool                                { return false }
-func (noOpTunOptions) GetHTTPProxyServer() string                              { return "" }
-func (noOpTunOptions) GetHTTPProxyServerPort() int32                           { return 0 }
-func (noOpTunOptions) GetHTTPProxyBypassDomain() libbox.StringIterator         { return nil }
-func (noOpTunOptions) GetHTTPProxyMatchDomain() libbox.StringIterator          { return nil }
-
-// --- WiFi state ---
-
-func TestSetWIFIState_ReadRoundTrip(t *testing.T) {
+func TestUsePlatformConnectionOwnerFinder(t *testing.T) {
 	p := newPlatform()
-	if p.ReadWIFIState() != nil {
-		t.Error("should be nil before set")
-	}
-	p.SetWIFIState("MyWiFi", "aa:bb:cc:dd:ee:ff")
-	state := p.ReadWIFIState()
-	if state == nil {
-		t.Fatal("expected non-nil after set")
+	want := runtime.GOOS == "linux"
+	if p.UsePlatformConnectionOwnerFinder() != want {
+		t.Errorf("UsePlatformConnectionOwnerFinder = %v, want %v", !want, want)
 	}
 }
 
-func TestSetWIFIState_EmptySSIDReturnsNil(t *testing.T) {
+func TestPlatformIO_Initialize(t *testing.T) {
 	p := newPlatform()
-	p.SetWIFIState("", "aa:bb:cc:dd:ee:ff")
-	if p.ReadWIFIState() != nil {
-		t.Error("empty SSID should return nil")
+	if err := p.Initialize(nil); err != nil {
+		t.Errorf("Initialize: %v", err)
+	}
+}
+
+// skip on non-Linux (no root needed for unit tests)
+func TestFindConnectionOwner_NonLinux(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("tested separately on Linux")
+	}
+	p := newPlatform()
+	_, err := p.FindConnectionOwner(nil)
+	if err == nil {
+		t.Error("expected error on non-Linux")
+	}
+}
+
+// --- callbackInterfaceMonitor ---
+
+func TestCallbackInterfaceMonitor_DefaultNil(t *testing.T) {
+	m := &callbackInterfaceMonitor{}
+	if m.DefaultInterface() != nil {
+		t.Error("default should be nil")
+	}
+}
+
+func TestCallbackInterfaceMonitor_Lifecycle(t *testing.T) {
+	m := &callbackInterfaceMonitor{}
+	if err := m.Start(); err != nil {
+		t.Errorf("Start: %v", err)
+	}
+	if err := m.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
+// --- SetInterfacesJSON + NetworkInterfaces interaction ---
+
+func TestNetworkInterfaces_UsesCachedJSON(t *testing.T) {
+	p := newPlatform()
+	p.SetInterfacesJSON(`[{"name":"rmnet0","index":5,"mtu":1400,"addresses":["10.0.0.1/32"],"flags":1,"type":0}]`)
+
+	ifaces, err := p.NetworkInterfaces()
+	if err != nil {
+		t.Fatalf("NetworkInterfaces: %v", err)
+	}
+	if len(ifaces) != 1 {
+		t.Fatal("expected one interface from cached JSON")
+	}
+	if ifaces[0].Name != "rmnet0" {
+		t.Errorf("Name = %q, want rmnet0", ifaces[0].Name)
+	}
+}
+
+func TestOpenInterface_NoFdError(t *testing.T) {
+	p := newPlatform()
+	p.SetMobile(true)
+	_, err := p.OpenInterface(nil, option.TunPlatformOptions{})
+	if err == nil {
+		t.Error("OpenInterface should fail without TUN fd")
 	}
 }

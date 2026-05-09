@@ -85,38 +85,23 @@ Desktop (c-shared) and Mobile (gomobile) FFI interfaces for integration with any
 ### Capabilities
 
 - **Service lifecycle** — init, start, stop, destroy with hot-reload support
-- **Config management** — validate, reload, TUN restart, VPN split-tunneling
+- **Config management** — validate, reload TUN, VPN split-tunneling
 - **Proxy control** — node selection, URL test delay, routing mode switch
-- **Real-time events** — traffic, logs, connections, proxy groups, mode changes via callback
-- **Connection tracking** — full lifecycle with per-connection metadata
+- **Query API** — proxies, traffic, logs, connections, memory stats via JSON
 - **Platform IO** — TUN fd, socket protector, WiFi state (mobile)
 - **Resource monitoring** — memory stats, goroutines, OOM protection
-
-### Build
-
-```bash
-# Desktop shared library
-task ffi-darwin-arm64
-task ffi-linux-amd64
-task ffi-windows-amd64
-
-# Mobile SDK
-task mobile-android-arm64   # Android AAR
-task mobile-ios-arm64       # iOS xcframework
-```
 
 ### Quick Start (Desktop)
 
 ```c
 #include "cff_core.h"
 
-CoreSetCallback(my_callback);
 CoreInit("{\"home_dir\":\"/tmp/singcast\"}");
 CoreStartWithContent(yaml_content, "");
 
 // Query state
-char* traffic = CoreQueryTraffic();  // JSON with up/down/memory/started_at
-CoreFreeString(traffic);
+char* proxies = CoreQueryProxies();
+CoreFreeString(proxies);
 
 CoreStop();
 CoreDestroy();
@@ -127,7 +112,7 @@ CoreDestroy();
 **Android (Kotlin):**
 ```kotlin
 val singcast = Singcast()
-singcast.init("""{"home_dir":"$homeDir"}""")
+singcast.init("""{"home_dir":"$homeDir"}""}")
 
 val fd = vpnService.Builder()
     .addAddress("172.18.0.1", 30)

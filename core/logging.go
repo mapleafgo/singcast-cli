@@ -24,7 +24,6 @@ const (
 
 var (
 	coreLogMu sync.Mutex
-	coreLogCb func(eventType int32, jsonPayload string)
 
 	// Fixed-size ring buffer avoids slice-shift memory waste.
 	coreLogRing [maxCoreLogEntries]LogEntry
@@ -84,13 +83,7 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	if coreLogLen < maxCoreLogEntries {
 		coreLogLen++
 	}
-	cb := coreLogCb
 	coreLogMu.Unlock()
-
-	if cb != nil {
-		data, _ := json.Marshal([]LogEntry{entry})
-		cb(EventCoreLog, string(data))
-	}
 	return nil
 }
 
@@ -137,12 +130,6 @@ func slogToCoreLevel(level slog.Level) int32 {
 	default:
 		return LogLevelTrace
 	}
-}
-
-func setLogCallback(fn func(int32, string)) {
-	coreLogMu.Lock()
-	coreLogCb = fn
-	coreLogMu.Unlock()
 }
 
 // syncLogLevelFromConfig parses log.level from sing-box JSON config and

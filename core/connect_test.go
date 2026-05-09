@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -11,16 +10,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
+	"runtime"
 	"testing"
 	"time"
 
 	"golang.org/x/net/proxy"
 
 	"github.com/mapleafgo/singcast/translator"
+	"github.com/sagernet/sing/common/json"
 )
 
-const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.clash_for_flutter/profiles/1777343285557.yaml"
+const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.singcast/profiles/1778090845688.yaml"
 
 // TestConnectivity_Google starts the service with a real config and verifies
 // that google.com is reachable through the mixed proxy inbound.
@@ -47,7 +47,6 @@ func TestConnectivity_Google(t *testing.T) {
 		t.Fatal("no mixed inbound port found in config")
 	}
 
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
@@ -59,37 +58,6 @@ func TestConnectivity_Google(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
-
-	var (
-		connMu      sync.Mutex
-		connEvents  []string
-		gotConnOpen bool
-	)
-	svc.SetOnEvent(func(eventType int32, jsonPayload string) {
-		if eventType != EventConnections {
-			return
-		}
-		connMu.Lock()
-		defer connMu.Unlock()
-		connEvents = append(connEvents, jsonPayload)
-		if !gotConnOpen {
-			var msg struct {
-				Reset bool `json:"reset"`
-				Items []struct {
-					Type int    `json:"type"`
-					ID   string `json:"id"`
-				} `json:"items"`
-			}
-			if json.Unmarshal([]byte(jsonPayload), &msg) == nil {
-				for _, item := range msg.Items {
-					if item.Type == 0 {
-						gotConnOpen = true
-						break
-					}
-				}
-			}
-		}
-	})
 
 	if err := svc.StartWithContent(jsonContent, ""); err != nil {
 		t.Fatalf("StartWithContent: %v", err)
@@ -137,17 +105,6 @@ func TestConnectivity_Google(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
-
-	connMu.Lock()
-	events := connEvents
-	sawOpen := gotConnOpen
-	connMu.Unlock()
-
-	if !sawOpen {
-		t.Error("no connection open event received — traffic may not have gone through singcast")
-	} else {
-		t.Logf("confirmed: received %d connection events, traffic went through singcast proxy", len(events))
-	}
 }
 
 // TestConnectivity_SOCKS5 verifies google.com is reachable through SOCKS5.
@@ -174,7 +131,6 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		t.Fatal("no mixed inbound port found in config")
 	}
 
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
@@ -186,37 +142,6 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
-
-	var (
-		connMu      sync.Mutex
-		connEvents  []string
-		gotConnOpen bool
-	)
-	svc.SetOnEvent(func(eventType int32, jsonPayload string) {
-		if eventType != EventConnections {
-			return
-		}
-		connMu.Lock()
-		defer connMu.Unlock()
-		connEvents = append(connEvents, jsonPayload)
-		if !gotConnOpen {
-			var msg struct {
-				Reset bool `json:"reset"`
-				Items []struct {
-					Type int    `json:"type"`
-					ID   string `json:"id"`
-				} `json:"items"`
-			}
-			if json.Unmarshal([]byte(jsonPayload), &msg) == nil {
-				for _, item := range msg.Items {
-					if item.Type == 0 {
-						gotConnOpen = true
-						break
-					}
-				}
-			}
-		}
-	})
 
 	if err := svc.StartWithContent(jsonContent, ""); err != nil {
 		t.Fatalf("StartWithContent: %v", err)
@@ -269,17 +194,6 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
-
-	connMu.Lock()
-	events := connEvents
-	sawOpen := gotConnOpen
-	connMu.Unlock()
-
-	if !sawOpen {
-		t.Error("no connection open event received — traffic may not have gone through singcast")
-	} else {
-		t.Logf("confirmed: received %d connection events, traffic went through SOCKS5 proxy", len(events))
-	}
 }
 
 // TestConnectivity_HTTPS verifies an HTTPS site is reachable through the proxy.
@@ -306,7 +220,6 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		t.Fatal("no mixed inbound port found in config")
 	}
 
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o700); err != nil {
@@ -318,37 +231,6 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	defer svc.Destroy()
-
-	var (
-		connMu      sync.Mutex
-		connEvents  []string
-		gotConnOpen bool
-	)
-	svc.SetOnEvent(func(eventType int32, jsonPayload string) {
-		if eventType != EventConnections {
-			return
-		}
-		connMu.Lock()
-		defer connMu.Unlock()
-		connEvents = append(connEvents, jsonPayload)
-		if !gotConnOpen {
-			var msg struct {
-				Reset bool `json:"reset"`
-				Items []struct {
-					Type int    `json:"type"`
-					ID   string `json:"id"`
-				} `json:"items"`
-			}
-			if json.Unmarshal([]byte(jsonPayload), &msg) == nil {
-				for _, item := range msg.Items {
-					if item.Type == 0 {
-						gotConnOpen = true
-						break
-					}
-				}
-			}
-		}
-	})
 
 	if err := svc.StartWithContent(jsonContent, ""); err != nil {
 		t.Fatalf("StartWithContent: %v", err)
@@ -394,17 +276,6 @@ func TestConnectivity_HTTPS(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("expected status 204, got %d", resp.StatusCode)
 	}
-
-	connMu.Lock()
-	events := connEvents
-	sawOpen := gotConnOpen
-	connMu.Unlock()
-
-	if !sawOpen {
-		t.Error("no connection open event received — traffic may not have gone through singcast")
-	} else {
-		t.Logf("confirmed: received %d connection events, HTTPS traffic went through proxy", len(events))
-	}
 }
 
 // extractMixedPort reads the mixed inbound listen_port from sing-box JSON config.
@@ -444,4 +315,148 @@ func waitForListen(t *testing.T, addr string, timeout time.Duration) bool {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return false
+}
+
+// --- TUN integration test ---
+
+// injectTunConfig injects a TUN inbound into sing-box JSON config.
+func injectTunConfig(jsonContent string) string {
+	var top map[string]json.RawMessage
+	if json.Unmarshal([]byte(jsonContent), &top) != nil {
+		return jsonContent
+	}
+
+	tun := map[string]any{
+		"type":           "tun",
+		"tag":            "tun-in",
+		"interface_name": "sing-box",
+		"address":        "172.19.0.1/30",
+		"auto_route":     true,
+		"strict_route":   true,
+	}
+
+	var rawInbounds []json.RawMessage
+	if raw, ok := top["inbounds"]; ok {
+		_ = json.Unmarshal(raw, &rawInbounds)
+	}
+	tunJSON, _ := json.Marshal(tun)
+	rawInbounds = append([]json.RawMessage{tunJSON}, rawInbounds...)
+	top["inbounds"], _ = json.Marshal(rawInbounds)
+
+	out, _ := json.Marshal(top)
+	return string(out)
+}
+
+// waitForInterface polls until a network interface with the given name appears.
+func waitForInterface(t *testing.T, name string, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		iface, err := net.InterfaceByName(name)
+		if err == nil && iface != nil {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
+}
+
+// TestConnectivity_TUN verifies TUN mode: injects a tun inbound into the real
+// config, starts the service, checks the TUN interface is created, and confirms
+// google.com is reachable through the mixed proxy (TUN routes system traffic;
+// mixed proxy confirms the service stack is functional).
+func TestConnectivity_TUN(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("TUN test only runs on Linux and macOS")
+	}
+	if os.Getuid() != 0 {
+		t.Skip("TUN test requires root (run with sudo)")
+	}
+	if _, err := os.Stat(realConfigPath); err != nil {
+		t.Skipf("real config not found: %s", realConfigPath)
+	}
+
+	data, err := os.ReadFile(realConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	jsonContent, warns, err := translator.Translate(data)
+	if err != nil {
+		t.Fatalf("translate config: %v", err)
+	}
+	for _, w := range warns {
+		t.Logf("WARN: %s", w)
+	}
+
+	// Extract mixed port for health check (TUN routes all traffic,
+	// but we use mixed proxy to confirm the service works).
+	mixedPort := extractMixedPort(t, jsonContent)
+
+	// Inject TUN inbound.
+	jsonContent = injectTunConfig(jsonContent)
+
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	if err := os.MkdirAll(homeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService()
+	if err := svc.Init(initJSON(homeDir)); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer svc.Destroy()
+
+	if err := svc.StartWithContent(jsonContent, ""); err != nil {
+		t.Fatalf("StartWithContent: %v", err)
+	}
+	defer svc.Stop()
+
+	// Verify TUN interface is created.
+	if !waitForInterface(t, "sing-box", 15*time.Second) {
+		ifaces, _ := net.Interfaces()
+		var names []string
+		for _, i := range ifaces {
+			names = append(names, i.Name)
+		}
+		t.Fatalf("TUN interface 'sing-box' not found after 15s; available: %v", names)
+	}
+	t.Log("TUN interface 'sing-box' is up")
+
+	// If mixed inbound exists, verify proxy still works through the service.
+	if mixedPort != 0 {
+		proxyAddr := fmt.Sprintf("127.0.0.1:%d", mixedPort)
+		if !waitForListen(t, proxyAddr, 10*time.Second) {
+			t.Fatalf("mixed proxy %s not listening", proxyAddr)
+		}
+
+		proxyURL, _ := url.Parse(fmt.Sprintf("http://%s", proxyAddr))
+		transport := &http.Transport{
+			Proxy:           http.ProxyURL(proxyURL),
+			DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+
+		reqCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://www.gstatic.com/generate_204", nil)
+		if err != nil {
+			t.Fatalf("create request: %v", err)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("GET gstatic.com through proxy: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("expected 204, got %d", resp.StatusCode)
+		} else {
+			t.Log("confirmed: proxy request through TUN-enabled service returned 204")
+		}
+	}
 }

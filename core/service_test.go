@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sagernet/sing-box/experimental/libbox"
 )
 
 func mustMkdirAll(t *testing.T, dir string) {
@@ -24,7 +22,6 @@ func initJSON(homeDir string) string {
 }
 
 func TestService_QueryMemoryStats(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -51,7 +48,6 @@ func TestService_QueryMemoryStats(t *testing.T) {
 }
 
 func TestService_QueryLogsReturnsJSON(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -69,13 +65,7 @@ func TestService_QueryLogsReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestService_SetOnEventBeforeInit(t *testing.T) {
-	svc := NewService()
-	svc.SetOnEvent(func(eventType int32, jsonPayload string) {})
-}
-
 func TestService_StopWhenNotRunning(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -92,7 +82,6 @@ func TestService_StopWhenNotRunning(t *testing.T) {
 }
 
 func TestService_DestroyTwice(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -106,7 +95,6 @@ func TestService_DestroyTwice(t *testing.T) {
 }
 
 func TestService_StartOnDestroyed(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -124,7 +112,6 @@ func TestService_StartOnDestroyed(t *testing.T) {
 }
 
 func TestService_FlushDNS(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -139,7 +126,6 @@ func TestService_FlushDNS(t *testing.T) {
 }
 
 func TestService_QueryLogsWithCoreLogs(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -160,62 +146,7 @@ func TestService_QueryLogsWithCoreLogs(t *testing.T) {
 	}
 }
 
-func TestParseOverrideOptions(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		wantInc  int
-		wantExc  int
-		wantAuto bool
-		wantErr  bool
-	}{
-		{"empty", "", 0, 0, false, false},
-		{"valid", `{"include_packages":["a","b"],"exclude_packages":["c"]}`, 2, 1, false, false},
-		{"auto_redirect", `{"auto_redirect":true,"include_packages":["x"]}`, 1, 0, true, false},
-		{"invalid_json", `{bad`, 0, 0, false, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts, cfg, err := parseOverrideOptions(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err != nil {
-				return
-			}
-			if opts == nil {
-				t.Fatal("opts should not be nil on success")
-			}
-			if cfg.AutoRedirect != tt.wantAuto {
-				t.Errorf("AutoRedirect = %v, want %v", cfg.AutoRedirect, tt.wantAuto)
-			}
-			countInc := countIter(opts.IncludePackage)
-			countExc := countIter(opts.ExcludePackage)
-			if countInc != tt.wantInc {
-				t.Errorf("include count = %d, want %d", countInc, tt.wantInc)
-			}
-			if countExc != tt.wantExc {
-				t.Errorf("exclude count = %d, want %d", countExc, tt.wantExc)
-			}
-		})
-	}
-}
-
-func countIter(it libbox.StringIterator) int {
-	if it == nil {
-		return 0
-	}
-	n := 0
-	for it.HasNext() {
-		it.Next()
-		n++
-	}
-	return n
-}
-
 func TestSetOverridePackages_StateChecks(t *testing.T) {
-	resetLibboxForTesting()
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
 	mustMkdirAll(t, homeDir)
@@ -229,15 +160,6 @@ func TestSetOverridePackages_StateChecks(t *testing.T) {
 	t.Run("NotRunning", func(t *testing.T) {
 		if err := svc.SetOverridePackages(`{"include_packages":["a"]}`); err == nil {
 			t.Error("expected error when not running")
-		}
-	})
-
-	t.Run("InvalidJSON", func(t *testing.T) {
-		// parseOverrideOptions validates JSON regardless of state.
-		// Test it directly to ensure the parse path is covered.
-		_, _, err := parseOverrideOptions(`{bad`)
-		if err == nil {
-			t.Error("expected parse error for invalid JSON")
 		}
 	})
 }

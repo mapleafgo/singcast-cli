@@ -7,7 +7,6 @@ import "C"
 
 import (
 	"encoding/json"
-	"unsafe"
 
 	"github.com/mapleafgo/singcast/ffi"
 )
@@ -60,16 +59,7 @@ func CoreSetOverridePackages(overrideJSON *C.char) *C.char {
 //export CoreSetLogLevel
 func CoreSetLogLevel(level C.int) { api.SetLogLevel(int32(level)) }
 
-//export CoreSetError
-func CoreSetError(message *C.char) { api.SetError(goString(message)) }
-
-// --- Pause / Wake / Network ---
-
-//export CorePause
-func CorePause() { api.Pause() }
-
-//export CoreWake
-func CoreWake() { api.Wake() }
+// --- Network ---
 
 //export CoreResetNetwork
 func CoreResetNetwork() { api.ResetNetwork() }
@@ -107,9 +97,7 @@ func CoreQueryProxies() *C.char { return cString(api.QueryProxies()) }
 func CoreQueryTraffic() *C.char { return cString(api.QueryTraffic()) }
 
 //export CoreQueryLogs
-func CoreQueryLogs(clear C.int) *C.char {
-	return cString(api.QueryLogs(clear != 0))
-}
+func CoreQueryLogs() *C.char { return cString(api.QueryLogs()) }
 
 //export CoreQueryConnections
 func CoreQueryConnections() *C.char { return cString(api.QueryConnections()) }
@@ -126,23 +114,7 @@ func CoreCloseAllConnections() *C.char {
 	return resultJSON(api.CloseAllConnections())
 }
 
-// --- Platform Queries ---
-
-//export CoreNeedFindProcess
-func CoreNeedFindProcess() C.int {
-	if api.NeedFindProcess() {
-		return 1
-	}
-	return 0
-}
-
-//export CoreWriteMessage
-func CoreWriteMessage(level C.int, message *C.char) {
-	api.WriteMessage(int32(level), goString(message))
-}
-
-//export CoreQueryTunOptions
-func CoreQueryTunOptions() *C.char { return cString(api.QueryTunOptions()) }
+// --- System ---
 
 //export CoreFlushSystemDNS
 func CoreFlushSystemDNS() { api.FlushSystemDNS() }
@@ -162,16 +134,3 @@ func CoreSetMemoryLimit(bytes C.longlong) *C.char {
 
 //export CoreGetVersion
 func CoreGetVersion() *C.char { return cString(api.Version()) }
-
-// --- Events ---
-
-//export CoreSetCallback
-func CoreSetCallback(cb unsafe.Pointer) { setCallback(cb) }
-
-// --- Locale ---
-
-//export CoreSetLocale
-func CoreSetLocale(localeID *C.char) { ffi.SetLocale(goString(localeID)) }
-
-// --- System Proxy ---
-// System proxy management is handled by the GUI, not the core.
