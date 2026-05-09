@@ -30,6 +30,12 @@ func translateRules(_ *RawConfig, t *translation) {
 
 // generateGeoRoute creates country-specific route rules.
 func generateGeoRoute(cc string, proxyTag string, t *translation) {
+	// All countries: .{cc} domain suffix → direct
+	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+		"domain_suffix": []string{"." + cc},
+		"outbound":      "DIRECT",
+	})
+
 	if cc == "cn" {
 		// CN geolocation → direct
 		ensureRuleSetDef("geosite-geolocation-cn", "geosite", "geolocation-cn", t)
@@ -54,7 +60,7 @@ func generateGeoRoute(cc string, proxyTag string, t *translation) {
 			"outbound": "DIRECT",
 		})
 	} else {
-		// Generic country: geoip-{cc} → direct
+		// geoip-{cc} → direct
 		ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"rule_set": []string{"geoip-" + cc},
