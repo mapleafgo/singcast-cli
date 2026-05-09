@@ -7,12 +7,14 @@ cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 | Capability | Desktop | Mobile |
 |------------|---------|--------|
 | Service lifecycle | CoreInit / Start / Stop / Destroy | Init / Start / Stop / Destroy |
+| State query | CoreQueryState | State |
 | Config management | Check / ReloadTUN / Override | Check / ReloadTUN / Override |
-| Proxy control | Select / Test / Mode | Select / Test / Mode |
+| Proxy control | Select / Test / TestGroup / Mode | Select / Test / TestGroup / Mode |
 | Query API | Query* functions | Query* methods |
 | Connection tracking | Query / Close | Query / Close |
+| Rules / DNS / Cache | QueryRules / QueryDNS / Flush* | QueryRules / QueryDNS / Flush* |
 | Platform IO (TUN, WiFi, DNS) | Limited | Full (TUN fd, SocketProtector, WiFi) |
-| Memory management | SetMemoryLimit / Query | SetMemoryLimit / Query |
+| Memory management | SetMemoryLimit / Query / TriggerGC | SetMemoryLimit / Query / TriggerGC |
 
 ---
 
@@ -28,6 +30,7 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | `CoreStartWithContent` | `char* CoreStartWithContent(const char* content, const char* ruleSetProxy)` | Start with Clash YAML or sing-box JSON content |
 | `CoreStop` | `char* CoreStop()` | Stop the service |
 | `CoreDestroy` | `void CoreDestroy()` | Release all resources (terminal) |
+| `CoreQueryState` | `int CoreQueryState()` | Service state: 0=Created, 1=Initialized, 2=Running, 3=Destroyed |
 
 ### Config
 
@@ -54,7 +57,8 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreSelectProxy` | `char* CoreSelectProxy(const char* group, const char* tag)` | Select node in proxy group |
-| `CoreTestDelay` | `char* CoreTestDelay(const char* name, int timeoutMs)` | URL test, returns `{"delay":ms}` or `{"delay":-1}` |
+| `CoreTestDelay` | `int CoreTestDelay(const char* name, int timeoutMs)` | URL test, returns delay in ms or -1 on error |
+| `CoreTestGroupDelay` | `char* CoreTestGroupDelay(const char* group, int timeoutMs)` | Test all nodes in group, returns `{"tag":ms}` |
 | `CoreSetMode` | `char* CoreSetMode(const char* mode)` | Set routing mode: `rule` / `global` / `direct` |
 | `CoreSetGroupExpand` | `char* CoreSetGroupExpand(const char* group, int expand)` | Persist UI expand state |
 
@@ -66,7 +70,10 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | `CoreQueryTraffic` | `char* CoreQueryTraffic()` | Traffic stats (JSON) |
 | `CoreQueryLogs` | `char* CoreQueryLogs()` | Recent log entries from ring buffer |
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
+| `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
 | `CoreQueryMemoryStats` | `char* CoreQueryMemoryStats()` | Go runtime memory |
+| `CoreQueryRules` | `char* CoreQueryRules()` | Routing rule list |
+| `CoreQueryDNS` | `char* CoreQueryDNS(const char* name, int qType)` | DNS query result |
 
 ### Connection Management
 
@@ -75,19 +82,22 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | `CoreCloseConnection` | `char* CoreCloseConnection(const char* id)` | Close connection by ID |
 | `CoreCloseAllConnections` | `char* CoreCloseAllConnections()` | Close all connections |
 
+### Cache / GC
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `CoreFlushFakeIP` | `char* CoreFlushFakeIP()` | Clear FakeIP address cache |
+| `CoreFlushDNSCache` | `char* CoreFlushDNSCache()` | Clear internal DNS query cache |
+| `CoreFlushSystemDNS` | `void CoreFlushSystemDNS()` | Flush system DNS cache |
+| `CoreTriggerGC` | `void CoreTriggerGC()` | Force garbage collection |
+
 ### Memory
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `CoreSetMemoryLimit` | `char* CoreSetMemoryLimit(int64_t bytes)` | Go runtime soft memory limit (0=disable) |
+| `CoreSetMemoryLimit` | `void CoreSetMemoryLimit(int64_t bytes)` | Go runtime soft memory limit (0=disable) |
 
-### Platform
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `CoreFlushSystemDNS` | `void CoreFlushSystemDNS()` | Flush system DNS cache |
-
-### Utilities
+### Version
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -115,6 +125,7 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | `StartWithContent(content, ruleSetProxy string) error` | Start with config |
 | `Stop() error` | Stop service |
 | `Destroy()` | Release resources (terminal) |
+| `State() int32` | Service state: 0=Created, 1=Initialized, 2=Running, 3=Destroyed |
 
 ### Platform IO
 
@@ -153,6 +164,7 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 |--------|-------------|
 | `SelectProxy(group, tag string) error` | Select proxy node |
 | `TestDelay(name string, timeoutMs int32) int32` | URL test delay (ms), -1 on error/timeout |
+| `TestGroupDelay(groupTag string, timeoutMs int32) string` | Test all nodes in group, JSON `{"tag":ms}` |
 | `SetMode(mode string) error` | Set routing mode |
 | `SetGroupExpand(group string, expand bool) error` | UI expand state |
 
@@ -164,6 +176,10 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | `QueryTraffic() string` | Traffic stats (JSON) |
 | `QueryLogs() string` | Recent log entries |
 | `QueryConnections() string` | Active connections (JSON) |
+| `QueryMode() string` | Current mode and available modes |
+| `QueryMemoryStats() string` | Go runtime memory (JSON) |
+| `QueryRules() string` | Routing rule list (JSON) |
+| `QueryDNS(name string, qType uint16) string` | DNS query result (JSON) |
 
 ### Connection Management
 
@@ -172,12 +188,14 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | `CloseConnection(id string) error` | Close by ID |
 | `CloseAllConnections() error` | Close all |
 
-### System
+### Cache / GC
 
 | Method | Description |
 |--------|-------------|
-| `FlushSystemDNS()` | Flush DNS cache |
-| `QueryMemoryStats() string` | Go runtime memory (JSON) |
+| `FlushFakeIP() error` | Clear FakeIP cache |
+| `FlushDNSCache() error` | Clear internal DNS cache |
+| `FlushSystemDNS()` | Flush system DNS cache |
+| `TriggerGC()` | Force garbage collection |
 
 ### Memory
 
@@ -220,6 +238,81 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | `selected` | string | Currently selected node tag |
 | `items` | array | Nodes in this group |
 | `items[].tag` | string | Node tag |
+
+### GroupDelay
+
+```json
+{
+  "hk-node-01": 120,
+  "us-node-01": -1
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| key | string | Outbound tag |
+| value | int32 | Delay in ms, -1 on error/timeout |
+
+### Connection
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "network": "tcp",
+    "source": "192.168.1.2:54321",
+    "destination": "93.184.216.34:443",
+    "domain": "example.com",
+    "outbound": "PROXY",
+    "rule": "domain(example.com) -> direct",
+    "upload": 1024,
+    "download": 4096,
+    "start": "2026-05-10T12:00:00Z"
+  }
+]
+```
+
+### Mode
+
+```json
+{
+  "modes": ["Rule", "Global", "Direct"],
+  "current_mode": "Rule"
+}
+```
+
+### Traffic
+
+```json
+{
+  "up": 1048576,
+  "down": 10485760,
+  "connections": 42
+}
+```
+
+### Rule
+
+```json
+{
+  "rules": [
+    { "type": "default", "payload": "...", "proxy": "direct" }
+  ]
+}
+```
+
+### DNS Query Result
+
+```json
+{
+  "Status": 0,
+  "Question": [{ "Name": "example.com.", "Qtype": 1, "Qclass": 1 }],
+  "Answer": [
+    { "name": "example.com.", "type": 1, "TTL": 300, "data": "93.184.216.34" }
+  ],
+  "Server": "internal"
+}
+```
 
 ### LogEntry
 

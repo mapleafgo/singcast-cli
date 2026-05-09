@@ -39,6 +39,9 @@ func CoreStop() *C.char { return resultJSON(api.Stop()) }
 //export CoreDestroy
 func CoreDestroy() { api.Destroy() }
 
+//export CoreQueryState
+func CoreQueryState() C.int { return C.int(api.State()) }
+
 // --- Config ---
 
 //export CoreCheckConfig
@@ -72,10 +75,8 @@ func CoreSelectProxy(group, tag *C.char) *C.char {
 }
 
 //export CoreTestDelay
-func CoreTestDelay(name *C.char, timeoutMs C.int) *C.char {
-	delay := api.TestDelay(goString(name), int32(timeoutMs))
-	data, _ := json.Marshal(map[string]int32{"delay": delay})
-	return cString(string(data))
+func CoreTestDelay(name *C.char, timeoutMs C.int) C.int {
+	return C.int(api.TestDelay(goString(name), int32(timeoutMs)))
 }
 
 //export CoreSetMode
@@ -102,6 +103,9 @@ func CoreQueryLogs() *C.char { return cString(api.QueryLogs()) }
 //export CoreQueryConnections
 func CoreQueryConnections() *C.char { return cString(api.QueryConnections()) }
 
+//export CoreQueryMode
+func CoreQueryMode() *C.char { return cString(api.QueryMode()) }
+
 // --- Connection Management ---
 
 //export CoreCloseConnection
@@ -122,13 +126,34 @@ func CoreFlushSystemDNS() { api.FlushSystemDNS() }
 //export CoreQueryMemoryStats
 func CoreQueryMemoryStats() *C.char { return cString(api.QueryMemoryStats()) }
 
+// --- Rules / DNS / Cache ---
+
+//export CoreQueryRules
+func CoreQueryRules() *C.char { return cString(api.QueryRules()) }
+
+//export CoreFlushFakeIP
+func CoreFlushFakeIP() *C.char { return resultJSON(api.FlushFakeIP()) }
+
+//export CoreQueryDNS
+func CoreQueryDNS(name *C.char, qType C.int) *C.char {
+	return cString(api.QueryDNS(goString(name), uint16(qType)))
+}
+
+//export CoreFlushDNSCache
+func CoreFlushDNSCache() *C.char { return resultJSON(api.FlushDNSCache()) }
+
+//export CoreTestGroupDelay
+func CoreTestGroupDelay(group *C.char, timeoutMs C.int) *C.char {
+	return cString(api.TestGroupDelay(goString(group), int32(timeoutMs)))
+}
+
+//export CoreTriggerGC
+func CoreTriggerGC() { api.TriggerGC() }
+
 // --- Memory ---
 
 //export CoreSetMemoryLimit
-func CoreSetMemoryLimit(bytes C.longlong) *C.char {
-	api.SetMemoryLimit(int64(bytes))
-	return resultJSON(nil)
-}
+func CoreSetMemoryLimit(bytes C.longlong) { api.SetMemoryLimit(int64(bytes)) }
 
 // --- Version ---
 

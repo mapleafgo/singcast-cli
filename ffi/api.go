@@ -49,6 +49,10 @@ func (s *Singcast) Stop() error { return s.svc.Stop() }
 // Destroy releases all resources. The instance cannot be reused.
 func (s *Singcast) Destroy() { s.svc.Destroy() }
 
+// State returns the current service lifecycle state.
+// 0=Created, 1=Initialized, 2=Running, 3=Destroyed.
+func (s *Singcast) State() int32 { return int32(s.svc.State()) }
+
 // --- Platform IO ---
 
 // SetTunFd stores a TUN file descriptor for mobile platforms.
@@ -123,7 +127,7 @@ func (s *Singcast) TestDelay(name string, timeoutMs int32) int32 {
 }
 
 // SetMode sets the clash routing mode (rule, global, or direct).
-func (s *Singcast) SetMode(mode string) error { return s.svc.SetClashMode(mode) }
+func (s *Singcast) SetMode(mode string) error { return s.svc.SetMode(mode) }
 
 // SetGroupExpand sets the UI expand state for a proxy group.
 func (s *Singcast) SetGroupExpand(group string, expand bool) error {
@@ -144,6 +148,9 @@ func (s *Singcast) QueryLogs() string { return s.svc.QueryLogs() }
 // QueryConnections returns active connections as JSON.
 func (s *Singcast) QueryConnections() string { return s.svc.QueryConnections() }
 
+// QueryMode returns current routing mode and available modes as JSON.
+func (s *Singcast) QueryMode() string { return s.svc.QueryMode() }
+
 // CloseConnection closes a connection by ID.
 func (s *Singcast) CloseConnection(id string) error { return s.svc.CloseConnection(id) }
 
@@ -157,6 +164,29 @@ func (s *Singcast) FlushSystemDNS() { s.svc.FlushSystemDNS() }
 
 // QueryMemoryStats returns current Go runtime memory statistics as JSON.
 func (s *Singcast) QueryMemoryStats() string { return s.svc.QueryMemoryStats() }
+
+// --- Rules / DNS / Cache ---
+
+// QueryRules returns the routing rule list as JSON.
+func (s *Singcast) QueryRules() string { return s.svc.QueryRules() }
+
+// FlushFakeIP clears the FakeIP address cache.
+func (s *Singcast) FlushFakeIP() error { return s.svc.FlushFakeIP() }
+
+// QueryDNS performs a DNS query and returns the result as JSON.
+func (s *Singcast) QueryDNS(name string, qType uint16) string { return s.svc.QueryDNS(name, qType) }
+
+// FlushDNSCache clears the internal DNS query cache.
+func (s *Singcast) FlushDNSCache() error { return s.svc.FlushDNSCache() }
+
+// TestGroupDelay runs URL tests for all outbounds in a group.
+// Returns a JSON map of {tag: delay_ms}. -1 means failure/timeout.
+func (s *Singcast) TestGroupDelay(groupTag string, timeoutMs int32) string {
+	return s.svc.TestGroupDelay(groupTag, timeoutMs)
+}
+
+// TriggerGC forces a garbage collection.
+func (s *Singcast) TriggerGC() { s.svc.TriggerGC() }
 
 // --- Memory ---
 
