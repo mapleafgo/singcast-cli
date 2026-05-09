@@ -162,9 +162,6 @@ func (s *Singcast) CloseAllConnections() error { return s.svc.CloseConnections()
 // FlushSystemDNS attempts to flush the system DNS cache.
 func (s *Singcast) FlushSystemDNS() { s.svc.FlushSystemDNS() }
 
-// QueryMemoryStats returns current Go runtime memory statistics as JSON.
-func (s *Singcast) QueryMemoryStats() string { return s.svc.QueryMemoryStats() }
-
 // --- Rules / DNS / Cache ---
 
 // QueryRules returns the routing rule list as JSON.

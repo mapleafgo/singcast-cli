@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -436,14 +435,14 @@ func (s *Service) QueryProxies() string {
 func (s *Service) QueryTraffic() string {
 	srv := s.clashServer()
 	if srv == nil {
-		return "{}"
+		return `{"up":0,"down":0,"connections":0,"memory":0}`
 	}
-	tm := srv.TrafficManager()
-	up, down := tm.Total()
-	data, _ := json.Marshal(map[string]int64{
-		"up":          up,
-		"down":        down,
-		"connections": int64(tm.ConnectionsLen()),
+	snap := srv.TrafficManager().Snapshot()
+	data, _ := json.Marshal(map[string]any{
+		"up":          snap.Upload,
+		"down":        snap.Download,
+		"connections": len(snap.Connections),
+		"memory":      snap.Memory,
 	})
 	return string(data)
 }
@@ -483,20 +482,6 @@ func (s *Service) QueryMode() string {
 	data, _ := json.Marshal(map[string]any{
 		"modes":        srv.ModeList(),
 		"current_mode": srv.Mode(),
-	})
-	return string(data)
-}
-
-func (s *Service) QueryMemoryStats() string {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	data, _ := json.Marshal(map[string]int64{
-		"sys":         int64(m.Sys),
-		"heap_alloc":  int64(m.HeapAlloc),
-		"heap_sys":    int64(m.HeapSys),
-		"stack_inuse": int64(m.StackInuse),
-		"goroutines":  int64(runtime.NumGoroutine()),
-		"limit":       debug.SetMemoryLimit(-1),
 	})
 	return string(data)
 }

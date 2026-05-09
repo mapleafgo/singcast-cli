@@ -162,9 +162,6 @@ func CoreCloseAllConnections() *C.char {
 //export CoreFlushSystemDNS
 func CoreFlushSystemDNS() { api.FlushSystemDNS() }
 
-//export CoreQueryMemoryStats
-func CoreQueryMemoryStats() *C.char { return cString(api.QueryMemoryStats()) }
-
 // --- Rules / DNS / Cache ---
 
 //export CoreQueryRules

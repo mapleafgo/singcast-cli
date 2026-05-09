@@ -21,32 +21,6 @@ func initJSON(homeDir string) string {
 	return string(data)
 }
 
-func TestService_QueryMemoryStats(t *testing.T) {
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	defer svc.Destroy()
-
-	got := svc.QueryMemoryStats()
-	var m map[string]int64
-	if err := json.Unmarshal([]byte(got), &m); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	for _, key := range []string{"sys", "heap_alloc", "heap_sys", "stack_inuse", "goroutines", "limit"} {
-		if _, ok := m[key]; !ok {
-			t.Errorf("missing field %q in %s", key, got)
-		}
-	}
-	if m["goroutines"] < 1 {
-		t.Errorf("goroutines = %d, want >= 1", m["goroutines"])
-	}
-}
-
 func TestService_QueryLogsReturnsJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")

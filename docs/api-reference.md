@@ -68,11 +68,10 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreQueryProxies` | `char* CoreQueryProxies()` | Proxy groups and nodes |
-| `CoreQueryTraffic` | `char* CoreQueryTraffic()` | Traffic stats (JSON) |
+| `CoreQueryTraffic` | `char* CoreQueryTraffic()` | Traffic snapshot: up/down/connections/memory |
 | `CoreQueryLogs` | `char* CoreQueryLogs()` | Recent log entries from ring buffer |
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
 | `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
-| `CoreQueryMemoryStats` | `char* CoreQueryMemoryStats()` | Go runtime memory |
 | `CoreQueryRules` | `char* CoreQueryRules()` | Routing rule list |
 | `CoreQueryDNS` | `char* CoreQueryDNS(const char* name, int qType)` | DNS query result |
 
@@ -191,11 +190,10 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | Method | Description |
 |--------|-------------|
 | `QueryProxies() string` | Proxy groups (JSON) |
-| `QueryTraffic() string` | Traffic stats (JSON) |
+| `QueryTraffic() string` | Traffic snapshot: up/down/connections/memory |
 | `QueryLogs() string` | Recent log entries |
 | `QueryConnections() string` | Active connections (JSON) |
 | `QueryMode() string` | Current mode and available modes |
-| `QueryMemoryStats() string` | Go runtime memory (JSON) |
 | `QueryRules() string` | Routing rule list (JSON) |
 | `QueryDNS(name string, qType uint16) string` | DNS query result (JSON) |
 
@@ -322,9 +320,17 @@ Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection ob
 {
   "up": 1048576,
   "down": 10485760,
-  "connections": 42
+  "connections": 42,
+  "memory": 33554432
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `up` | int64 | Cumulative upload (bytes) |
+| `down` | int64 | Cumulative download (bytes) |
+| `connections` | int | Active connection count |
+| `memory` | uint64 | Resident memory (bytes) |
 
 ### Rule
 
@@ -362,28 +368,6 @@ Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection ob
 | `level` | int32 | 2=error, 3=warn, 4=info, 5=debug, 6=trace |
 | `message` | string | Log content |
 | `timestamp` | int64 | Unix timestamp (milliseconds) |
-
-### MemoryStats
-
-```json
-{
-  "sys": 33554432,
-  "heap_alloc": 16777216,
-  "heap_sys": 25165824,
-  "stack_inuse": 1048576,
-  "goroutines": 42,
-  "limit": 0
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sys` | int64 | Total OS memory (bytes) |
-| `heap_alloc` | int64 | Allocated heap (bytes) |
-| `heap_sys` | int64 | Heap from OS (bytes) |
-| `stack_inuse` | int64 | Stack in use (bytes) |
-| `goroutines` | int64 | Active goroutine count |
-| `limit` | int64 | Soft memory limit (0=disabled) |
 
 ---
 
