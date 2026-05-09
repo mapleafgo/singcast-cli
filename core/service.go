@@ -386,7 +386,7 @@ func (s *Service) QueryProxies() string {
 	return string(data)
 }
 
-func (s *Service) QueryTraffic() string {
+func (s *Service) QueryStats() string {
 	srv := s.clashServer()
 	if srv == nil {
 		return `{"up":0,"down":0,"connections":0,"memory":0}`

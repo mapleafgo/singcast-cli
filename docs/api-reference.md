@@ -68,7 +68,7 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreQueryProxies` | `char* CoreQueryProxies()` | Proxy groups and nodes |
-| `CoreQueryTraffic` | `char* CoreQueryTraffic()` | Traffic snapshot: up/down/connections/memory |
+| `CoreQueryStats` | `char* CoreQueryStats()` | Traffic + memory snapshot: up/down/connections/memory |
 | `CoreQueryLogs` | `char* CoreQueryLogs()` | Recent log entries from ring buffer |
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
 | `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
@@ -190,7 +190,7 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | Method | Description |
 |--------|-------------|
 | `QueryProxies() string` | Proxy groups (JSON) |
-| `QueryTraffic() string` | Traffic snapshot: up/down/connections/memory |
+| `QueryStats() string` | Traffic + memory snapshot: up/down/connections/memory |
 | `QueryLogs() string` | Recent log entries |
 | `QueryConnections() string` | Active connections (JSON) |
 | `QueryMode() string` | Current mode and available modes |
@@ -314,7 +314,7 @@ Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection ob
 }
 ```
 
-### Traffic
+### Stats
 
 ```json
 {

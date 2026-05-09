@@ -139,8 +139,8 @@ func (s *Singcast) SetGroupExpand(group string, expand bool) error {
 // QueryProxies returns proxy groups as JSON.
 func (s *Singcast) QueryProxies() string { return s.svc.QueryProxies() }
 
-// QueryTraffic returns traffic stats as JSON.
-func (s *Singcast) QueryTraffic() string { return s.svc.QueryTraffic() }
+// QueryStats returns traffic and memory stats as JSON.
+func (s *Singcast) QueryStats() string { return s.svc.QueryStats() }
 
 // QueryLogs returns combined sing-box and core internal logs as JSON.
 func (s *Singcast) QueryLogs() string { return s.svc.QueryLogs() }

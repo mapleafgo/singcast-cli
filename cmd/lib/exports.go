@@ -133,8 +133,8 @@ func CoreSetGroupExpand(group *C.char, expand C.int) *C.char {
 //export CoreQueryProxies
 func CoreQueryProxies() *C.char { return cString(api.QueryProxies()) }
 
-//export CoreQueryTraffic
-func CoreQueryTraffic() *C.char { return cString(api.QueryTraffic()) }
+//export CoreQueryStats
+func CoreQueryStats() *C.char { return cString(api.QueryStats()) }
 
 //export CoreQueryLogs
 func CoreQueryLogs() *C.char { return cString(api.QueryLogs()) }
