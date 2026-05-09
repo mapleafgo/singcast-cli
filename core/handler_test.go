@@ -266,7 +266,7 @@ func TestHandler_InitializeClashMode(t *testing.T) {
 		}
 	})
 
-	h.InitializeClashMode(&stringIterator{items: []string{"rule", "global", "direct"}}, "rule")
+	h.InitializeClashMode(&stringIterator{items: []string{"Rule", "Global", "Direct"}}, "Rule")
 
 	var result map[string]any
 	if err := json.Unmarshal([]byte(got), &result); err != nil {
@@ -276,8 +276,8 @@ func TestHandler_InitializeClashMode(t *testing.T) {
 	if len(modes) != 3 {
 		t.Errorf("modes count = %d, want 3", len(modes))
 	}
-	if result["current_mode"] != "rule" {
-		t.Errorf("current_mode = %v, want rule", result["current_mode"])
+	if result["current_mode"] != "Rule" {
+		t.Errorf("current_mode = %v, want Rule", result["current_mode"])
 	}
 }
 

@@ -226,10 +226,20 @@ func (h *ClientHandler) WriteGroups(message libbox.OutboundGroupIterator) {
 }
 
 // InitializeClashMode is called once with the available clash modes.
+// Ensure all three base modes are always present regardless of rule config.
 func (h *ClientHandler) InitializeClashMode(modeList libbox.StringIterator, currentMode string) {
 	var modes []string
 	for modeList.HasNext() {
 		modes = append(modes, modeList.Next())
+	}
+	modeSet := make(map[string]bool, len(modes))
+	for _, m := range modes {
+		modeSet[m] = true
+	}
+	for _, m := range []string{"Rule", "Global", "Direct"} {
+		if !modeSet[m] {
+			modes = append(modes, m)
+		}
 	}
 	h.emit(EventModeUpdate, map[string]any{
 		"modes":        modes,
