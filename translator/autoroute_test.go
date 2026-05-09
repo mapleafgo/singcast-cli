@@ -28,15 +28,24 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	generateGeoRoute("cn", "PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 geo rules for CN, got %d", len(rules))
+	if len(rules) != 3 {
+		t.Fatalf("expected 3 geo rules for CN, got %d", len(rules))
 	}
 
-	// Rule 0: geolocation-cn → DIRECT
-	assertRuleSet(t, rules[0], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
+	// Rule 0: .cn domain suffix → DIRECT
+	ds, _ := rules[0]["domain_suffix"].([]string)
+	if len(ds) != 1 || ds[0] != ".cn" {
+		t.Fatalf("rule 0 domain_suffix = %v, want [.cn]", ds)
+	}
+	if rules[0]["outbound"] != "DIRECT" {
+		t.Fatalf("rule 0 outbound = %v, want DIRECT", rules[0]["outbound"])
+	}
 
-	// Rule 1: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
-	logical := rules[1]
+	// Rule 1: geolocation-cn → DIRECT
+	assertRuleSet(t, rules[1], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
+
+	// Rule 2: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
+	logical := rules[2]
 	if logical["type"] != "logical" {
 		t.Fatalf("rule 1 type = %v, want logical", logical["type"])
 	}
@@ -80,15 +89,24 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 	generateGeoRoute("us", "PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 geo rules for US, got %d", len(rules))
+	if len(rules) != 3 {
+		t.Fatalf("expected 3 geo rules for US, got %d", len(rules))
 	}
 
-	// Rule 0: geoip-us → DIRECT
-	assertRuleSet(t, rules[0], "geoip-us", "DIRECT", "geoip-us")
+	// Rule 0: .us domain suffix → DIRECT
+	ds, _ := rules[0]["domain_suffix"].([]string)
+	if len(ds) != 1 || ds[0] != ".us" {
+		t.Fatalf("rule 0 domain_suffix = %v, want [.us]", ds)
+	}
+	if rules[0]["outbound"] != "DIRECT" {
+		t.Fatalf("rule 0 outbound = %v, want DIRECT", rules[0]["outbound"])
+	}
 
-	// Rule 1: geosite-us → DIRECT
-	assertRuleSet(t, rules[1], "geosite-us", "DIRECT", "geosite-us")
+	// Rule 1: geoip-us → DIRECT
+	assertRuleSet(t, rules[1], "geoip-us", "DIRECT", "geoip-us")
+
+	// Rule 2: geosite-us → DIRECT
+	assertRuleSet(t, rules[2], "geosite-us", "DIRECT", "geosite-us")
 }
 
 func TestGenerateGeoRoute_NoGroups(t *testing.T) {

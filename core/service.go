@@ -145,7 +145,6 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 	if err != nil {
 		return err
 	}
-	jsonContent = ensureClashModes(jsonContent)
 	return s.startWithJSON(jsonContent)
 }
 
@@ -314,51 +313,6 @@ func injectTunOverride(configJSON string, cfg OverrideConfig) (string, error) {
 	top["tun"] = json.RawMessage(tunJSON)
 	out, _ := json.Marshal(top)
 	return string(out), nil
-}
-
-// ensureClashModes injects harmless route rules that reference all three base
-// clash modes so that sing-box always discovers them.
-func ensureClashModes(jsonContent string) string {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(jsonContent), &top); err != nil {
-		return jsonContent
-	}
-	routeRaw, ok := top["route"]
-	if !ok {
-		return jsonContent
-	}
-	var route map[string]json.RawMessage
-	if err := json.Unmarshal(routeRaw, &route); err != nil {
-		return jsonContent
-	}
-
-	type modeRule struct {
-		Domain    []string `json:"domain"`
-		ClashMode string   `json:"clash_mode"`
-		Outbound  string   `json:"outbound"`
-	}
-	indicators := []modeRule{
-		{Domain: []string{"mode-rule.invalid"}, ClashMode: "Rule", Outbound: "direct"},
-		{Domain: []string{"mode-direct.invalid"}, ClashMode: "Direct", Outbound: "direct"},
-		{Domain: []string{"mode-global.invalid"}, ClashMode: "Global", Outbound: "direct"},
-	}
-
-	var rules []json.RawMessage
-	if raw, ok := route["rules"]; ok {
-		_ = json.Unmarshal(raw, &rules)
-	}
-	for _, r := range indicators {
-		b, _ := json.Marshal(r)
-		rules = append(rules, b)
-	}
-
-	rulesJSON, _ := json.Marshal(rules)
-	route["rules"] = json.RawMessage(rulesJSON)
-	routeJSON, _ := json.Marshal(route)
-	top["route"] = json.RawMessage(routeJSON)
-
-	out, _ := json.Marshal(top)
-	return string(out)
 }
 
 // clashServer returns the *clashapi.Server from the running instance, or nil if

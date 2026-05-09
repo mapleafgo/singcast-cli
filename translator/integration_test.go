@@ -230,18 +230,44 @@ proxy-groups:
 	}
 
 	rules := route["rules"].([]any)
-	// sniff + hijack-dns + ip_is_private + geolocation-cn + logical(geoip-cn AND NOT !cn) = 5
-	if len(rules) != 5 {
-		t.Fatalf("expected 5 rules for CN, got %d", len(rules))
+	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
+	// domain_suffix:.cn + geolocation-cn + logical(geoip-cn AND NOT !cn) = 8
+	if len(rules) != 8 {
+		t.Fatalf("expected 8 rules for CN, got %d", len(rules))
 	}
 
-	// Verify ip_is_private rule
-	privateRule := rules[2].(map[string]any)
+	// Verify clash_mode:Direct catch-all
+	directRule := rules[2].(map[string]any)
+	if directRule["clash_mode"] != "Direct" || directRule["outbound"] != "DIRECT" {
+		t.Errorf("rule 2 should be clash_mode:Direct → DIRECT, got %v", directRule)
+	}
+
+	// Verify clash_mode:Global catch-all
+	globalRule := rules[3].(map[string]any)
+	if globalRule["clash_mode"] != "Global" || globalRule["outbound"] != "PROXY" {
+		t.Errorf("rule 3 should be clash_mode:Global → PROXY, got %v", globalRule)
+	}
+
+	// Verify ip_is_private rule (has clash_mode:"Rule")
+	privateRule := rules[4].(map[string]any)
 	if privateRule["ip_is_private"] != true {
-		t.Error("rule 2 should have ip_is_private=true")
+		t.Error("rule 4 should have ip_is_private=true")
+	}
+	if privateRule["clash_mode"] != "Rule" {
+		t.Error("ip_is_private rule should have clash_mode=Rule")
 	}
 	if privateRule["outbound"] != "DIRECT" {
 		t.Errorf("ip_is_private outbound = %v, want DIRECT", privateRule["outbound"])
+	}
+
+	// Verify domain_suffix:.cn rule
+	cnRule := rules[5].(map[string]any)
+	ds, _ := cnRule["domain_suffix"].([]any)
+	if len(ds) != 1 || ds[0] != ".cn" {
+		t.Errorf("rule 5 domain_suffix = %v, want [.cn]", ds)
+	}
+	if cnRule["clash_mode"] != "Rule" {
+		t.Error(".cn rule should have clash_mode=Rule")
 	}
 
 	// Verify rule_set definitions (no geoip-private)
@@ -279,9 +305,10 @@ proxy-groups:
 	route := m["route"].(map[string]any)
 
 	rules := route["rules"].([]any)
-	// sniff + hijack-dns + ip_is_private + geoip-jp + geosite-jp = 5
-	if len(rules) != 5 {
-		t.Fatalf("expected 5 rules for JP, got %d", len(rules))
+	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
+	// domain_suffix:.jp + geoip-jp + geosite-jp = 8
+	if len(rules) != 8 {
+		t.Fatalf("expected 8 rules for JP, got %d", len(rules))
 	}
 
 	// Verify geoip-jp and geosite-jp rule_set definitions exist

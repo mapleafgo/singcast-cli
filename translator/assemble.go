@@ -15,11 +15,24 @@ func assemble(t *translation) {
 	// Add action:"route" to all rules with an outbound field (sing-box v1.13 requires action)
 	addRouteAction(t)
 
-	// Inject default route rules at the beginning
+	// Add clash_mode condition to all outbound rules so mode switching works
+	addClashModeCondition(t)
+
+	// Inject default route rules at the beginning (sniff + DNS hijack, always active)
 	defaultRules := []map[string]any{
 		{"action": "sniff"},
 		{"protocol": "dns", "action": "hijack-dns"},
 	}
+
+	// Insert Direct/Global catch-all rules right after sniff+DNS, before all other rules.
+	// When mode is Direct/Global, these match first and bypass all Rule-mode rules.
+	if tag := firstGroupTag(t); tag != "" {
+		defaultRules = append(defaultRules,
+			map[string]any{"clash_mode": "Direct", "outbound": "DIRECT", "action": "route"},
+			map[string]any{"clash_mode": "Global", "outbound": tag, "action": "route"},
+		)
+	}
+
 	t.config.Route.Rules = append(defaultRules, t.config.Route.Rules...)
 
 	// Set default route.final if not set
@@ -67,6 +80,19 @@ func addRouteAction(t *translation) {
 		if _, hasAction := rule["action"]; !hasAction {
 			if _, hasOutbound := rule["outbound"]; hasOutbound {
 				rule["action"] = "route"
+			}
+		}
+	}
+}
+
+// addClashModeCondition adds clash_mode:"Rule" to all rules with an outbound.
+// This ensures Direct/Global catch-all rules take priority when mode is switched,
+// while Rule-mode rules only apply when the mode is "Rule".
+func addClashModeCondition(t *translation) {
+	for _, rule := range t.config.Route.Rules {
+		if _, hasOutbound := rule["outbound"]; hasOutbound {
+			if _, has := rule["clash_mode"]; !has {
+				rule["clash_mode"] = "Rule"
 			}
 		}
 	}
