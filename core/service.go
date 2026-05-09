@@ -378,20 +378,44 @@ func (s *Service) QueryProxies() string {
 		return "[]"
 	}
 
+	srv := s.clashServer()
+
+	var history adapter.URLTestHistoryStorage
+	var cache adapter.CacheFile
+	if srv != nil {
+		history = srv.HistoryStorage()
+	}
+	cache = service.FromContext[adapter.CacheFile](s.boxCtx)
+
 	var groups []ProxyGroup
 	for _, out := range inst.Outbound().Outbounds() {
 		g, ok := out.(adapter.OutboundGroup)
 		if !ok {
 			continue
 		}
+		tag := out.Tag()
 		pg := ProxyGroup{
-			Tag:        out.Tag(),
+			Tag:        tag,
 			Type:       out.Type(),
 			Selected:   g.Now(),
 			Selectable: true,
 		}
+		if cache != nil {
+			if expand, loaded := cache.LoadGroupExpand(tag); loaded {
+				pg.Expand = expand
+			}
+		}
 		for _, tag := range g.All() {
-			pg.Items = append(pg.Items, ProxyGroupItem{Tag: tag})
+			item := ProxyGroupItem{Tag: tag}
+			if ob, ok := inst.Outbound().Outbound(tag); ok {
+				item.Type = ob.Type()
+			}
+			if history != nil {
+				if h := history.LoadURLTestHistory(tag); h != nil {
+					item.Delay = int32(h.Delay)
+				}
+			}
+			pg.Items = append(pg.Items, item)
 		}
 		groups = append(groups, pg)
 	}
@@ -567,8 +591,11 @@ func (s *Service) CloseConnections() error {
 }
 
 func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
-	// TODO: implement via CacheFile
-	return nil
+	cf := service.FromContext[adapter.CacheFile](s.boxCtx)
+	if cf == nil {
+		return fmt.Errorf("cache file not available")
+	}
+	return cf.StoreGroupExpand(groupTag, isExpand)
 }
 
 func (s *Service) ResetNetwork() {

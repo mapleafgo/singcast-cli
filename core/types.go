@@ -19,6 +19,7 @@ type ProxyGroup struct {
 	Type       string           `json:"type"`
 	Selectable bool             `json:"selectable"`
 	Selected   string           `json:"selected"`
+	Expand     bool             `json:"expand,omitempty"`
 	Items      []ProxyGroupItem `json:"items,omitempty"`
 }
 
