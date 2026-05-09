@@ -17,10 +17,12 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/experimental/clashapi"
+	"github.com/sagernet/sing-box/experimental/clashapi/trafficontrol"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/common/observable"
 	"github.com/sagernet/sing/service"
 
 	"github.com/mapleafgo/singcast/translator"
@@ -82,6 +84,11 @@ type Service struct {
 	overrideAutoRoute bool
 	overrideInclude   []string
 	overrideExclude   []string
+
+	onURLTestUpdate func()
+	onModeUpdate    func(mode string)
+	onConnEvent     func(eventType int32, connJSON string)
+	subCancel       context.CancelFunc
 }
 
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
@@ -188,6 +195,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	s.boxCtx = ctx
 	s.currentConfig = jsonContent
 	s.state = StateRunning
+	s.subscribeHooks()
 	slog.Info("service running")
 	return nil
 }
@@ -200,6 +208,7 @@ func (s *Service) Stop() error {
 		return nil
 	}
 
+	s.unsubscribeHooks()
 	s.platform.ResetTunFd()
 	if s.instance != nil {
 		err := s.instance.Close()
@@ -220,6 +229,7 @@ func (s *Service) Destroy() {
 		return
 	}
 
+	s.unsubscribeHooks()
 	if s.state == StateRunning {
 		s.platform.ResetTunFd()
 	}
@@ -459,26 +469,7 @@ func (s *Service) QueryConnections() string {
 
 	entries := make([]connEntry, 0, len(conns))
 	for _, meta := range conns {
-		domain := meta.Metadata.Domain
-		if domain == "" {
-			domain = meta.Metadata.Destination.Fqdn
-		}
-		var ruleStr string
-		if meta.Rule != nil {
-			ruleStr = meta.Rule.String()
-		}
-		entries = append(entries, connEntry{
-			ID:          meta.ID.String(),
-			Network:     meta.Metadata.Network,
-			Source:      meta.Metadata.Source.String(),
-			Destination: meta.Metadata.Destination.String(),
-			Domain:      domain,
-			Outbound:    meta.Outbound,
-			Rule:        ruleStr,
-			Upload:      meta.Upload.Load(),
-			Download:    meta.Download.Load(),
-			Start:       meta.CreatedAt.Format(time.RFC3339),
-		})
+		entries = append(entries, trackerToEntry(meta))
 	}
 	data, _ := json.Marshal(entries)
 	return string(data)
@@ -800,4 +791,104 @@ func (s *Service) TestGroupDelay(groupTag string, timeoutMs int32) string {
 // TriggerGC forces a garbage collection.
 func (s *Service) TriggerGC() {
 	runtime.GC()
+}
+
+// --- Callbacks ---
+
+func (s *Service) SetOnURLTestUpdate(fn func())             { s.onURLTestUpdate = fn }
+func (s *Service) SetOnModeUpdate(fn func(mode string))     { s.onModeUpdate = fn }
+func (s *Service) SetOnConnEvent(fn func(int32, string))    { s.onConnEvent = fn }
+
+// subscribeHooks registers observable hooks on the ClashServer.
+// Must be called with s.mu held.
+func (s *Service) subscribeHooks() {
+	s.unsubscribeHooks()
+
+	srv := s.clashServer()
+	if srv == nil {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.subCancel = cancel
+
+	if s.onURLTestUpdate != nil {
+		sub := observable.NewSubscriber[struct{}](8)
+		srv.HistoryStorage().SetHook(sub)
+		fn := s.onURLTestUpdate
+		go observe(ctx, sub, func(struct{}) { fn() })
+	}
+
+	if s.onModeUpdate != nil {
+		sub := observable.NewSubscriber[struct{}](8)
+		srv.SetModeUpdateHook(sub)
+		srv := srv
+		fn := s.onModeUpdate
+		go observe(ctx, sub, func(struct{}) { fn(srv.Mode()) })
+	}
+
+	if s.onConnEvent != nil {
+		sub := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
+		srv.TrafficManager().SetEventHook(sub)
+		fn := s.onConnEvent
+		go observe(ctx, sub, func(evt trafficontrol.ConnectionEvent) {
+			meta := evt.Metadata
+			if meta == nil {
+				return
+			}
+			data, _ := json.Marshal(trackerToEntry(meta))
+			fn(int32(evt.Type), string(data))
+		})
+	}
+}
+
+// observe listens on a subscriber until ctx is cancelled or the subscription closes.
+func observe[T any](ctx context.Context, sub *observable.Subscriber[T], fn func(T)) {
+	ch, done := sub.Subscription()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			sub.Close()
+			return
+		case v, ok := <-ch:
+			if !ok {
+				return
+			}
+			fn(v)
+		}
+	}
+}
+
+// unsubscribeHooks cancels all subscription goroutines.
+// Must be called with s.mu held.
+func (s *Service) unsubscribeHooks() {
+	if s.subCancel != nil {
+		s.subCancel()
+		s.subCancel = nil
+	}
+}
+
+func trackerToEntry(meta *trafficontrol.TrackerMetadata) connEntry {
+	domain := meta.Metadata.Domain
+	if domain == "" {
+		domain = meta.Metadata.Destination.Fqdn
+	}
+	var ruleStr string
+	if meta.Rule != nil {
+		ruleStr = meta.Rule.String()
+	}
+	return connEntry{
+		ID:          meta.ID.String(),
+		Network:     meta.Metadata.Network,
+		Source:      meta.Metadata.Source.String(),
+		Destination: meta.Metadata.Destination.String(),
+		Domain:      domain,
+		Outbound:    meta.Outbound,
+		Rule:        ruleStr,
+		Upload:      meta.Upload.Load(),
+		Download:    meta.Download.Load(),
+		Start:       meta.CreatedAt.Format(time.RFC3339),
+	}
 }

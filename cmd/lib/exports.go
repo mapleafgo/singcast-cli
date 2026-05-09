@@ -2,16 +2,55 @@ package main
 
 /*
 #include <stdlib.h>
+
+typedef void (*VoidCallback)();
+typedef void (*StringCallback)(const char*);
+typedef void (*IntStringCallback)(int, const char*);
+
+static void invokeVoidCB(VoidCallback cb) { cb(); }
+static void invokeStringCB(StringCallback cb, const char* s) { cb(s); }
+static void invokeIntStringCB(IntStringCallback cb, int i, const char* s) { cb(i, s); }
 */
 import "C"
 
 import (
 	"encoding/json"
+	"unsafe"
 
 	"github.com/mapleafgo/singcast/ffi"
 )
 
 var api = ffi.Create()
+
+var (
+	cURLTestCB   unsafe.Pointer
+	cModeUpdateCB unsafe.Pointer
+	cConnEventCB  unsafe.Pointer
+)
+
+func init() {
+	api.SetCallbackFuncs(
+		func() {
+			if cURLTestCB != nil {
+				C.invokeVoidCB(C.VoidCallback(cURLTestCB))
+			}
+		},
+		func(mode string) {
+			if cModeUpdateCB != nil {
+				cs := C.CString(mode)
+				defer C.free(unsafe.Pointer(cs))
+				C.invokeStringCB(C.StringCallback(cModeUpdateCB), cs)
+			}
+		},
+		func(eventType int32, connJSON string) {
+			if cConnEventCB != nil {
+				cs := C.CString(connJSON)
+				defer C.free(unsafe.Pointer(cs))
+				C.invokeIntStringCB(C.IntStringCallback(cConnEventCB), C.int(eventType), cs)
+			}
+		},
+	)
+}
 
 func resultJSON(err error) *C.char {
 	if err != nil {
@@ -159,3 +198,14 @@ func CoreSetMemoryLimit(bytes C.longlong) { api.SetMemoryLimit(int64(bytes)) }
 
 //export CoreGetVersion
 func CoreGetVersion() *C.char { return cString(api.Version()) }
+
+// --- Event Callbacks ---
+
+//export CoreSetURLTestCallback
+func CoreSetURLTestCallback(cb unsafe.Pointer) { cURLTestCB = cb }
+
+//export CoreSetModeUpdateCallback
+func CoreSetModeUpdateCallback(cb unsafe.Pointer) { cModeUpdateCB = cb }
+
+//export CoreSetConnEventCallback
+func CoreSetConnEventCallback(cb unsafe.Pointer) { cConnEventCB = cb }

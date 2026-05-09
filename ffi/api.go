@@ -188,6 +188,57 @@ func (s *Singcast) TestGroupDelay(groupTag string, timeoutMs int32) string {
 // TriggerGC forces a garbage collection.
 func (s *Singcast) TriggerGC() { s.svc.TriggerGC() }
 
+// --- Event Listeners ---
+
+// URLTestUpdateListener is called when URL test delay history is updated.
+type URLTestUpdateListener interface {
+	OnURLTestUpdate()
+}
+
+// ModeUpdateListener is called when the clash routing mode changes.
+type ModeUpdateListener interface {
+	OnModeUpdate(mode string)
+}
+
+// ConnectionEventListener is called on connection create/update/close.
+// eventType: 0=New, 1=Update, 2=Closed. connJSON is a connection object.
+type ConnectionEventListener interface {
+	OnConnectionEvent(eventType int32, connJSON string)
+}
+
+func (s *Singcast) SetOnURLTestUpdate(l URLTestUpdateListener) {
+	if l == nil {
+		s.svc.SetOnURLTestUpdate(nil)
+	} else {
+		s.svc.SetOnURLTestUpdate(func() { l.OnURLTestUpdate() })
+	}
+}
+
+func (s *Singcast) SetOnModeUpdate(l ModeUpdateListener) {
+	if l == nil {
+		s.svc.SetOnModeUpdate(nil)
+	} else {
+		s.svc.SetOnModeUpdate(func(mode string) { l.OnModeUpdate(mode) })
+	}
+}
+
+func (s *Singcast) SetOnConnEvent(l ConnectionEventListener) {
+	if l == nil {
+		s.svc.SetOnConnEvent(nil)
+	} else {
+		s.svc.SetOnConnEvent(func(eventType int32, connJSON string) {
+			l.OnConnectionEvent(eventType, connJSON)
+		})
+	}
+}
+
+// SetCallbackFunc registers raw function callbacks. Used by desktop FFI.
+func (s *Singcast) SetCallbackFuncs(onURLTest func(), onMode func(string), onConn func(int32, string)) {
+	s.svc.SetOnURLTestUpdate(onURLTest)
+	s.svc.SetOnModeUpdate(onMode)
+	s.svc.SetOnConnEvent(onConn)
+}
+
 // --- Memory ---
 
 // SetMemoryLimit sets a soft memory limit for Go runtime OOM protection.

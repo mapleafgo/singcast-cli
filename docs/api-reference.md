@@ -13,6 +13,7 @@ cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 | Query API | Query* functions | Query* methods |
 | Connection tracking | Query / Close | Query / Close |
 | Rules / DNS / Cache | QueryRules / QueryDNS / Flush* | QueryRules / QueryDNS / Flush* |
+| Event callbacks | CoreSet*Callback | SetOn*Listener interfaces |
 | Platform IO (TUN, WiFi, DNS) | Limited | Full (TUN fd, SocketProtector, WiFi) |
 | Memory management | SetMemoryLimit / Query / TriggerGC | SetMemoryLimit / Query / TriggerGC |
 
@@ -109,6 +110,23 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 - Success: `{"ok":true}` or query-specific JSON
 - Error: `{"error":"message"}`
 - All `char*` returns must be freed with `CoreFreeString`
+
+### Event Callbacks
+
+Callbacks are invoked from background goroutines. Consumers must dispatch to the UI thread if needed.
+
+| Function | Signature | Trigger |
+|----------|-----------|---------|
+| `CoreSetURLTestCallback` | `void CoreSetURLTestCallback(void* cb)` | URL test delay history updated (3-min auto / manual) |
+| `CoreSetModeUpdateCallback` | `void CoreSetModeUpdateCallback(void* cb)` | Routing mode changed. Callback receives `const char* mode` |
+| `CoreSetConnEventCallback` | `void CoreSetConnEventCallback(void* cb)` | Connection created/updated/closed. Callback receives `int type, const char* json` |
+
+Callback signatures:
+- URLTest: `void (*)()`
+- ModeUpdate: `void (*)(const char* mode)`
+- ConnEvent: `void (*)(int type, const char* json)` — type: 0=New, 1=Update, 2=Closed
+
+Callbacks must be set before `CoreStartWithContent`. They persist across restarts.
 
 ---
 
@@ -209,6 +227,18 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 |--------|-------------|
 | `Version() string` | Version info (JSON) |
 
+### Event Listeners
+
+Listeners are called from background threads. Implement the interface and register before `StartWithContent`.
+
+| Method | Interface | Trigger |
+|--------|-----------|---------|
+| `SetOnURLTestUpdate(l)` | `URLTestUpdateListener.OnURLTestUpdate()` | URL test delay history updated |
+| `SetOnModeUpdate(l)` | `ModeUpdateListener.OnModeUpdate(mode string)` | Routing mode changed |
+| `SetOnConnEvent(l)` | `ConnectionEventListener.OnConnectionEvent(eventType int32, connJSON string)` | Connection created/updated/closed |
+
+Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection object (see Connection data structure).
+
 ---
 
 ## Data Structures
@@ -222,9 +252,11 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
     "type": "Selector",
     "selectable": true,
     "selected": "hk-node-01",
+    "expand": true,
     "items": [
-      { "tag": "hk-node-01" },
-      { "tag": "us-node-01" }
+      { "tag": "hk-node-01", "type": "VLESS", "delay": 120 },
+      { "tag": "us-node-01", "type": "VMess", "delay": 350 },
+      { "tag": "jp-node-01", "type": "Trojan" }
     ]
   }
 ]
@@ -236,8 +268,11 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | `type` | string | Group type (Selector, URLTest, etc.) |
 | `selectable` | bool | Supports manual node selection |
 | `selected` | string | Currently selected node tag |
+| `expand` | bool | UI expand state (absent if never set) |
 | `items` | array | Nodes in this group |
 | `items[].tag` | string | Node tag |
+| `items[].type` | string | Protocol type (VLESS, VMess, Trojan, etc.) |
+| `items[].delay` | int32 | Last URL test delay in ms (absent if never tested) |
 
 ### GroupDelay
 
