@@ -130,6 +130,19 @@ func (h *ClientHandler) GetCachedConnectionsJSON() string {
 	return string(data)
 }
 
+// UpdateDelay updates the cached delay for a specific proxy tag.
+func (h *ClientHandler) UpdateDelay(tag string, delay int32) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i := range h.cachedGroups {
+		for j := range h.cachedGroups[i].Items {
+			if h.cachedGroups[i].Items[j].Tag == tag {
+				h.cachedGroups[i].Items[j].Delay = delay
+			}
+		}
+	}
+}
+
 // Connected is called when the command client connects to the server.
 func (h *ClientHandler) Connected() {
 	h.emit(EventConnected, map[string]bool{"connected": true})

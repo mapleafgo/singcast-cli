@@ -59,7 +59,7 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreSelectProxy` | `char* CoreSelectProxy(const char* group, const char* tag)` | Select node in proxy group |
-| `CoreTestDelay` | `char* CoreTestDelay(const char* name)` | Run URL test for outbound |
+| `CoreTestDelay` | `char* CoreTestDelay(const char* name, int timeoutMs)` | URL test, returns `{"delay":ms}` or `{"delay":-1}` |
 | `CoreSetMode` | `char* CoreSetMode(const char* mode)` | Set routing mode: `rule` / `global` / `direct` |
 | `CoreSetGroupExpand` | `char* CoreSetGroupExpand(const char* group, int expand)` | Persist UI expand state |
 
@@ -166,7 +166,7 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 | Method | Description |
 |--------|-------------|
 | `SelectProxy(group, tag string) error` | Select proxy node |
-| `TestDelay(name string) error` | URL test delay |
+| `TestDelay(name string, timeoutMs int32) int32` | URL test delay (ms), -1 on error/timeout |
 | `SetMode(mode string) error` | Set routing mode |
 | `SetGroupExpand(group string, expand bool) error` | UI expand state |
 

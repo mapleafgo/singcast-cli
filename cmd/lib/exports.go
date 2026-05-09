@@ -82,8 +82,10 @@ func CoreSelectProxy(group, tag *C.char) *C.char {
 }
 
 //export CoreTestDelay
-func CoreTestDelay(name *C.char) *C.char {
-	return resultJSON(api.TestDelay(goString(name)))
+func CoreTestDelay(name *C.char, timeoutMs C.int) *C.char {
+	delay := api.TestDelay(goString(name), int32(timeoutMs))
+	data, _ := json.Marshal(map[string]int32{"delay": delay})
+	return cString(string(data))
 }
 
 //export CoreSetMode

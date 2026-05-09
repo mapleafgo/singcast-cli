@@ -145,7 +145,10 @@ func (s *Singcast) SelectProxy(group, tag string) error {
 }
 
 // TestDelay runs a URL test for the given outbound tag.
-func (s *Singcast) TestDelay(name string) error { return s.svc.URLTest(name) }
+// Returns delay in milliseconds, -1 on error or timeout.
+func (s *Singcast) TestDelay(name string, timeoutMs int32) int32 {
+	return s.svc.URLTest(name, timeoutMs)
+}
 
 // SetMode sets the clash routing mode (rule, global, or direct).
 func (s *Singcast) SetMode(mode string) error { return s.svc.SetClashMode(mode) }

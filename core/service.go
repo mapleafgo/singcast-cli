@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/experimental/libbox"
 	_ "github.com/sagernet/sing-box/include" // register all protocols
 
@@ -548,9 +550,29 @@ func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
 	})
 }
 
-// URLTest runs a URL test for the given outbound tag.
-func (s *Service) URLTest(outboundTag string) error {
-	return s.withClient(func(c *libbox.CommandClient) error { return c.URLTest(outboundTag) })
+// URLTest tests outbound latency via urltest.URLTest.
+// Returns delay in milliseconds, -1 on error or timeout.
+func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
+	inst := s.commandServer.Instance()
+	if inst == nil {
+		return -1
+	}
+	outbound, ok := inst.Box().Outbound().Outbound(outboundTag)
+	if !ok {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
+	delay, err := urltest.URLTest(ctx, "", outbound)
+	if err != nil {
+		return -1
+	}
+	if s.handler != nil {
+		s.handler.UpdateDelay(outboundTag, int32(delay))
+	}
+	return int32(delay)
 }
 
 // SetClashMode sets the clash routing mode.
