@@ -60,7 +60,7 @@ func (w *platformLogWriter) WriteMessage(level singboxlog.Level, message string)
 }
 
 func VersionJSON() string {
-	data, _ := json.Marshal(map[string]string{"version": Version, "core": "sing-box"})
+	data, _ := json.Marshal(map[string]string{"version": Version, "core": "singcast"})
 	return string(data)
 }
 
