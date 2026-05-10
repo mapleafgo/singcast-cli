@@ -70,7 +70,6 @@ type TunOptionsSnapshot struct {
 
 // InitOptions holds initialization parameters passed as JSON to Service.Init.
 type InitOptions struct {
-	HomeDir         string `json:"home_dir"`
-	Debug           bool   `json:"debug,omitempty"`
-	FixAndroidStack bool   `json:"fix_android_stack,omitempty"`
+	HomeDir string `json:"home_dir"`
+	Debug   bool   `json:"debug,omitempty"`
 }

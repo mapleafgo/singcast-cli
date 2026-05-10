@@ -34,7 +34,7 @@ func Create() *Singcast {
 }
 
 // Init initializes the core runtime.
-// optionsJSON: {"home_dir":"/path","debug":false,"fix_android_stack":false}
+// optionsJSON: {"home_dir":"/path","debug":false}
 func (s *Singcast) Init(optionsJSON string) error {
 	return s.svc.Init(optionsJSON)
 }

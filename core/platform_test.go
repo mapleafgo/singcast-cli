@@ -31,11 +31,16 @@ func TestUsePlatformInterface_DefaultFalse(t *testing.T) {
 	}
 }
 
-func TestUsePlatformInterface_MobileTrue(t *testing.T) {
+func TestUsePlatformInterface_MobileWithTun(t *testing.T) {
 	p := newPlatform()
 	p.SetMobile(true)
+	p.SetTunFd(10)
 	if !p.UsePlatformInterface() {
-		t.Error("should be true after SetMobile(true)")
+		t.Error("should be true after SetMobile(true) + SetTunFd")
+	}
+	p.SetTunFd(0)
+	if p.UsePlatformInterface() {
+		t.Error("should be false after SetTunFd(0)")
 	}
 	p.SetMobile(false)
 	if p.UsePlatformInterface() {
@@ -52,11 +57,16 @@ func TestUsePlatformDefaultInterfaceMonitor_Desktop(t *testing.T) {
 	}
 }
 
-func TestUsePlatformDefaultInterfaceMonitor_Mobile(t *testing.T) {
+func TestUsePlatformDefaultInterfaceMonitor_MobileWithTun(t *testing.T) {
 	p := newPlatform()
 	p.SetMobile(true)
+	p.SetTunFd(10)
 	if !p.UsePlatformDefaultInterfaceMonitor() {
-		t.Error("mobile should use platform interface monitor")
+		t.Error("mobile with TUN should use platform interface monitor")
+	}
+	p.SetTunFd(0)
+	if p.UsePlatformDefaultInterfaceMonitor() {
+		t.Error("mobile without TUN should not use platform interface monitor")
 	}
 }
 
@@ -72,9 +82,10 @@ func TestCreateDefaultInterfaceMonitor_DesktopNil(t *testing.T) {
 func TestCreateDefaultInterfaceMonitor_MobileNonNil(t *testing.T) {
 	p := newPlatform()
 	p.SetMobile(true)
+	p.SetTunFd(10)
 	m := p.CreateDefaultInterfaceMonitor(nil)
 	if m == nil {
-		t.Fatal("mobile should return non-nil monitor")
+		t.Fatal("mobile with TUN should return non-nil monitor")
 	}
 }
 
@@ -87,11 +98,16 @@ func TestUsePlatformNetworkInterfaces_Desktop(t *testing.T) {
 	}
 }
 
-func TestUsePlatformNetworkInterfaces_Mobile(t *testing.T) {
+func TestUsePlatformNetworkInterfaces_MobileWithTun(t *testing.T) {
 	p := newPlatform()
 	p.SetMobile(true)
+	p.SetTunFd(10)
 	if !p.UsePlatformNetworkInterfaces() {
-		t.Error("mobile should use platform network interfaces")
+		t.Error("mobile with TUN should use platform network interfaces")
+	}
+	p.SetTunFd(0)
+	if p.UsePlatformNetworkInterfaces() {
+		t.Error("mobile without TUN should not use platform network interfaces")
 	}
 }
 
@@ -215,6 +231,7 @@ func TestSetWIFIState_ReadRoundTrip(t *testing.T) {
 func TestUpdateDefaultInterface_UpdatesMonitor(t *testing.T) {
 	p := newPlatform()
 	p.SetMobile(true)
+	p.SetTunFd(10)
 	m := p.CreateDefaultInterfaceMonitor(nil)
 	if m == nil {
 		t.Fatal("expected non-nil monitor")
