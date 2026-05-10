@@ -141,13 +141,13 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 func (p *PlatformIO) UsePlatformDefaultInterfaceMonitor() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.isMobile && p.tunFd != 0
+	return p.isMobile
 }
 
 func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInterfaceMonitor {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.isMobile || p.tunFd == 0 {
+	if !p.isMobile {
 		return nil
 	}
 	p.ifaceMonitor = &callbackInterfaceMonitor{}
@@ -157,7 +157,7 @@ func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInt
 func (p *PlatformIO) UsePlatformNetworkInterfaces() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.isMobile && p.tunFd != 0
+	return p.isMobile
 }
 
 func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
