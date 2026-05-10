@@ -140,6 +140,13 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("init: home_dir is required")
 	}
 
+	if err := os.MkdirAll(opts.HomeDir, 0o755); err != nil {
+		return fmt.Errorf("create home dir: %w", err)
+	}
+	if err := os.Chdir(opts.HomeDir); err != nil {
+		return fmt.Errorf("chdir: %w", err)
+	}
+
 	if opts.Debug {
 		SetLogLevel(LogLevelDebug)
 	}
