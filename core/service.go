@@ -110,10 +110,6 @@ type Service struct {
 	platform      *PlatformIO
 	currentConfig string
 
-	overrideAutoRoute bool
-	overrideInclude   []string
-	overrideExclude   []string
-
 	onEvent   func(eventType int32, json string)
 	subCancel context.CancelFunc
 }
@@ -195,7 +191,6 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		s.instance.Close()
 		s.instance = nil
 	}
-	s.platform.ResetTunFd()
 
 	ctx := include.Context(context.Background())
 	if s.platform.UsePlatformInterface() {
@@ -236,7 +231,6 @@ func (s *Service) Stop() error {
 	}
 
 	s.unsubscribeHooks()
-	s.platform.ResetTunFd()
 	if s.instance != nil {
 		err := s.instance.Close()
 		s.instance = nil
@@ -257,91 +251,12 @@ func (s *Service) Destroy() {
 	}
 
 	s.unsubscribeHooks()
-	if s.state == StateRunning {
-		s.platform.ResetTunFd()
-	}
 	if s.instance != nil {
 		s.instance.Close()
 		s.instance = nil
 	}
 	s.state = StateDestroyed
 	slog.Info("service destroyed")
-}
-
-func (s *Service) ReloadTUN() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state != StateRunning {
-		return fmt.Errorf("reload TUN: invalid state %s", s.state)
-	}
-	if s.currentConfig == "" {
-		return fmt.Errorf("reload TUN: no configuration stored")
-	}
-	return s.startWithJSON(s.currentConfig)
-}
-
-func (s *Service) SetOverridePackages(overrideJSON string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state != StateRunning {
-		return fmt.Errorf("set override packages: invalid state %s", s.state)
-	}
-	if s.currentConfig == "" {
-		return fmt.Errorf("set override packages: no configuration stored")
-	}
-
-	var cfg OverrideConfig
-	if overrideJSON != "" {
-		if err := json.Unmarshal([]byte(overrideJSON), &cfg); err != nil {
-			return fmt.Errorf("parse override JSON: %w", err)
-		}
-	}
-
-	modified, err := injectTunOverride(s.currentConfig, cfg)
-	if err != nil {
-		return err
-	}
-
-	s.overrideAutoRoute = cfg.AutoRedirect
-	s.overrideInclude = cfg.IncludePackages
-	s.overrideExclude = cfg.ExcludePackages
-	return s.startWithJSON(modified)
-}
-
-func injectTunOverride(configJSON string, cfg OverrideConfig) (string, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(configJSON), &top); err != nil {
-		return "", err
-	}
-
-	tunRaw, ok := top["tun"]
-	if !ok {
-		return configJSON, nil
-	}
-
-	var tun map[string]json.RawMessage
-	if err := json.Unmarshal(tunRaw, &tun); err != nil {
-		return "", err
-	}
-
-	if cfg.AutoRedirect {
-		tun["auto_redirect"] = json.RawMessage(`true`)
-	}
-	if len(cfg.IncludePackages) > 0 {
-		b, _ := json.Marshal(cfg.IncludePackages)
-		tun["include_package"] = json.RawMessage(b)
-	}
-	if len(cfg.ExcludePackages) > 0 {
-		b, _ := json.Marshal(cfg.ExcludePackages)
-		tun["exclude_package"] = json.RawMessage(b)
-	}
-
-	tunJSON, _ := json.Marshal(tun)
-	top["tun"] = json.RawMessage(tunJSON)
-	out, _ := json.Marshal(top)
-	return string(out), nil
 }
 
 // clashServer returns the *clashapi.Server from the running instance, or nil if

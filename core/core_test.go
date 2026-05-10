@@ -224,43 +224,7 @@ func TestDetectFormat_PassThrough(t *testing.T) {
 }
 
 // TestReloadTUN_NotInitialized verifies ReloadTUN returns error on uninitialized service.
-func TestReloadTUN_NotInitialized(t *testing.T) {
-	svc := NewService() // StateCreated
-
-	err := svc.ReloadTUN()
-	if err == nil {
-		t.Fatal("ReloadTUN should return error when not initialized")
-	}
-	if !strings.Contains(err.Error(), "invalid state") {
-		t.Errorf("ReloadTUN error = %q, want state error", err.Error())
-	}
-}
-
-// TestReloadTUN_NoConfigStored verifies ReloadTUN returns error when service is not running.
-func TestReloadTUN_NoConfigStored(t *testing.T) {
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	if err := os.MkdirAll(homeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-	defer svc.Destroy()
-
-	// ReloadTUN should fail because state is Initialized (not Running)
-	err := svc.ReloadTUN()
-	if err == nil {
-		t.Fatal("ReloadTUN should return error when not running")
-	}
-	if !strings.Contains(err.Error(), "invalid state") {
-		t.Errorf("ReloadTUN error = %q, want state error", err.Error())
-	}
-}
-
-// TestStartWithJSON_RollbackOnFailure verifies currentConfig is rolled back when startWithJSON fails.
+// TestStartWithJSON_RollbackOnFailure verifies currentConfig is not set when startWithJSON fails.
 func TestStartWithJSON_RollbackOnFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
@@ -274,8 +238,7 @@ func TestStartWithJSON_RollbackOnFailure(t *testing.T) {
 	}
 	defer svc.Destroy()
 
-	// StartWithContent fails (no clash_api tag), currentConfig should remain empty.
-	_ = svc.StartWithContent(minimalYAML, "")
+	_ = svc.StartWithContent(`{invalid json`, "")
 	if svc.currentConfig != "" {
 		t.Error("currentConfig should be empty after failed StartWithContent")
 	}

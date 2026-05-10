@@ -14,17 +14,13 @@ func newPlatform() *PlatformIO {
 	return NewPlatformIO()
 }
 
-// --- SetTunFd / ResetTunFd ---
+// --- SetTunFd ---
 
 func TestSetTunFd_ZeroDoesNotPanic(t *testing.T) {
 	p := newPlatform()
 	p.SetTunFd(0)
 }
 
-func TestResetTunFd_WithoutSetDoesNotPanic(t *testing.T) {
-	p := newPlatform()
-	p.ResetTunFd()
-}
 
 // --- UsePlatformInterface ---
 
@@ -242,9 +238,9 @@ func TestTunState_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(3)
-		go func() { defer wg.Done(); p.SetTunFd(int32(i%2) * 10) }()
+		go func(n int) { defer wg.Done(); p.SetTunFd(int32(n % 2) * 10) }(i)
 		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
-		go func() { defer wg.Done(); p.ResetTunFd() }()
+		go func() { defer wg.Done(); p.SetTunFd(0) }()
 	}
 	wg.Wait()
 }

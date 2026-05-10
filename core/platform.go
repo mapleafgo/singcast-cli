@@ -65,12 +65,6 @@ func (p *PlatformIO) SetTunFd(fd int32) {
 	slog.Debug("set TUN fd", "fd", fd)
 }
 
-func (p *PlatformIO) ResetTunFd() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.tunFd = 0
-}
-
 func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

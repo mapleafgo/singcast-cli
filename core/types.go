@@ -68,13 +68,6 @@ type TunOptionsSnapshot struct {
 	HTTPProxyMatchDomain     []string `json:"http_proxy_match_domain,omitempty"`
 }
 
-// OverrideConfig holds override options for VPN split tunneling.
-type OverrideConfig struct {
-	AutoRedirect    bool     `json:"auto_redirect,omitempty"`
-	IncludePackages []string `json:"include_packages,omitempty"`
-	ExcludePackages []string `json:"exclude_packages,omitempty"`
-}
-
 // InitOptions holds initialization parameters passed as JSON to Service.Init.
 type InitOptions struct {
 	HomeDir         string `json:"home_dir"`

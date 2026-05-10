@@ -1,5 +1,4 @@
 // Package mobile provides the singcast API for mobile platforms via gomobile.
-// Desktop c-shared builds use cmd/lib; gomobile binds this package directly.
 package mobile
 
 import (
@@ -29,7 +28,9 @@ type Singcast struct {
 
 // Create creates a new Singcast instance.
 func Create() *Singcast {
-	return &Singcast{svc: core.NewService()}
+	svc := core.NewService()
+	svc.PlatformIO().SetMobile(true)
+	return &Singcast{svc: svc}
 }
 
 // Init initializes the core runtime.
@@ -101,14 +102,6 @@ func (s *Singcast) SetLogLevel(level int32) { s.svc.SetLogLevel(level) }
 func (s *Singcast) ResetNetwork() { s.svc.ResetNetwork() }
 
 // --- Config ---
-
-// ReloadTUN restarts the TUN interface without changing configuration.
-func (s *Singcast) ReloadTUN() error { return s.svc.ReloadTUN() }
-
-// SetOverridePackages updates the include/exclude package lists for VPN split tunneling.
-func (s *Singcast) SetOverridePackages(overrideJSON string) error {
-	return s.svc.SetOverridePackages(overrideJSON)
-}
 
 // CheckConfig validates a config string (Clash YAML or sing-box JSON).
 func (s *Singcast) CheckConfig(content string) error { return core.CheckConfig(content) }
@@ -199,12 +192,6 @@ func (s *Singcast) SetOnEvent(l EventListener) {
 		s.svc.SetOnEvent(fn)
 		core.SetOnLogEvent(fn)
 	}
-}
-
-// SetCallbackFuncs registers a raw function callback. Used by desktop FFI.
-func (s *Singcast) SetCallbackFuncs(fn func(int32, string)) {
-	s.svc.SetOnEvent(fn)
-	core.SetOnLogEvent(fn)
 }
 
 // --- Memory ---

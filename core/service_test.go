@@ -81,20 +81,3 @@ func TestService_FlushDNS(t *testing.T) {
 	svc.FlushSystemDNS()
 }
 
-func TestSetOverridePackages_StateChecks(t *testing.T) {
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	defer svc.Destroy()
-
-	t.Run("NotRunning", func(t *testing.T) {
-		if err := svc.SetOverridePackages(`{"include_packages":["a"]}`); err == nil {
-			t.Error("expected error when not running")
-		}
-	})
-}
