@@ -8,20 +8,20 @@ cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 |------------|---------|--------|
 | Service lifecycle | CoreInit / Start / Stop / Destroy | Init / Start / Stop / Destroy |
 | State query | CoreQueryState | State |
-| Config management | Check / ReloadTUN / Override | Check / ReloadTUN / Override |
+| Config management | CheckConfig | CheckConfig |
 | Proxy control | Select / Test / TestGroup / Mode | Select / Test / TestGroup / Mode |
 | Query API | Query* functions | Query* methods |
 | Connection tracking | Query / Close | Query / Close |
 | Rules / DNS / Cache | QueryRules / QueryDNS / Flush* | QueryRules / QueryDNS / Flush* |
-| Event callbacks | CoreSet*Callback | SetOn*Listener interfaces |
-| Platform IO (TUN, WiFi, DNS) | Limited | Full (TUN fd, SocketProtector, WiFi) |
-| Memory management | SetMemoryLimit / Query / TriggerGC | SetMemoryLimit / Query / TriggerGC |
+| Event callbacks | CoreSetEventCallback | SetOnEvent |
+| Platform IO (TUN, WiFi, DNS) | — | Full (TUN fd, SocketProtector, WiFi) |
+| Memory management | SetMemoryLimit / TriggerGC | SetMemoryLimit / TriggerGC |
 
 ---
 
 ## Desktop FFI (C ABI)
 
-Exported as C-compatible symbols via `c-shared` build mode. All functions return JSON strings unless noted otherwise.
+Exported as C-compatible symbols via `c-shared` build mode. The desktop FFI directly wraps `core.Service`.
 
 ### Lifecycle
 
@@ -38,8 +38,6 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreCheckConfig` | `char* CoreCheckConfig(const char* content)` | Validate Clash YAML or sing-box JSON |
-| `CoreReloadTUN` | `char* CoreReloadTUN()` | Restart TUN interface with same config |
-| `CoreSetOverridePackages` | `char* CoreSetOverridePackages(const char* overrideJSON)` | Update VPN split-tunneling package list |
 
 ### Logging
 
@@ -153,13 +151,13 @@ void onEvent(int eventType, Pointer<Utf8> json) {
 
 ## Mobile SDK (gomobile)
 
-Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) and xcframework (iOS). Methods are on the `Singcast` struct.
+Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) and xcframework (iOS). `Create()` automatically enables mobile mode (`SetMobile(true)`).
 
 ### Lifecycle
 
 | Method | Description |
 |--------|-------------|
-| `Create() *Singcast` | Create instance |
+| `Create() *Singcast` | Create instance (mobile mode enabled) |
 | `Init(optionsJSON string) error` | Initialize runtime |
 | `StartWithContent(content, ruleSetProxy string) error` | Start with config |
 | `Stop() error` | Stop service |
@@ -182,8 +180,6 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 | Method | Description |
 |--------|-------------|
 | `CheckConfig(content string) error` | Validate config |
-| `ReloadTUN() error` | Restart TUN interface with same config |
-| `SetOverridePackages(overrideJSON string) error` | Update VPN split-tunneling |
 
 ### Logging
 
@@ -255,6 +251,33 @@ A single unified listener delivers all events. Called from background threads. R
 | `SetOnEvent(l)` | `EventListener.OnEvent(eventType int32, json string)` |
 
 eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent. See the Desktop Event Callback section for payload details.
+
+---
+
+## Mobile VPN Flow
+
+### Initialization Sequence
+
+```
+Create()                          // mobile mode auto-enabled
+Init({"home_dir":"..."})
+SetTunFd(fd)                      // from VpnService.establish()
+SetSocketProtector(protector)     // wrap VpnService.protect()
+SetInterfacesJSON(json)
+UpdateDefaultInterface(...)
+StartWithContent(config)          // starts sing-box with TUN + socket protection
+```
+
+### Hot Reload (without Stop)
+
+```
+SetTunFd(newFd)                   // inject new TUN fd
+StartWithContent(newConfig)       // old instance auto-closed, new one starts with new fd
+```
+
+### Socket Protection
+
+On Android VPN, all traffic routes through the TUN interface. Without `SetSocketProtector`, proxy outbound sockets would also enter TUN, causing a routing loop. The protector calls `VpnService.protect(fd)` to bind proxy sockets to the physical network interface, bypassing TUN.
 
 ---
 
@@ -387,3 +410,13 @@ type SocketProtector interface {
 ```
 
 Called by the core to protect a socket fd from VPN routing. On Android, implement this to call `VpnService.protect(fd)`.
+
+### EventListener
+
+```go
+type EventListener interface {
+    OnEvent(eventType int32, json string)
+}
+```
+
+Unified callback for all core events.

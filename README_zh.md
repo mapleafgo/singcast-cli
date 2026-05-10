@@ -76,7 +76,7 @@ task ffi-ios-arm64
 task all
 ```
 
-构建标签：`with_clash_api,with_utls,with_quic,with_gisor,with_v2ray_api`
+构建标签：`with_clash_api,with_utls,with_quic,with_gvisor`
 
 ## FFI 接口
 
@@ -85,7 +85,7 @@ task all
 ### 核心能力
 
 - **服务生命周期** — 初始化、启动、停止、销毁，支持热重载
-- **配置管理** — 校验、TUN 重载、VPN 分流
+- **配置管理** — 校验、支持热重载
 - **代理控制** — 节点选择、URL 延迟测试、路由模式切换
 - **查询 API** — 代理组、流量、日志、连接、内存统计，返回 JSON
 - **平台 IO** — TUN fd、Socket 保护、WiFi 状态（移动端）
