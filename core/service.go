@@ -226,13 +226,9 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	// Without this, selectInterfaces gets an empty list and fails
 	// with "no available network interface" on mobile.
 	if s.platform.IsMobile() {
-		nm := service.FromContext[adapter.NetworkManager](ctx)
-		slog.Info("[debug] UpdateInterfaces check", "nm_nil", nm == nil)
-		if nm != nil {
+		if nm := service.FromContext[adapter.NetworkManager](ctx); nm != nil {
 			if err := nm.UpdateInterfaces(); err != nil {
-				slog.Error("[debug] UpdateInterfaces failed", "error", err)
-			} else {
-				slog.Info("[debug] UpdateInterfaces done", "interfaces", len(nm.NetworkInterfaces()))
+				slog.Debug("update interfaces", "error", err)
 			}
 		}
 	}

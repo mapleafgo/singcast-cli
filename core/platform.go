@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os/exec"
 	"runtime"
@@ -318,6 +319,7 @@ func parseAdapterInterfaces(jsonStr string) ([]adapter.NetworkInterface, error) 
 				Index:     int(mi.Index),
 				MTU:       int(mi.MTU),
 				Addresses: addrs,
+				Flags:     net.Flags(mi.Flags),
 			},
 		})
 	}
