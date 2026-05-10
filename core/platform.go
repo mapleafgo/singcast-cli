@@ -1,16 +1,13 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/netip"
 	"os/exec"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
@@ -122,14 +119,20 @@ func (p *PlatformIO) IsMobile() bool {
 func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOptions) (tun.Tun, error) {
 	p.mu.Lock()
 	fd := p.tunFd
-	p.tunFd = 0
 	p.mu.Unlock()
 
 	if fd == 0 {
 		return nil, fmt.Errorf("no TUN fd available")
 	}
 	options.FileDescriptor = int(fd)
-	return tun.New(*options)
+	tunDev, err := tun.New(*options)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.tunFd = 0
+	p.mu.Unlock()
+	return tunDev, nil
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool { return true }
@@ -257,8 +260,13 @@ func (m *callbackInterfaceMonitor) DefaultInterface() *control.Interface {
 }
 func (m *callbackInterfaceMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.callbacks.PushBack(cb)
+	el := m.callbacks.PushBack(cb)
+	iface := m.iface
+	m.mu.Unlock()
+	if iface != nil {
+		cb(iface, 0)
+	}
+	return el
 }
 func (m *callbackInterfaceMonitor) UnregisterCallback(el *list.Element[tun.DefaultInterfaceUpdateCallback]) {
 	m.mu.Lock()
@@ -300,7 +308,10 @@ func parseAdapterInterfaces(jsonStr string) ([]adapter.NetworkInterface, error) 
 	}
 	result := make([]adapter.NetworkInterface, 0, len(mobileIfaces))
 	for _, mi := range mobileIfaces {
-		addrs, _ := parseInterfaceAddrs(mi.Addresses)
+		addrs, err := parseInterfaceAddrs(mi.Addresses)
+		if err != nil {
+			slog.Debug("parse interface addrs", "interface", mi.Name, "error", err)
+		}
 		result = append(result, adapter.NetworkInterface{
 			Interface: control.Interface{
 				Name:      mi.Name,
@@ -323,53 +334,4 @@ func parseInterfaceAddrs(addrStrs []string) ([]netip.Prefix, error) {
 		result = append(result, p)
 	}
 	return result, nil
-}
-
-// detectDefaultInterface finds the default network interface by dialing UDP.
-// Used on desktop when no platform interface is registered.
-func detectDefaultInterface(ctx context.Context) (*control.Interface, error) {
-	targets := []string{"8.8.8.8:53", "1.1.1.1:53"}
-	for _, target := range targets {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		conn, err := net.DialTimeout("udp4", target, 2*time.Second)
-		if err != nil {
-			continue
-		}
-		localAddr := conn.LocalAddr()
-		conn.Close()
-
-		localUDP, ok := localAddr.(*net.UDPAddr)
-		if !ok {
-			continue
-		}
-
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			continue
-		}
-		for _, iface := range ifaces {
-			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-				continue
-			}
-			addrs, _ := iface.Addrs()
-			for _, addr := range addrs {
-				ipNet, ok := addr.(*net.IPNet)
-				if !ok {
-					continue
-				}
-				if ipNet.Contains(localUDP.IP) {
-					return &control.Interface{
-						Name:  iface.Name,
-						Index: iface.Index,
-					}, nil
-				}
-			}
-		}
-	}
-	return nil, fmt.Errorf("no default interface found")
 }
