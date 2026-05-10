@@ -90,6 +90,9 @@ func addRouteAction(t *translation) {
 // while Rule-mode rules only apply when the mode is "Rule".
 func addClashModeCondition(t *translation) {
 	for _, rule := range t.config.Route.Rules {
+		if ruleType, _ := rule["type"].(string); ruleType == "logical" {
+			continue
+		}
 		if _, hasOutbound := rule["outbound"]; hasOutbound {
 			if _, has := rule["clash_mode"]; !has {
 				rule["clash_mode"] = "Rule"
