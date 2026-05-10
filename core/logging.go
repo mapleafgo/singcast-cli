@@ -83,7 +83,7 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 			Message:   b.String(),
 			Timestamp: r.Time.UnixMilli(),
 		})
-		onLogEvent(EventLog, string(data))
+		cb(EventLog, string(data))
 	}
 
 	return nil

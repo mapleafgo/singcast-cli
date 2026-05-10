@@ -200,7 +200,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	}
 
 	ctx := include.Context(context.Background())
-	if s.platform.UsePlatformInterface() {
+	if s.platform.IsMobile() {
 		ctx = service.ContextWith[adapter.PlatformInterface](ctx, s.platform)
 	}
 

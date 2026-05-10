@@ -110,6 +110,12 @@ func (p *PlatformIO) UsePlatformInterface() bool {
 	return p.isMobile && p.tunFd != 0
 }
 
+func (p *PlatformIO) IsMobile() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.isMobile
+}
+
 func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOptions) (tun.Tun, error) {
 	p.mu.Lock()
 	fd := p.tunFd
