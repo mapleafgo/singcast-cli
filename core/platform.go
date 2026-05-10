@@ -38,6 +38,11 @@ type PlatformIO struct {
 	// Mobile: interface monitor updated via UpdateDefaultInterface callback.
 	ifaceMonitor *callbackInterfaceMonitor
 
+	// Mobile: buffered default interface data, applied when monitor is created.
+	defaultIfaceName      string
+	defaultIfaceIndex     int
+	defaultIfaceExpensive bool
+
 	// Mobile: interface data as JSON from platform.
 	interfacesJSON string
 
@@ -91,9 +96,13 @@ func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
+// Buffers the data if the monitor hasn't been created yet.
 func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
 	p.mu.Lock()
 	m := p.ifaceMonitor
+	p.defaultIfaceName = name
+	p.defaultIfaceIndex = int(index)
+	p.defaultIfaceExpensive = expensive
 	p.mu.Unlock()
 	if m != nil {
 		m.update(name, int(index), expensive)
@@ -157,6 +166,9 @@ func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInt
 		return nil
 	}
 	p.ifaceMonitor = &callbackInterfaceMonitor{}
+	if p.defaultIfaceName != "" {
+		p.ifaceMonitor.update(p.defaultIfaceName, p.defaultIfaceIndex, p.defaultIfaceExpensive)
+	}
 	return p.ifaceMonitor
 }
 
