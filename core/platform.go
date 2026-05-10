@@ -172,7 +172,7 @@ func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
 	p.mu.Unlock()
 
 	if jsonStr == "" {
-		return nil, fmt.Errorf("no interfaces data")
+		return nil, fmt.Errorf("mobile: call SetInterfacesJSON() before starting")
 	}
 	return parseAdapterInterfaces(jsonStr)
 }
@@ -239,8 +239,9 @@ func flushSystemDNS() {
 // callbackInterfaceMonitor implements tun.DefaultInterfaceMonitor for mobile.
 // Updated via PlatformIO.UpdateDefaultInterface from the mobile platform.
 type callbackInterfaceMonitor struct {
-	mu    sync.Mutex
-	iface *control.Interface
+	mu        sync.Mutex
+	iface     *control.Interface
+	callbacks list.List[tun.DefaultInterfaceUpdateCallback]
 }
 
 func (m *callbackInterfaceMonitor) Start() error             { return nil }
@@ -252,19 +253,31 @@ func (m *callbackInterfaceMonitor) DefaultInterface() *control.Interface {
 	defer m.mu.Unlock()
 	return m.iface
 }
-func (m *callbackInterfaceMonitor) RegisterCallback(tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
-	return nil
+func (m *callbackInterfaceMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callbacks.PushBack(cb)
 }
-func (m *callbackInterfaceMonitor) UnregisterCallback(*list.Element[tun.DefaultInterfaceUpdateCallback]) {}
+func (m *callbackInterfaceMonitor) UnregisterCallback(el *list.Element[tun.DefaultInterfaceUpdateCallback]) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callbacks.Remove(el)
+}
 func (m *callbackInterfaceMonitor) RegisterMyInterface(string) {}
 func (m *callbackInterfaceMonitor) MyInterface() string        { return "" }
 
 func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.iface = &control.Interface{
+	iface := &control.Interface{
 		Name:  name,
 		Index: index,
+	}
+	m.iface = iface
+	cbs := m.callbacks
+	m.mu.Unlock()
+
+	for el := cbs.Front(); el != nil; el = el.Next() {
+		el.Value(iface, 0)
 	}
 }
 

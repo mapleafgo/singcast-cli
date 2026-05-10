@@ -110,6 +110,7 @@ type Service struct {
 	platform      *PlatformIO
 	currentConfig string
 
+	eventMu   sync.RWMutex
 	onEvent   func(eventType int32, json string)
 	subCancel context.CancelFunc
 }
@@ -163,9 +164,9 @@ func (s *Service) Init(optionsJSON string) error {
 
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.state != StateInitialized && s.state != StateRunning {
+		s.mu.Unlock()
 		return fmt.Errorf("start: invalid state %s", s.state)
 	}
 
@@ -174,8 +175,20 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 
 	jsonContent, err := s.translateConfig(data, format, ruleSetProxy)
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
+
+	// Close old instance outside lock to avoid deadlock risk.
+	oldInst := s.instance
+	s.instance = nil
+	s.unsubscribeHooks()
+	s.mu.Unlock()
+
+	if oldInst != nil {
+		oldInst.Close()
+	}
+
 	return s.startWithJSON(jsonContent)
 }
 
@@ -194,11 +207,6 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 func (s *Service) startWithJSON(jsonContent string) error {
 	syncLogLevelFromConfig(jsonContent)
 
-	if s.instance != nil {
-		s.instance.Close()
-		s.instance = nil
-	}
-
 	ctx := include.Context(context.Background())
 	if s.platform.IsMobile() {
 		ctx = service.ContextWith[adapter.PlatformInterface](ctx, s.platform)
@@ -209,7 +217,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("parse config: %w", err)
 	}
 
-	logWriter := &platformLogWriter{emit: s.onEvent}
+	logWriter := &platformLogWriter{emit: s.getOnEvent()}
 	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
 	if err != nil {
 		return fmt.Errorf("create instance: %w", err)
@@ -220,49 +228,54 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("start instance: %w", err)
 	}
 
+	s.mu.Lock()
 	s.instance = inst
 	s.boxCtx = ctx
 	s.currentConfig = jsonContent
 	s.state = StateRunning
 	s.subscribeHooks()
+	s.mu.Unlock()
+
 	slog.Info("service running")
 	return nil
 }
 
 func (s *Service) Stop() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.state != StateRunning {
+		s.mu.Unlock()
 		return nil
 	}
 
 	s.unsubscribeHooks()
-	if s.instance != nil {
-		err := s.instance.Close()
-		s.instance = nil
-		s.state = StateInitialized
-		slog.Info("service stopped")
-		return err
-	}
+	inst := s.instance
+	s.instance = nil
 	s.state = StateInitialized
+	s.mu.Unlock()
+
+	if inst != nil {
+		slog.Info("service stopped")
+		return inst.Close()
+	}
 	return nil
 }
 
 func (s *Service) Destroy() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.state == StateDestroyed {
+		s.mu.Unlock()
 		return
 	}
 
 	s.unsubscribeHooks()
-	if s.instance != nil {
-		s.instance.Close()
-		s.instance = nil
-	}
+	inst := s.instance
+	s.instance = nil
 	s.state = StateDestroyed
+	s.mu.Unlock()
+
+	if inst != nil {
+		inst.Close()
+	}
 	slog.Info("service destroyed")
 }
 
@@ -677,7 +690,17 @@ func (s *Service) TriggerGC() {
 
 // --- Callbacks ---
 
-func (s *Service) SetOnEvent(fn func(int32, string)) { s.onEvent = fn }
+func (s *Service) SetOnEvent(fn func(int32, string)) {
+	s.eventMu.Lock()
+	s.onEvent = fn
+	s.eventMu.Unlock()
+}
+
+func (s *Service) getOnEvent() func(int32, string) {
+	s.eventMu.RLock()
+	defer s.eventMu.RUnlock()
+	return s.onEvent
+}
 
 // subscribeHooks registers observable hooks on the ClashServer.
 // Must be called with s.mu held.
@@ -692,8 +715,7 @@ func (s *Service) subscribeHooks() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.subCancel = cancel
 
-	if s.onEvent != nil {
-		fn := s.onEvent
+	if fn := s.getOnEvent(); fn != nil {
 		clashSrv := srv
 
 		sub := observable.NewSubscriber[struct{}](8)
