@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -24,13 +25,18 @@ var (
 	// Error=2, Warn=3, Info=4, Debug=5, Trace=6.
 	coreLogLevel atomic.Int32
 
-	// Global log event callback, set via SetOnLogEvent.
-	onLogEvent func(int32, string)
+	// Global log event callback, protected by logEventMu.
+	logEventMu  sync.RWMutex
+	onLogEvent  func(int32, string)
 )
 
 // SetOnLogEvent registers a callback invoked for each new log entry.
 // The callback receives (EventLog, json) where json is a serialized LogEntry.
-func SetOnLogEvent(fn func(int32, string)) { onLogEvent = fn }
+func SetOnLogEvent(fn func(int32, string)) {
+	logEventMu.Lock()
+	onLogEvent = fn
+	logEventMu.Unlock()
+}
 
 func init() {
 	coreLogLevel.Store(LogLevelInfo)
@@ -68,7 +74,10 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	// Always mirror to stderr for debugging (gomobile forwards to Android logcat).
 	fmt.Fprintln(os.Stderr, b.String())
 
-	if onLogEvent != nil {
+	logEventMu.RLock()
+	cb := onLogEvent
+	logEventMu.RUnlock()
+	if cb != nil {
 		data, _ := json.Marshal(LogEntry{
 			Level:     slogToCoreLevel(r.Level),
 			Message:   b.String(),

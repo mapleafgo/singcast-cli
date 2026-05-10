@@ -14,7 +14,7 @@ import (
 	"github.com/mapleafgo/singcast/mobile"
 )
 
-var api = ffi.Create()
+var api = mobile.Create()
 
 var cEventCB unsafe.Pointer
 

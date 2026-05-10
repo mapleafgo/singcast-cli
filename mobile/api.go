@@ -1,6 +1,6 @@
-// Package ffi provides the singcast API for mobile platforms via gomobile.
+// Package mobile provides the singcast API for mobile platforms via gomobile.
 // Desktop c-shared builds use cmd/lib; gomobile binds this package directly.
-package ffi
+package mobile
 
 import (
 	runtimeDebug "runtime/debug"
@@ -33,7 +33,7 @@ func Create() *Singcast {
 }
 
 // Init initializes the core runtime.
-// optionsJSON: {"home_dir":"/path","log_max_lines":500,"debug":false,"fix_android_stack":false}
+// optionsJSON: {"home_dir":"/path","debug":false,"fix_android_stack":false}
 func (s *Singcast) Init(optionsJSON string) error {
 	return s.svc.Init(optionsJSON)
 }

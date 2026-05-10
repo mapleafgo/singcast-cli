@@ -12,12 +12,13 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/miekg/dns"
-	"github.com/sagernet/sing-box"
+	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/experimental/clashapi"
 	"github.com/sagernet/sing-box/experimental/clashapi/trafficontrol"
 	"github.com/sagernet/sing-box/include"
+	singboxlog "github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/common/json"
@@ -28,6 +29,35 @@ import (
 )
 
 var Version = "dev"
+
+// platformLogWriter routes sing-box kernel logs through the unified event callback.
+type platformLogWriter struct {
+	emit func(eventType int32, json string)
+}
+
+func (w *platformLogWriter) WriteMessage(level singboxlog.Level, message string) {
+	var coreLevel int32
+	switch {
+	case level <= singboxlog.LevelError:
+		coreLevel = LogLevelError
+	case level <= singboxlog.LevelWarn:
+		coreLevel = LogLevelWarn
+	case level <= singboxlog.LevelInfo:
+		coreLevel = LogLevelInfo
+	case level <= singboxlog.LevelDebug:
+		coreLevel = LogLevelDebug
+	default:
+		coreLevel = LogLevelTrace
+	}
+	if w.emit != nil {
+		data, _ := json.Marshal(LogEntry{
+			Level:     coreLevel,
+			Message:   message,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		w.emit(EventLog, string(data))
+	}
+}
 
 func VersionJSON() string {
 	data, _ := json.Marshal(map[string]string{"version": Version, "core": "sing-box"})
@@ -177,7 +207,8 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("parse config: %w", err)
 	}
 
-	inst, err := box.New(box.Options{Options: options, Context: ctx})
+	logWriter := &platformLogWriter{emit: s.onEvent}
+	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
 	if err != nil {
 		return fmt.Errorf("create instance: %w", err)
 	}
@@ -741,18 +772,18 @@ func (s *Service) subscribeHooks() {
 
 	if s.onEvent != nil {
 		fn := s.onEvent
+		clashSrv := srv
 
 		sub := observable.NewSubscriber[struct{}](8)
-		srv.HistoryStorage().SetHook(sub)
+		clashSrv.HistoryStorage().SetHook(sub)
 		go observe(ctx, sub, func(struct{}) { fn(EventURLTest, "") })
 
 		sub2 := observable.NewSubscriber[struct{}](8)
-		srv.SetModeUpdateHook(sub2)
-		srv := srv
-		go observe(ctx, sub2, func(struct{}) { fn(EventModeUpdate, srv.Mode()) })
+		clashSrv.SetModeUpdateHook(sub2)
+		go observe(ctx, sub2, func(struct{}) { fn(EventModeUpdate, clashSrv.Mode()) })
 
 		sub3 := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
-		srv.TrafficManager().SetEventHook(sub3)
+		clashSrv.TrafficManager().SetEventHook(sub3)
 		go observe(ctx, sub3, func(evt trafficontrol.ConnectionEvent) {
 			meta := evt.Metadata
 			if meta == nil {
