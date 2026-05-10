@@ -110,7 +110,6 @@ type Service struct {
 	platform      *PlatformIO
 	currentConfig string
 
-	eventMu   sync.RWMutex
 	onEvent   func(eventType int32, json string)
 	subCancel context.CancelFunc
 }
@@ -691,14 +690,10 @@ func (s *Service) TriggerGC() {
 // --- Callbacks ---
 
 func (s *Service) SetOnEvent(fn func(int32, string)) {
-	s.eventMu.Lock()
 	s.onEvent = fn
-	s.eventMu.Unlock()
 }
 
 func (s *Service) getOnEvent() func(int32, string) {
-	s.eventMu.RLock()
-	defer s.eventMu.RUnlock()
 	return s.onEvent
 }
 
