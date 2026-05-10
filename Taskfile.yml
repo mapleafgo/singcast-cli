@@ -109,19 +109,19 @@ tasks:
     desc: Build Android AAR for arm64 (gomobile)
     cmds:
       - mkdir -p {{.BINDIR}}
-      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}} -checklinkname=0' -target=android/arm64 -androidapi 29 -javapkg cn.mapleafgo -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.aar ./ffi
+      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}} -checklinkname=0' -target=android/arm64 -androidapi 29 -javapkg cn.mapleafgo -o {{.BINDIR}}/lib{{.NAME}}-android-arm64.aar ./mobile
 
   mobile-android-amd64:
     desc: Build Android AAR for amd64 (gomobile)
     cmds:
       - mkdir -p {{.BINDIR}}
-      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}} -checklinkname=0' -target=android/amd64 -androidapi 29 -javapkg cn.mapleafgo -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.aar ./ffi
+      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}} -checklinkname=0' -target=android/amd64 -androidapi 29 -javapkg cn.mapleafgo -o {{.BINDIR}}/lib{{.NAME}}-android-amd64.aar ./mobile
 
   mobile-ios-arm64:
     desc: Build iOS xcframework (gomobile)
     cmds:
       - mkdir -p {{.BINDIR}}
-      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -target=ios -o {{.BINDIR}}/{{.NAME}}.xcframework ./ffi
+      - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -target=ios -o {{.BINDIR}}/{{.NAME}}.xcframework ./mobile
 
   mobile-all:
     desc: Build all mobile SDK packages
