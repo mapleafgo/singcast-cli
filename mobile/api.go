@@ -184,14 +184,12 @@ type EventListener interface {
 }
 
 func (s *Singcast) SetOnEvent(l EventListener) {
-	if l == nil {
-		s.svc.SetOnEvent(nil)
-		core.SetOnLogEvent(nil)
-	} else {
-		fn := func(eventType int32, json string) { l.OnEvent(eventType, json) }
-		s.svc.SetOnEvent(fn)
-		core.SetOnLogEvent(fn)
+	var fn func(int32, string)
+	if l != nil {
+		fn = func(eventType int32, json string) { l.OnEvent(eventType, json) }
 	}
+	s.svc.SetOnEvent(fn)
+	core.SetOnLogEvent(fn)
 }
 
 // --- Memory ---
