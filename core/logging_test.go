@@ -4,100 +4,65 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 )
 
-func TestLogging_RingBufferOrder(t *testing.T) {
-	coreLogMu.Lock()
-	coreLogPos = 0
-	coreLogLen = 0
-	coreLogMu.Unlock()
+func TestLogging_Callback(t *testing.T) {
+	var mu sync.Mutex
+	var gotEntries []LogEntry
 
-	for i := 0; i < 5; i++ {
-		slog.Info("test message", "index", i)
-	}
-
-	got := queryCoreLogs()
-	var entries []LogEntry
-	if err := json.Unmarshal([]byte(got), &entries); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(entries) != 5 {
-		t.Fatalf("expected 5 entries, got %d", len(entries))
-	}
-	for i, e := range entries {
-		if !strings.Contains(e.Message, "test message") {
-			t.Errorf("entry[%d] = %q, should contain 'test message'", i, e.Message)
+	SetOnLogEvent(func(eventType int32, jsonStr string) {
+		if eventType != EventLog {
+			t.Errorf("eventType = %d, want %d", eventType, EventLog)
 		}
+		var entry LogEntry
+		if err := json.Unmarshal([]byte(jsonStr), &entry); err != nil {
+			t.Errorf("unmarshal: %v", err)
+		}
+		mu.Lock()
+		gotEntries = append(gotEntries, entry)
+		mu.Unlock()
+	})
+	defer SetOnLogEvent(nil)
+
+	slog.Info("callback-test", "key", "val")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(gotEntries) == 0 {
+		t.Fatal("expected at least one log entry via callback")
 	}
-}
-
-func TestLogging_RingBufferOverflow(t *testing.T) {
-	coreLogMu.Lock()
-	coreLogPos = 0
-	coreLogLen = 0
-	coreLogMu.Unlock()
-
-	prevLevel := GetLogLevel()
-	SetLogLevel(6) // Trace
-	defer SetLogLevel(prevLevel)
-
-	for i := 0; i < maxCoreLogEntries+100; i++ {
-		slog.Debug("overflow-test", "i", i)
-	}
-
-	coreLogMu.Lock()
-	if coreLogLen != maxCoreLogEntries {
-		t.Errorf("coreLogLen = %d, want %d", coreLogLen, maxCoreLogEntries)
-	}
-	coreLogMu.Unlock()
-
-	got := queryCoreLogs()
-	var entries []LogEntry
-	if err := json.Unmarshal([]byte(got), &entries); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(entries) != maxCoreLogEntries {
-		t.Errorf("queryCoreLogs returned %d entries, want %d", len(entries), maxCoreLogEntries)
-	}
-	if !strings.Contains(entries[0].Message, "overflow-test") {
-		t.Errorf("oldest entry = %q, should contain overflow-test", entries[0].Message)
-	}
-}
-
-func TestLogging_QueryEmpty(t *testing.T) {
-	coreLogMu.Lock()
-	coreLogPos = 0
-	coreLogLen = 0
-	coreLogMu.Unlock()
-
-	got := queryCoreLogs()
-	if got != "[]" {
-		t.Errorf("empty ring = %q, want []", got)
+	if !strings.Contains(gotEntries[len(gotEntries)-1].Message, "callback-test") {
+		t.Errorf("entry = %q, should contain callback-test", gotEntries[len(gotEntries)-1].Message)
 	}
 }
 
 func TestLogging_HandleAttrs(t *testing.T) {
-	coreLogMu.Lock()
-	coreLogPos = 0
-	coreLogLen = 0
-	coreLogMu.Unlock()
+	var mu sync.Mutex
+	var messages []string
+
+	SetOnLogEvent(func(_ int32, jsonStr string) {
+		var entry LogEntry
+		json.Unmarshal([]byte(jsonStr), &entry)
+		mu.Lock()
+		messages = append(messages, entry.Message)
+		mu.Unlock()
+	})
+	defer SetOnLogEvent(nil)
 
 	slog.Info("with-attrs", "key1", "val1", "key2", 42)
 
-	got := queryCoreLogs()
-	var entries []LogEntry
-	if err := json.Unmarshal([]byte(got), &entries); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(messages) == 0 {
+		t.Fatal("expected at least one entry")
 	}
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
+	if !strings.Contains(messages[len(messages)-1], "key1=val1") {
+		t.Errorf("entry should contain key1=val1: %q", messages[len(messages)-1])
 	}
-	if !strings.Contains(entries[0].Message, "key1=val1") {
-		t.Errorf("entry should contain attrs: %q", entries[0].Message)
-	}
-	if !strings.Contains(entries[0].Message, "key2=42") {
-		t.Errorf("entry should contain attrs: %q", entries[0].Message)
+	if !strings.Contains(messages[len(messages)-1], "key2=42") {
+		t.Errorf("entry should contain key2=42: %q", messages[len(messages)-1])
 	}
 }
 

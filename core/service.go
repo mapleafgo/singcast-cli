@@ -84,10 +84,8 @@ type Service struct {
 	overrideInclude   []string
 	overrideExclude   []string
 
-	onURLTestUpdate func()
-	onModeUpdate    func(mode string)
-	onConnEvent     func(eventType int32, connJSON string)
-	subCancel       context.CancelFunc
+	onEvent   func(eventType int32, json string)
+	subCancel context.CancelFunc
 }
 
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
@@ -401,15 +399,6 @@ func (s *Service) QueryStats() string {
 	return string(data)
 }
 
-func (s *Service) QueryLogs() string {
-	entries := queryCoreLogEntries()
-	if len(entries) == 0 {
-		return "[]"
-	}
-	data, _ := json.Marshal(entries)
-	return string(data)
-}
-
 func (s *Service) QueryConnections() string {
 	srv := s.clashServer()
 	if srv == nil {
@@ -581,6 +570,7 @@ type DNSQueryResult struct {
 }
 
 type connEntry struct {
+	Event       int32  `json:"event"`
 	ID          string `json:"id"`
 	Network     string `json:"network"`
 	Source      string `json:"source"`
@@ -734,9 +724,7 @@ func (s *Service) TriggerGC() {
 
 // --- Callbacks ---
 
-func (s *Service) SetOnURLTestUpdate(fn func())             { s.onURLTestUpdate = fn }
-func (s *Service) SetOnModeUpdate(fn func(mode string))     { s.onModeUpdate = fn }
-func (s *Service) SetOnConnEvent(fn func(int32, string))    { s.onConnEvent = fn }
+func (s *Service) SetOnEvent(fn func(int32, string)) { s.onEvent = fn }
 
 // subscribeHooks registers observable hooks on the ClashServer.
 // Must be called with s.mu held.
@@ -751,32 +739,29 @@ func (s *Service) subscribeHooks() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.subCancel = cancel
 
-	if s.onURLTestUpdate != nil {
+	if s.onEvent != nil {
+		fn := s.onEvent
+
 		sub := observable.NewSubscriber[struct{}](8)
 		srv.HistoryStorage().SetHook(sub)
-		fn := s.onURLTestUpdate
-		go observe(ctx, sub, func(struct{}) { fn() })
-	}
+		go observe(ctx, sub, func(struct{}) { fn(EventURLTest, "") })
 
-	if s.onModeUpdate != nil {
-		sub := observable.NewSubscriber[struct{}](8)
-		srv.SetModeUpdateHook(sub)
+		sub2 := observable.NewSubscriber[struct{}](8)
+		srv.SetModeUpdateHook(sub2)
 		srv := srv
-		fn := s.onModeUpdate
-		go observe(ctx, sub, func(struct{}) { fn(srv.Mode()) })
-	}
+		go observe(ctx, sub2, func(struct{}) { fn(EventModeUpdate, srv.Mode()) })
 
-	if s.onConnEvent != nil {
-		sub := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
-		srv.TrafficManager().SetEventHook(sub)
-		fn := s.onConnEvent
-		go observe(ctx, sub, func(evt trafficontrol.ConnectionEvent) {
+		sub3 := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
+		srv.TrafficManager().SetEventHook(sub3)
+		go observe(ctx, sub3, func(evt trafficontrol.ConnectionEvent) {
 			meta := evt.Metadata
 			if meta == nil {
 				return
 			}
-			data, _ := json.Marshal(trackerToEntry(meta))
-			fn(int32(evt.Type), string(data))
+			entry := trackerToEntry(meta)
+			entry.Event = int32(evt.Type)
+			data, _ := json.Marshal(entry)
+			fn(EventConnEvent, string(data))
 		})
 	}
 }

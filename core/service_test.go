@@ -21,24 +21,6 @@ func initJSON(homeDir string) string {
 	return string(data)
 }
 
-func TestService_QueryLogsReturnsJSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	defer svc.Destroy()
-
-	got := svc.QueryLogs()
-	var entries []LogEntry
-	if err := json.Unmarshal([]byte(got), &entries); err != nil {
-		t.Fatalf("QueryLogs returned invalid JSON: %v", err)
-	}
-}
-
 func TestService_StopWhenNotRunning(t *testing.T) {
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
@@ -97,27 +79,6 @@ func TestService_FlushDNS(t *testing.T) {
 	defer svc.Destroy()
 
 	svc.FlushSystemDNS()
-}
-
-func TestService_QueryLogsWithCoreLogs(t *testing.T) {
-	tmpDir := t.TempDir()
-	homeDir := filepath.Join(tmpDir, "home")
-	mustMkdirAll(t, homeDir)
-
-	svc := NewService()
-	if err := svc.Init(initJSON(homeDir)); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	defer svc.Destroy()
-
-	got := svc.QueryLogs()
-	var entries []LogEntry
-	if err := json.Unmarshal([]byte(got), &entries); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Error("expected at least some core log entries from init")
-	}
 }
 
 func TestSetOverridePackages_StateChecks(t *testing.T) {

@@ -3,13 +3,8 @@ package main
 /*
 #include <stdlib.h>
 
-typedef void (*VoidCallback)();
-typedef void (*StringCallback)(const char*);
-typedef void (*IntStringCallback)(int, const char*);
-
-static void invokeVoidCB(VoidCallback cb) { cb(); }
-static void invokeStringCB(StringCallback cb, const char* s) { cb(s); }
-static void invokeIntStringCB(IntStringCallback cb, int i, const char* s) { cb(i, s); }
+typedef void (*EventCallback)(int, const char*);
+static void invokeEventCB(EventCallback cb, int t, const char* s) { cb(t, s); }
 */
 import "C"
 
@@ -22,34 +17,17 @@ import (
 
 var api = ffi.Create()
 
-var (
-	cURLTestCB   unsafe.Pointer
-	cModeUpdateCB unsafe.Pointer
-	cConnEventCB  unsafe.Pointer
-)
+var cEventCB unsafe.Pointer
 
 func init() {
-	api.SetCallbackFuncs(
-		func() {
-			if cURLTestCB != nil {
-				C.invokeVoidCB(C.VoidCallback(cURLTestCB))
-			}
-		},
-		func(mode string) {
-			if cModeUpdateCB != nil {
-				cs := C.CString(mode)
-				defer C.free(unsafe.Pointer(cs))
-				C.invokeStringCB(C.StringCallback(cModeUpdateCB), cs)
-			}
-		},
-		func(eventType int32, connJSON string) {
-			if cConnEventCB != nil {
-				cs := C.CString(connJSON)
-				defer C.free(unsafe.Pointer(cs))
-				C.invokeIntStringCB(C.IntStringCallback(cConnEventCB), C.int(eventType), cs)
-			}
-		},
-	)
+	api.SetCallbackFuncs(func(eventType int32, json string) {
+		if cEventCB != nil {
+			// Ownership transfer: Dart side must call CoreFreeString after copying.
+			// Do NOT free here — NativeCallable.listener is async (dart-lang/sdk#54554).
+			cs := C.CString(json)
+			C.invokeEventCB(C.EventCallback(cEventCB), C.int(eventType), cs)
+		}
+	})
 }
 
 func resultJSON(err error) *C.char {
@@ -136,9 +114,6 @@ func CoreQueryProxies() *C.char { return cString(api.QueryProxies()) }
 //export CoreQueryStats
 func CoreQueryStats() *C.char { return cString(api.QueryStats()) }
 
-//export CoreQueryLogs
-func CoreQueryLogs() *C.char { return cString(api.QueryLogs()) }
-
 //export CoreQueryConnections
 func CoreQueryConnections() *C.char { return cString(api.QueryConnections()) }
 
@@ -196,13 +171,7 @@ func CoreSetMemoryLimit(bytes C.longlong) { api.SetMemoryLimit(int64(bytes)) }
 //export CoreGetVersion
 func CoreGetVersion() *C.char { return cString(api.Version()) }
 
-// --- Event Callbacks ---
+// --- Event Callback ---
 
-//export CoreSetURLTestCallback
-func CoreSetURLTestCallback(cb unsafe.Pointer) { cURLTestCB = cb }
-
-//export CoreSetModeUpdateCallback
-func CoreSetModeUpdateCallback(cb unsafe.Pointer) { cModeUpdateCB = cb }
-
-//export CoreSetConnEventCallback
-func CoreSetConnEventCallback(cb unsafe.Pointer) { cConnEventCB = cb }
+//export CoreSetEventCallback
+func CoreSetEventCallback(cb unsafe.Pointer) { cEventCB = cb }

@@ -7,11 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
-
-const maxCoreLogEntries = 500
 
 // Log level constants. Lower number = higher severity.
 const (
@@ -23,17 +20,17 @@ const (
 )
 
 var (
-	coreLogMu sync.Mutex
-
-	// Fixed-size ring buffer avoids slice-shift memory waste.
-	coreLogRing [maxCoreLogEntries]LogEntry
-	coreLogPos  int // next write position
-	coreLogLen  int // current length (0..maxCoreLogEntries)
-
 	// Runtime log level filter. Lower number = higher severity.
 	// Error=2, Warn=3, Info=4, Debug=5, Trace=6.
 	coreLogLevel atomic.Int32
+
+	// Global log event callback, set via SetOnLogEvent.
+	onLogEvent func(int32, string)
 )
+
+// SetOnLogEvent registers a callback invoked for each new log entry.
+// The callback receives (EventLog, json) where json is a serialized LogEntry.
+func SetOnLogEvent(fn func(int32, string)) { onLogEvent = fn }
 
 func init() {
 	coreLogLevel.Store(LogLevelInfo)
@@ -46,9 +43,9 @@ func SetLogLevel(level int32) { coreLogLevel.Store(level) }
 // GetLogLevel returns the current minimum log level.
 func GetLogLevel() int32 { return coreLogLevel.Load() }
 
-// coreLogHandler implements slog.Handler, routing log entries to an in-memory
-// ring buffer and the event callback. No file I/O is performed; the frontend
-// handles all log persistence.
+// coreLogHandler implements slog.Handler, routing log entries to stderr
+// and the event callback. No in-memory retention — the frontend handles
+// log persistence via the callback.
 type coreLogHandler struct {
 	extra string // accumulated key=value pairs from WithAttrs
 }
@@ -71,19 +68,15 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	// Always mirror to stderr for debugging (gomobile forwards to Android logcat).
 	fmt.Fprintln(os.Stderr, b.String())
 
-	entry := LogEntry{
-		Level:     slogToCoreLevel(r.Level),
-		Message:   b.String(),
-		Timestamp: r.Time.UnixMilli(),
+	if onLogEvent != nil {
+		data, _ := json.Marshal(LogEntry{
+			Level:     slogToCoreLevel(r.Level),
+			Message:   b.String(),
+			Timestamp: r.Time.UnixMilli(),
+		})
+		onLogEvent(EventLog, string(data))
 	}
 
-	coreLogMu.Lock()
-	coreLogRing[coreLogPos] = entry
-	coreLogPos = (coreLogPos + 1) % maxCoreLogEntries
-	if coreLogLen < maxCoreLogEntries {
-		coreLogLen++
-	}
-	coreLogMu.Unlock()
 	return nil
 }
 
@@ -151,27 +144,4 @@ func syncLogLevelFromConfig(jsonContent string) {
 	oldLevel := GetLogLevel()
 	slog.Info("[syncLogLevel] syncing log level", "configLevel", cfg.Log.Level, "oldLevel", oldLevel, "newLevel", newLevel)
 	SetLogLevel(newLevel)
-}
-
-func queryCoreLogs() string {
-	entries := queryCoreLogEntries()
-	if len(entries) == 0 {
-		return "[]"
-	}
-	data, _ := json.Marshal(entries)
-	return string(data)
-}
-
-func queryCoreLogEntries() []LogEntry {
-	coreLogMu.Lock()
-	defer coreLogMu.Unlock()
-	if coreLogLen == 0 {
-		return nil
-	}
-	entries := make([]LogEntry, 0, coreLogLen)
-	start := (coreLogPos - coreLogLen + maxCoreLogEntries) % maxCoreLogEntries
-	for i := range coreLogLen {
-		entries = append(entries, coreLogRing[(start+i)%maxCoreLogEntries])
-	}
-	return entries
 }

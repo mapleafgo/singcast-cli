@@ -69,7 +69,6 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 |----------|-----------|-------------|
 | `CoreQueryProxies` | `char* CoreQueryProxies()` | Proxy groups and nodes |
 | `CoreQueryStats` | `char* CoreQueryStats()` | Traffic + memory snapshot: up/down/connections/memory |
-| `CoreQueryLogs` | `char* CoreQueryLogs()` | Recent log entries from ring buffer |
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
 | `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
 | `CoreQueryRules` | `char* CoreQueryRules()` | Routing rule list |
@@ -110,22 +109,45 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 - Error: `{"error":"message"}`
 - All `char*` returns must be freed with `CoreFreeString`
 
-### Event Callbacks
+### Event Callback
 
-Callbacks are invoked from background goroutines. Consumers must dispatch to the UI thread if needed.
+A single unified callback delivers all events from the core. Invoked from background goroutines — consumers must dispatch to the UI thread if needed.
 
-| Function | Signature | Trigger |
-|----------|-----------|---------|
-| `CoreSetURLTestCallback` | `void CoreSetURLTestCallback(void* cb)` | URL test delay history updated (3-min auto / manual) |
-| `CoreSetModeUpdateCallback` | `void CoreSetModeUpdateCallback(void* cb)` | Routing mode changed. Callback receives `const char* mode` |
-| `CoreSetConnEventCallback` | `void CoreSetConnEventCallback(void* cb)` | Connection created/updated/closed. Callback receives `int type, const char* json` |
+| Function | Signature |
+|----------|-----------|
+| `CoreSetEventCallback` | `void CoreSetEventCallback(void* cb)` |
 
-Callback signatures:
-- URLTest: `void (*)()`
-- ModeUpdate: `void (*)(const char* mode)`
-- ConnEvent: `void (*)(int type, const char* json)` — type: 0=New, 1=Update, 2=Closed
+Callback signature: `void (*)(int eventType, const char* json)`
 
-Callbacks must be set before `CoreStartWithContent`. They persist across restarts.
+#### Event Types
+
+| eventType | Constant | json payload |
+|-----------|----------|-------------|
+| 0 | Log | `{"level":4,"message":"...","timestamp":123456}` |
+| 1 | URLTest | `""` (empty) |
+| 2 | ModeUpdate | Mode string, e.g. `"rule"` |
+| 3 | ConnEvent | Connection JSON with `event` field (0=New, 1=Update, 2=Closed) |
+
+Must be set before `CoreStartWithContent`. Persists across restarts.
+
+#### Memory Ownership
+
+The `const char* json` parameter uses **ownership transfer** — the native side allocates and does NOT free it. The callback recipient must copy the string, then call `CoreFreeString`.
+
+This is required because Flutter's `NativeCallable.listener` is asynchronous (see [dart-lang/sdk#54554](https://github.com/dart-lang/sdk/issues/54554)) — it schedules execution on the Dart event loop and returns immediately, so the native side cannot safely free the string after the callback returns.
+
+```dart
+void onEvent(int eventType, Pointer<Utf8> json) {
+  final str = json.toDartString(); // copy first
+  CoreFreeString(json);            // then free the C string
+  switch (eventType) {
+    case 0: // Log — str is {"level":4,"message":"...","timestamp":...}
+    case 1: // URLTest updated
+    case 2: // ModeUpdate — str is "rule", "global", or "direct"
+    case 3: // ConnEvent — str is connection JSON with "event" field
+  }
+}
+```
 
 ---
 
@@ -191,7 +213,6 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 |--------|-------------|
 | `QueryProxies() string` | Proxy groups (JSON) |
 | `QueryStats() string` | Traffic + memory snapshot: up/down/connections/memory |
-| `QueryLogs() string` | Recent log entries |
 | `QueryConnections() string` | Active connections (JSON) |
 | `QueryMode() string` | Current mode and available modes |
 | `QueryRules() string` | Routing rule list (JSON) |
@@ -225,17 +246,15 @@ Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Metho
 |--------|-------------|
 | `Version() string` | Version info (JSON) |
 
-### Event Listeners
+### Event Listener
 
-Listeners are called from background threads. Implement the interface and register before `StartWithContent`.
+A single unified listener delivers all events. Called from background threads. Register before `StartWithContent`.
 
-| Method | Interface | Trigger |
-|--------|-----------|---------|
-| `SetOnURLTestUpdate(l)` | `URLTestUpdateListener.OnURLTestUpdate()` | URL test delay history updated |
-| `SetOnModeUpdate(l)` | `ModeUpdateListener.OnModeUpdate(mode string)` | Routing mode changed |
-| `SetOnConnEvent(l)` | `ConnectionEventListener.OnConnectionEvent(eventType int32, connJSON string)` | Connection created/updated/closed |
+| Method | Interface |
+|--------|-----------|
+| `SetOnEvent(l)` | `EventListener.OnEvent(eventType int32, json string)` |
 
-Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection object (see Connection data structure).
+eventType values: 0=URLTest, 1=ModeUpdate, 2=ConnEvent, 3=Log. See the Desktop Event Callback section for payload details.
 
 ---
 
@@ -354,20 +373,6 @@ Connection event types: 0=New, 1=Update, 2=Closed. `connJSON` is a connection ob
   "Server": "internal"
 }
 ```
-
-### LogEntry
-
-```json
-[
-  { "level": 4, "message": "service running" }
-]
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `level` | int32 | 2=error, 3=warn, 4=info, 5=debug, 6=trace |
-| `message` | string | Log content |
-| `timestamp` | int64 | Unix timestamp (milliseconds) |
 
 ---
 

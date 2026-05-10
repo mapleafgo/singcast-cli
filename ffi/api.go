@@ -142,9 +142,6 @@ func (s *Singcast) QueryProxies() string { return s.svc.QueryProxies() }
 // QueryStats returns traffic and memory stats as JSON.
 func (s *Singcast) QueryStats() string { return s.svc.QueryStats() }
 
-// QueryLogs returns combined sing-box and core internal logs as JSON.
-func (s *Singcast) QueryLogs() string { return s.svc.QueryLogs() }
-
 // QueryConnections returns active connections as JSON.
 func (s *Singcast) QueryConnections() string { return s.svc.QueryConnections() }
 
@@ -187,53 +184,27 @@ func (s *Singcast) TriggerGC() { s.svc.TriggerGC() }
 
 // --- Event Listeners ---
 
-// URLTestUpdateListener is called when URL test delay history is updated.
-type URLTestUpdateListener interface {
-	OnURLTestUpdate()
+// EventListener is the unified callback interface for all core events.
+// eventType: 0=URLTest, 1=ModeUpdate, 2=ConnEvent, 3=Log.
+type EventListener interface {
+	OnEvent(eventType int32, json string)
 }
 
-// ModeUpdateListener is called when the clash routing mode changes.
-type ModeUpdateListener interface {
-	OnModeUpdate(mode string)
-}
-
-// ConnectionEventListener is called on connection create/update/close.
-// eventType: 0=New, 1=Update, 2=Closed. connJSON is a connection object.
-type ConnectionEventListener interface {
-	OnConnectionEvent(eventType int32, connJSON string)
-}
-
-func (s *Singcast) SetOnURLTestUpdate(l URLTestUpdateListener) {
+func (s *Singcast) SetOnEvent(l EventListener) {
 	if l == nil {
-		s.svc.SetOnURLTestUpdate(nil)
+		s.svc.SetOnEvent(nil)
+		core.SetOnLogEvent(nil)
 	} else {
-		s.svc.SetOnURLTestUpdate(func() { l.OnURLTestUpdate() })
+		fn := func(eventType int32, json string) { l.OnEvent(eventType, json) }
+		s.svc.SetOnEvent(fn)
+		core.SetOnLogEvent(fn)
 	}
 }
 
-func (s *Singcast) SetOnModeUpdate(l ModeUpdateListener) {
-	if l == nil {
-		s.svc.SetOnModeUpdate(nil)
-	} else {
-		s.svc.SetOnModeUpdate(func(mode string) { l.OnModeUpdate(mode) })
-	}
-}
-
-func (s *Singcast) SetOnConnEvent(l ConnectionEventListener) {
-	if l == nil {
-		s.svc.SetOnConnEvent(nil)
-	} else {
-		s.svc.SetOnConnEvent(func(eventType int32, connJSON string) {
-			l.OnConnectionEvent(eventType, connJSON)
-		})
-	}
-}
-
-// SetCallbackFunc registers raw function callbacks. Used by desktop FFI.
-func (s *Singcast) SetCallbackFuncs(onURLTest func(), onMode func(string), onConn func(int32, string)) {
-	s.svc.SetOnURLTestUpdate(onURLTest)
-	s.svc.SetOnModeUpdate(onMode)
-	s.svc.SetOnConnEvent(onConn)
+// SetCallbackFuncs registers a raw function callback. Used by desktop FFI.
+func (s *Singcast) SetCallbackFuncs(fn func(int32, string)) {
+	s.svc.SetOnEvent(fn)
+	core.SetOnLogEvent(fn)
 }
 
 // --- Memory ---
