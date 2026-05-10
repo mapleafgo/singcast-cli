@@ -35,13 +35,8 @@ type PlatformIO struct {
 	// Mobile: socket protector from VpnService.protect.
 	protectFn func(fd int32) bool
 
-	// Mobile: interface monitor updated via UpdateDefaultInterface callback.
+	// Mobile: interface monitor, created eagerly in SetMobile(true).
 	ifaceMonitor *callbackInterfaceMonitor
-
-	// Mobile: buffered default interface data, applied when monitor is created.
-	defaultIfaceName      string
-	defaultIfaceIndex     int
-	defaultIfaceExpensive bool
 
 	// Mobile: interface data as JSON from platform.
 	interfacesJSON string
@@ -60,6 +55,9 @@ func NewPlatformIO() *PlatformIO { return &PlatformIO{} }
 func (p *PlatformIO) SetMobile(mobile bool) {
 	p.mu.Lock()
 	p.isMobile = mobile
+	if mobile && p.ifaceMonitor == nil {
+		p.ifaceMonitor = &callbackInterfaceMonitor{}
+	}
 	p.mu.Unlock()
 }
 
@@ -96,13 +94,9 @@ func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
-// Buffers the data if the monitor hasn't been created yet.
 func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
 	p.mu.Lock()
 	m := p.ifaceMonitor
-	p.defaultIfaceName = name
-	p.defaultIfaceIndex = int(index)
-	p.defaultIfaceExpensive = expensive
 	p.mu.Unlock()
 	if m != nil {
 		m.update(name, int(index), expensive)
@@ -164,10 +158,6 @@ func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInt
 	defer p.mu.Unlock()
 	if !p.isMobile {
 		return nil
-	}
-	p.ifaceMonitor = &callbackInterfaceMonitor{}
-	if p.defaultIfaceName != "" {
-		p.ifaceMonitor.update(p.defaultIfaceName, p.defaultIfaceIndex, p.defaultIfaceExpensive)
 	}
 	return p.ifaceMonitor
 }
