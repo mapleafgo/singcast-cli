@@ -9,10 +9,9 @@ static void invokeEventCB(EventCallback cb, int t, const char* s) { cb(t, s); }
 import "C"
 
 import (
-	"encoding/json"
 	"unsafe"
 
-	"github.com/mapleafgo/singcast/ffi"
+	"github.com/mapleafgo/singcast/mobile"
 )
 
 var api = ffi.Create()
@@ -30,28 +29,29 @@ func init() {
 	})
 }
 
-func resultJSON(err error) *C.char {
+// errorString returns nil on success, or the error message as a C string on failure.
+// The caller must free non-nil returns with CoreFreeString.
+func errorString(err error) *C.char {
 	if err != nil {
-		data, _ := json.Marshal(map[string]string{"error": err.Error()})
-		return cString(string(data))
+		return cString(err.Error())
 	}
-	return cString(`{"ok":true}`)
+	return nil
 }
 
 // --- Lifecycle ---
 
 //export CoreInit
 func CoreInit(optionsJSON *C.char) *C.char {
-	return resultJSON(api.Init(goString(optionsJSON)))
+	return errorString(api.Init(goString(optionsJSON)))
 }
 
 //export CoreStartWithContent
 func CoreStartWithContent(content, ruleSetProxy *C.char) *C.char {
-	return resultJSON(api.StartWithContent(goString(content), goString(ruleSetProxy)))
+	return errorString(api.StartWithContent(goString(content), goString(ruleSetProxy)))
 }
 
 //export CoreStop
-func CoreStop() *C.char { return resultJSON(api.Stop()) }
+func CoreStop() *C.char { return errorString(api.Stop()) }
 
 //export CoreDestroy
 func CoreDestroy() { api.Destroy() }
@@ -63,15 +63,15 @@ func CoreQueryState() C.int { return C.int(api.State()) }
 
 //export CoreCheckConfig
 func CoreCheckConfig(content *C.char) *C.char {
-	return resultJSON(api.CheckConfig(goString(content)))
+	return errorString(api.CheckConfig(goString(content)))
 }
 
 //export CoreReloadTUN
-func CoreReloadTUN() *C.char { return resultJSON(api.ReloadTUN()) }
+func CoreReloadTUN() *C.char { return errorString(api.ReloadTUN()) }
 
 //export CoreSetOverridePackages
 func CoreSetOverridePackages(overrideJSON *C.char) *C.char {
-	return resultJSON(api.SetOverridePackages(goString(overrideJSON)))
+	return errorString(api.SetOverridePackages(goString(overrideJSON)))
 }
 
 // --- Logging ---
@@ -88,7 +88,7 @@ func CoreResetNetwork() { api.ResetNetwork() }
 
 //export CoreSelectProxy
 func CoreSelectProxy(group, tag *C.char) *C.char {
-	return resultJSON(api.SelectProxy(goString(group), goString(tag)))
+	return errorString(api.SelectProxy(goString(group), goString(tag)))
 }
 
 //export CoreTestDelay
@@ -98,12 +98,12 @@ func CoreTestDelay(name *C.char, timeoutMs C.int) C.int {
 
 //export CoreSetMode
 func CoreSetMode(mode *C.char) *C.char {
-	return resultJSON(api.SetMode(goString(mode)))
+	return errorString(api.SetMode(goString(mode)))
 }
 
 //export CoreSetGroupExpand
 func CoreSetGroupExpand(group *C.char, expand C.int) *C.char {
-	return resultJSON(api.SetGroupExpand(goString(group), expand != 0))
+	return errorString(api.SetGroupExpand(goString(group), expand != 0))
 }
 
 // --- Queries ---
@@ -124,12 +124,12 @@ func CoreQueryMode() *C.char { return cString(api.QueryMode()) }
 
 //export CoreCloseConnection
 func CoreCloseConnection(id *C.char) *C.char {
-	return resultJSON(api.CloseConnection(goString(id)))
+	return errorString(api.CloseConnection(goString(id)))
 }
 
 //export CoreCloseAllConnections
 func CoreCloseAllConnections() *C.char {
-	return resultJSON(api.CloseAllConnections())
+	return errorString(api.CloseAllConnections())
 }
 
 // --- System ---
@@ -143,7 +143,7 @@ func CoreFlushSystemDNS() { api.FlushSystemDNS() }
 func CoreQueryRules() *C.char { return cString(api.QueryRules()) }
 
 //export CoreFlushFakeIP
-func CoreFlushFakeIP() *C.char { return resultJSON(api.FlushFakeIP()) }
+func CoreFlushFakeIP() *C.char { return errorString(api.FlushFakeIP()) }
 
 //export CoreQueryDNS
 func CoreQueryDNS(name *C.char, qType C.int) *C.char {
@@ -151,7 +151,7 @@ func CoreQueryDNS(name *C.char, qType C.int) *C.char {
 }
 
 //export CoreFlushDNSCache
-func CoreFlushDNSCache() *C.char { return resultJSON(api.FlushDNSCache()) }
+func CoreFlushDNSCache() *C.char { return errorString(api.FlushDNSCache()) }
 
 //export CoreTestGroupDelay
 func CoreTestGroupDelay(group *C.char, timeoutMs C.int) *C.char {

@@ -105,9 +105,9 @@ Exported as C-compatible symbols via `c-shared` build mode. All functions return
 
 ### Return Format
 
-- Success: `{"ok":true}` or query-specific JSON
-- Error: `{"error":"message"}`
-- All `char*` returns must be freed with `CoreFreeString`
+- Success: `null` (no need to free) or query-specific JSON string
+- Error: error message string — must be freed with `CoreFreeString`
+- All non-null `char*` returns must be freed with `CoreFreeString`
 
 ### Event Callback
 
@@ -153,7 +153,7 @@ void onEvent(int eventType, Pointer<Utf8> json) {
 
 ## Mobile SDK (gomobile)
 
-Built with `gomobile bind`, generates AAR (Android) and xcframework (iOS). Methods are on the `Singcast` struct.
+Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) and xcframework (iOS). Methods are on the `Singcast` struct.
 
 ### Lifecycle
 
@@ -254,7 +254,7 @@ A single unified listener delivers all events. Called from background threads. R
 |--------|-----------|
 | `SetOnEvent(l)` | `EventListener.OnEvent(eventType int32, json string)` |
 
-eventType values: 0=URLTest, 1=ModeUpdate, 2=ConnEvent, 3=Log. See the Desktop Event Callback section for payload details.
+eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent. See the Desktop Event Callback section for payload details.
 
 ---
 

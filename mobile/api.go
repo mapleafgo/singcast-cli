@@ -185,7 +185,7 @@ func (s *Singcast) TriggerGC() { s.svc.TriggerGC() }
 // --- Event Listeners ---
 
 // EventListener is the unified callback interface for all core events.
-// eventType: 0=URLTest, 1=ModeUpdate, 2=ConnEvent, 3=Log.
+// eventType: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent.
 type EventListener interface {
 	OnEvent(eventType int32, json string)
 }
