@@ -142,14 +142,9 @@ tasks:
   # ── Development ──────────────────────────────────────
 
   test:
-    desc: Run unit tests (excludes integration tests)
+    desc: Run tests
     cmds:
       - go test -tags '{{.BUILDTAGS}}' ./translator/... ./core/...
-
-  test-integration:
-    desc: Run integration tests (requires network)
-    cmds:
-      - go test -tags '{{.BUILDTAGS}},integration' ./core/... -run TestConnectivity
 
   clean:
     desc: Remove build artifacts
