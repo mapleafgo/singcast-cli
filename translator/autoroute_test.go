@@ -32,14 +32,8 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 		t.Fatalf("expected 3 geo rules for CN, got %d", len(rules))
 	}
 
-	// Rule 0: .cn domain suffix → DIRECT
-	ds, _ := rules[0]["domain_suffix"].([]string)
-	if len(ds) != 1 || ds[0] != ".cn" {
-		t.Fatalf("rule 0 domain_suffix = %v, want [.cn]", ds)
-	}
-	if rules[0]["outbound"] != "DIRECT" {
-		t.Fatalf("rule 0 outbound = %v, want DIRECT", rules[0]["outbound"])
-	}
+	// Rule 0: geolocation-!cn → PROXY (must come before cn rule)
+	assertRuleSet(t, rules[0], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
 
 	// Rule 1: geolocation-cn → DIRECT
 	assertRuleSet(t, rules[1], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
@@ -47,17 +41,17 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	// Rule 2: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
 	logical := rules[2]
 	if logical["type"] != "logical" {
-		t.Fatalf("rule 1 type = %v, want logical", logical["type"])
+		t.Fatalf("rule 2 type = %v, want logical", logical["type"])
 	}
 	if logical["mode"] != "and" {
-		t.Fatalf("rule 1 mode = %v, want and", logical["mode"])
+		t.Fatalf("rule 2 mode = %v, want and", logical["mode"])
 	}
 	if logical["outbound"] != "DIRECT" {
-		t.Fatalf("rule 1 outbound = %v, want DIRECT", logical["outbound"])
+		t.Fatalf("rule 2 outbound = %v, want DIRECT", logical["outbound"])
 	}
 	subRules, ok := logical["rules"].([]map[string]any)
 	if !ok || len(subRules) != 2 {
-		t.Fatalf("rule 1 sub-rules: ok=%v len=%d", ok, len(subRules))
+		t.Fatalf("rule 2 sub-rules: ok=%v len=%d", ok, len(subRules))
 	}
 	// Sub-rule 0: geolocation-!cn inverted
 	if subRules[0]["invert"] != true {
@@ -93,20 +87,14 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 		t.Fatalf("expected 3 geo rules for US, got %d", len(rules))
 	}
 
-	// Rule 0: .us domain suffix → DIRECT
-	ds, _ := rules[0]["domain_suffix"].([]string)
-	if len(ds) != 1 || ds[0] != ".us" {
-		t.Fatalf("rule 0 domain_suffix = %v, want [.us]", ds)
-	}
-	if rules[0]["outbound"] != "DIRECT" {
-		t.Fatalf("rule 0 outbound = %v, want DIRECT", rules[0]["outbound"])
-	}
+	// Rule 0: geoip-us → DIRECT
+	assertRuleSet(t, rules[0], "geoip-us", "DIRECT", "geoip-us")
 
-	// Rule 1: geoip-us → DIRECT
-	assertRuleSet(t, rules[1], "geoip-us", "DIRECT", "geoip-us")
+	// Rule 1: geosite-us → DIRECT
+	assertRuleSet(t, rules[1], "geosite-us", "DIRECT", "geosite-us")
 
-	// Rule 2: geosite-us → DIRECT
-	assertRuleSet(t, rules[2], "geosite-us", "DIRECT", "geosite-us")
+	// Rule 2: geolocation-!cn → PROXY
+	assertRuleSet(t, rules[2], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
 }
 
 func TestGenerateGeoRoute_NoGroups(t *testing.T) {
