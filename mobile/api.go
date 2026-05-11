@@ -50,9 +50,9 @@ func (s *Singcast) Stop() error { return s.svc.Stop() }
 // Destroy releases all resources. The instance cannot be reused.
 func (s *Singcast) Destroy() { s.svc.Destroy() }
 
-// State returns the current service lifecycle state.
-// 0=Created, 1=Initialized, 2=Running, 3=Destroyed.
-func (s *Singcast) State() int32 { return int32(s.svc.State()) }
+// State returns the current service lifecycle state as a string.
+// "created", "initialized", "starting", "running", "destroyed".
+func (s *Singcast) State() string { return s.svc.State().String() }
 
 // --- Platform IO ---
 

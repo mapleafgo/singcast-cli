@@ -60,7 +60,7 @@ func CoreStop() *C.char { return errorString(svc.Stop()) }
 func CoreDestroy() { svc.Destroy() }
 
 //export CoreQueryState
-func CoreQueryState() C.int { return C.int(svc.State()) }
+func CoreQueryState() *C.char { return cString(svc.State().String()) }
 
 // --- Config ---
 
