@@ -46,18 +46,19 @@ type PlatformIO struct {
 	// WiFi state from mobile platform.
 	wifiSSID  string
 	wifiBSSID string
+
+	// protect counter, incremented on each successful protect call.
+	protectCount atomic.Int64
 }
 
 func NewPlatformIO() *PlatformIO { return &PlatformIO{} }
 
 // SetMobile marks this instance as mobile. Must be called before StartWithContent.
 func (p *PlatformIO) SetMobile(mobile bool) {
-	p.mu.Lock()
 	p.isMobile = mobile
 	if mobile && p.ifaceMonitor == nil {
 		p.ifaceMonitor = &callbackInterfaceMonitor{}
 	}
-	p.mu.Unlock()
 }
 
 func (p *PlatformIO) SetTunFd(fd int32) {
@@ -71,7 +72,7 @@ func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.protectFn = fn
-	slog.Debug("platform: set socket protector", "nil", fn == nil)
+	slog.Info("platform: set socket protector", "nil", fn == nil)
 }
 
 func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
@@ -91,7 +92,7 @@ func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.interfacesJSON = jsonStr
-	slog.Debug("platform: set interfaces JSON", "len", len(jsonStr))
+	slog.Info("platform: set interfaces JSON", "len", len(jsonStr))
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
@@ -99,7 +100,11 @@ func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive 
 	p.mu.Lock()
 	m := p.ifaceMonitor
 	p.mu.Unlock()
-	slog.Debug("platform: update default interface", "name", name, "index", index, "monitor", m != nil)
+	if m != nil && m.MyInterface() == name {
+		slog.Debug("platform: skip default interface update for TUN", "name", name)
+		return
+	}
+	slog.Info("platform: update default interface", "name", name, "index", index, "monitor", m != nil)
 	if m != nil {
 		m.update(name, int(index), expensive)
 	}
@@ -110,16 +115,10 @@ func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive 
 func (p *PlatformIO) Initialize(adapter.NetworkManager) error { return nil }
 
 func (p *PlatformIO) UsePlatformInterface() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	return p.isMobile && p.tunFd != 0
 }
 
-func (p *PlatformIO) IsMobile() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.isMobile
-}
+func (p *PlatformIO) IsMobile() bool { return p.isMobile }
 
 func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOptions) (tun.Tun, error) {
 	p.mu.Lock()
@@ -143,15 +142,16 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	if m != nil {
 		if name, nameErr := tunDev.Name(); nameErr == nil {
 			m.RegisterMyInterface(name)
+			slog.Info("platform: registered TUN interface", "name", name)
+		} else {
+			slog.Warn("platform: failed to get TUN interface name", "error", nameErr)
 		}
 	}
-	slog.Debug("platform: TUN interface opened", "fd", fd)
+	slog.Info("platform: TUN interface opened", "fd", fd)
 	return tunDev, nil
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool { return true }
-
-var protectCallCount int64
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 	p.mu.Lock()
@@ -159,38 +159,31 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 	p.mu.Unlock()
 
 	if fn == nil {
+		if p.isMobile {
+			slog.Warn("platform: protect called but protectFn is nil")
+		}
 		return nil
 	}
 	if !fn(int32(fd)) {
 		slog.Warn("platform: protect failed", "fd", fd)
 		return fmt.Errorf("protect fd %d failed", fd)
 	}
-	if n := atomic.AddInt64(&protectCallCount, 1); n <= 5 || n%100 == 0 {
-		slog.Debug("platform: protect ok", "fd", fd, "count", n)
+	if n := p.protectCount.Add(1); n <= 5 || n%100 == 0 {
+		slog.Info("platform: protect ok", "fd", fd, "count", n)
 	}
 	return nil
 }
 
-func (p *PlatformIO) UsePlatformDefaultInterfaceMonitor() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.isMobile
-}
+func (p *PlatformIO) UsePlatformDefaultInterfaceMonitor() bool { return p.isMobile }
 
 func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInterfaceMonitor {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	if !p.isMobile {
 		return nil
 	}
 	return p.ifaceMonitor
 }
 
-func (p *PlatformIO) UsePlatformNetworkInterfaces() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.isMobile
-}
+func (p *PlatformIO) UsePlatformNetworkInterfaces() bool { return p.isMobile }
 
 func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
 	p.mu.Lock()
@@ -290,7 +283,7 @@ func (m *callbackInterfaceMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdat
 	el := m.callbacks.PushBack(cb)
 	iface := m.iface
 	m.mu.Unlock()
-	slog.Debug("platform: register interface callback", "has_iface", iface != nil)
+	slog.Info("platform: register interface callback", "has_iface", iface != nil)
 	if iface != nil {
 		cb(iface, 0)
 	}
@@ -305,7 +298,7 @@ func (m *callbackInterfaceMonitor) RegisterMyInterface(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.myInterface = name
-	slog.Debug("platform: register my interface", "name", name)
+	slog.Info("platform: register my interface", "name", name)
 }
 func (m *callbackInterfaceMonitor) MyInterface() string {
 	m.mu.Lock()
@@ -320,12 +313,15 @@ func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool
 		Index: index,
 	}
 	m.iface = iface
-	n := m.callbacks.Len()
-	cbs := m.callbacks
+	// Snapshot callbacks under lock to avoid race with UnregisterCallback.
+	var cbs []tun.DefaultInterfaceUpdateCallback
+	for el := m.callbacks.Front(); el != nil; el = el.Next() {
+		cbs = append(cbs, el.Value)
+	}
 	m.mu.Unlock()
-	slog.Debug("platform: interface monitor update", "name", name, "index", index, "callbacks", n)
-	for el := cbs.Front(); el != nil; el = el.Next() {
-		el.Value(iface, 0)
+	slog.Info("platform: interface monitor update", "name", name, "index", index, "callbacks", len(cbs))
+	for _, cb := range cbs {
+		cb(iface, 0)
 	}
 }
 

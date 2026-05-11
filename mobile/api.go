@@ -62,12 +62,14 @@ func (s *Singcast) SetTunFd(fd int32) {
 }
 
 // SetSocketProtector registers a socket protector for VPN bypass.
+// Pass nil to clear the protector (e.g. when VPN disconnects).
 func (s *Singcast) SetSocketProtector(p SocketProtector) {
+	if p == nil {
+		s.svc.PlatformIO().SetSocketProtector(nil)
+		return
+	}
 	s.svc.PlatformIO().SetSocketProtector(func(fd int32) bool {
-		if p != nil {
-			return p.Protect(fd)
-		}
-		return false
+		return p.Protect(fd)
 	})
 }
 

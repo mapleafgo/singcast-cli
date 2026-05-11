@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -206,7 +205,23 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 
 func (s *Service) startWithJSON(jsonContent string) error {
 	syncLogLevelFromConfig(jsonContent)
-	atomic.StoreInt64(&protectCallCount, 0)
+	s.platform.protectCount.Store(0)
+
+	if s.platform.IsMobile() {
+		s.platform.mu.Lock()
+		hasProtect := s.platform.protectFn != nil
+		fd := s.platform.tunFd
+		s.platform.mu.Unlock()
+		monitor := s.platform.ifaceMonitor
+		var defaultIface, myIface string
+		if monitor != nil {
+			if di := monitor.DefaultInterface(); di != nil {
+				defaultIface = di.Name
+			}
+			myIface = monitor.MyInterface()
+		}
+		slog.Debug("mobile startup", "hasProtect", hasProtect, "tunFd", fd, "defaultIface", defaultIface, "myIface", myIface)
+	}
 
 	ctx := include.Context(context.Background())
 	if s.platform.IsMobile() {
@@ -218,6 +233,12 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("parse config: %w", err)
 	}
 
+	// Mobile platforms require auto_detect_interface for VpnService.protect()
+	// to bypass VPN routing on outbound sockets.
+	if s.platform.IsMobile() && options.Route != nil {
+		options.Route.AutoDetectInterface = true
+	}
+
 	logWriter := &platformLogWriter{emit: s.getOnEvent()}
 	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
 	if err != nil {
@@ -227,6 +248,14 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	if s.platform.IsMobile() {
 		nm := service.FromContext[adapter.NetworkManager](ctx)
 		if nm != nil {
+			pi := service.FromContext[adapter.PlatformInterface](ctx)
+			protectFn := nm.ProtectFunc()
+			slog.Debug("mobile protect diagnostic",
+				"autoDetect", nm.AutoDetectInterface(),
+				"protectFuncNil", protectFn == nil,
+				"platformNil", pi == nil,
+				"usePlatformCtrl", pi != nil && pi.UsePlatformAutoDetectInterfaceControl(),
+			)
 			if err := nm.UpdateInterfaces(); err != nil {
 				slog.Warn("update interfaces failed", "error", err)
 			} else {

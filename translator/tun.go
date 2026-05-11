@@ -101,8 +101,9 @@ func translateTUN(cfg *RawConfig, t *translation) {
 	}
 
 	// Route-level: auto-detect-interface (mihomo tun field → sing-box route field).
-	// Depends on general.go having already set Route.AutoDetectInterface = true;
-	// we only override to false here when the user explicitly disables it.
+	// mihomo defaults auto-detect-interface to false; propagate when explicitly set.
+	// On mobile, service.go force-enables this regardless — VpnService.protect()
+	// requires auto_detect_interface to bypass VPN routing on outbound sockets.
 	if !cfg.Tun.AutoDetectInterface {
 		t.config.Route.AutoDetectInterface = false
 	}
