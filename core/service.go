@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -205,6 +206,7 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 
 func (s *Service) startWithJSON(jsonContent string) error {
 	syncLogLevelFromConfig(jsonContent)
+	atomic.StoreInt64(&protectCallCount, 0)
 
 	ctx := include.Context(context.Background())
 	if s.platform.IsMobile() {

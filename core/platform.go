@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
@@ -136,12 +137,21 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	}
 	p.mu.Lock()
 	p.tunFd = 0
+	m := p.ifaceMonitor
 	p.mu.Unlock()
+
+	if m != nil {
+		if name, nameErr := tunDev.Name(); nameErr == nil {
+			m.RegisterMyInterface(name)
+		}
+	}
 	slog.Debug("platform: TUN interface opened", "fd", fd)
 	return tunDev, nil
 }
 
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool { return true }
+
+var protectCallCount int64
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 	p.mu.Lock()
@@ -155,7 +165,9 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 		slog.Warn("platform: protect failed", "fd", fd)
 		return fmt.Errorf("protect fd %d failed", fd)
 	}
-
+	if n := atomic.AddInt64(&protectCallCount, 1); n <= 5 || n%100 == 0 {
+		slog.Debug("platform: protect ok", "fd", fd, "count", n)
+	}
 	return nil
 }
 
@@ -258,9 +270,10 @@ func flushSystemDNS() {
 // callbackInterfaceMonitor implements tun.DefaultInterfaceMonitor for mobile.
 // Updated via PlatformIO.UpdateDefaultInterface from the mobile platform.
 type callbackInterfaceMonitor struct {
-	mu        sync.Mutex
-	iface     *control.Interface
-	callbacks list.List[tun.DefaultInterfaceUpdateCallback]
+	mu          sync.Mutex
+	iface       *control.Interface
+	callbacks   list.List[tun.DefaultInterfaceUpdateCallback]
+	myInterface string
 }
 
 func (m *callbackInterfaceMonitor) Start() error             { return nil }
@@ -288,8 +301,17 @@ func (m *callbackInterfaceMonitor) UnregisterCallback(el *list.Element[tun.Defau
 	defer m.mu.Unlock()
 	m.callbacks.Remove(el)
 }
-func (m *callbackInterfaceMonitor) RegisterMyInterface(string) {}
-func (m *callbackInterfaceMonitor) MyInterface() string        { return "" }
+func (m *callbackInterfaceMonitor) RegisterMyInterface(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.myInterface = name
+	slog.Debug("platform: register my interface", "name", name)
+}
+func (m *callbackInterfaceMonitor) MyInterface() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.myInterface
+}
 
 func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool) {
 	m.mu.Lock()
