@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -83,6 +84,7 @@ type State int32
 const (
 	StateCreated     State = iota
 	StateInitialized
+	StateStarting
 	StateRunning
 	StateDestroyed
 )
@@ -93,6 +95,8 @@ func (s State) String() string {
 		return "created"
 	case StateInitialized:
 		return "initialized"
+	case StateStarting:
+		return "starting"
 	case StateRunning:
 		return "running"
 	case StateDestroyed:
@@ -102,48 +106,58 @@ func (s State) String() string {
 	}
 }
 
-type Service struct {
-	mu            sync.Mutex
-	state         State
+// atomicState wraps atomic.Int32 with typed State access, eliminating int32/State casts.
+type atomicState struct{ v atomic.Int32 }
+
+func (a *atomicState) Load() State            { return State(a.v.Load()) }
+func (a *atomicState) Store(s State)           { a.v.Store(int32(s)) }
+func (a *atomicState) CompareAndSwap(old, new State) bool {
+	return a.v.CompareAndSwap(int32(old), int32(new))
+}
+
+type runningState struct {
 	instance      *box.Box
 	boxCtx        context.Context
-	platform      *PlatformIO
 	currentConfig string
+}
 
-	onEvent   func(eventType int32, json string)
-	subCancel context.CancelFunc
+type Service struct {
+	state     atomicState
+	running   atomic.Pointer[runningState]
+	platform  *PlatformIO
+	onEvent   atomic.Pointer[func(int32, string)]
+	subCancel atomic.Pointer[func()]
 }
 
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
 
 func (s *Service) State() State {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state
+	return s.state.Load()
 }
 
 func (s *Service) PlatformIO() *PlatformIO { return s.platform }
 
 func (s *Service) Init(optionsJSON string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state != StateCreated {
-		return fmt.Errorf("init: invalid state %s", s.state)
+	if !s.state.CompareAndSwap(StateCreated, StateInitialized) {
+		return fmt.Errorf("init: invalid state %s", s.State())
 	}
 
 	var opts InitOptions
 	if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {
+		s.state.Store(StateCreated)
 		return fmt.Errorf("parse init options: %w", err)
 	}
 	if opts.HomeDir == "" {
+		s.state.Store(StateCreated)
 		return fmt.Errorf("init: home_dir is required")
 	}
 
 	if err := os.MkdirAll(opts.HomeDir, 0o755); err != nil {
+		s.state.Store(StateCreated)
 		return fmt.Errorf("create home dir: %w", err)
 	}
 	if err := os.Chdir(opts.HomeDir); err != nil {
+		s.state.Store(StateCreated)
 		return fmt.Errorf("chdir: %w", err)
 	}
 
@@ -153,42 +167,45 @@ func (s *Service) Init(optionsJSON string) error {
 
 	tempDir := filepath.Join(opts.HomeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		s.state.Store(StateCreated)
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
-	s.state = StateInitialized
+	s.emitState(StateInitialized)
 	slog.Info("service init done")
 	return nil
 }
 
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
-	s.mu.Lock()
-
-	if s.state != StateInitialized && s.state != StateRunning {
-		s.mu.Unlock()
-		return fmt.Errorf("start: invalid state %s", s.state)
-	}
-
 	data := []byte(content)
-	format := translator.DetectFormat(data)
-
-	jsonContent, err := s.translateConfig(data, format, ruleSetProxy)
+	jsonContent, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
 	if err != nil {
-		s.mu.Unlock()
 		return err
 	}
 
-	// Close old instance outside lock to avoid deadlock risk.
-	oldInst := s.instance
-	s.instance = nil
-	s.unsubscribeHooks()
-	s.mu.Unlock()
-
-	if oldInst != nil {
-		oldInst.Close()
+	// CAS loop to transition to Starting — only one concurrent caller wins.
+	for {
+		st := s.state.Load()
+		if st != StateInitialized && st != StateRunning {
+			return fmt.Errorf("start: invalid state %s", st)
+		}
+		if s.casState(st, StateStarting) {
+			break
+		}
 	}
 
-	return s.startWithJSON(jsonContent)
+	old := s.running.Swap(nil)
+	s.unsubscribeHooks()
+
+	if old != nil {
+		old.instance.Close()
+	}
+
+	if err := s.startWithJSON(jsonContent); err != nil {
+		s.casState(StateStarting, StateInitialized)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, error) {
@@ -208,10 +225,8 @@ func (s *Service) startWithJSON(jsonContent string) error {
 	s.platform.protectCount.Store(0)
 
 	if s.platform.IsMobile() {
-		s.platform.mu.Lock()
-		hasProtect := s.platform.protectFn != nil
-		fd := s.platform.tunFd
-		s.platform.mu.Unlock()
+		hasProtect := s.platform.protectFn.Load() != nil
+		fd := s.platform.tunFd.Load()
 		monitor := s.platform.ifaceMonitor
 		var defaultIface, myIface string
 		if monitor != nil {
@@ -271,53 +286,59 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("start instance: %w", err)
 	}
 
-	s.mu.Lock()
-	s.instance = inst
-	s.boxCtx = ctx
-	s.currentConfig = jsonContent
-	s.state = StateRunning
+	s.running.Store(&runningState{
+		instance:      inst,
+		boxCtx:        ctx,
+		currentConfig: jsonContent,
+	})
+	if !s.casState(StateStarting, StateRunning) {
+		s.running.Swap(nil)
+		inst.Close()
+		return nil
+	}
 	s.subscribeHooks()
-	s.mu.Unlock()
 
 	slog.Info("service running")
 	return nil
 }
 
 func (s *Service) Stop() error {
-	s.mu.Lock()
-	if s.state != StateRunning {
-		s.mu.Unlock()
-		return nil
+	for {
+		st := s.state.Load()
+		if st != StateRunning && st != StateStarting {
+			return nil
+		}
+		if s.casState(st, StateInitialized) {
+			break
+		}
 	}
 
 	s.unsubscribeHooks()
-	inst := s.instance
-	s.instance = nil
-	s.state = StateInitialized
-	s.mu.Unlock()
+	old := s.running.Swap(nil)
 
-	if inst != nil {
+	if old != nil {
 		slog.Info("service stopped")
-		return inst.Close()
+		return old.instance.Close()
 	}
 	return nil
 }
 
 func (s *Service) Destroy() {
-	s.mu.Lock()
-	if s.state == StateDestroyed {
-		s.mu.Unlock()
-		return
+	for {
+		st := s.state.Load()
+		if st == StateDestroyed {
+			return
+		}
+		if s.casState(st, StateDestroyed) {
+			break
+		}
 	}
 
 	s.unsubscribeHooks()
-	inst := s.instance
-	s.instance = nil
-	s.state = StateDestroyed
-	s.mu.Unlock()
+	old := s.running.Swap(nil)
 
-	if inst != nil {
-		inst.Close()
+	if old != nil {
+		old.instance.Close()
 	}
 	slog.Info("service destroyed")
 }
@@ -325,11 +346,11 @@ func (s *Service) Destroy() {
 // clashServer returns the *clashapi.Server from the running instance, or nil if
 // clash_api is not enabled or the service is not running.
 func (s *Service) clashServer() *clashapi.Server {
-	inst := s.instance
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return nil
 	}
-	cs := service.FromContext[adapter.ClashServer](s.boxCtx)
+	cs := service.FromContext[adapter.ClashServer](rs.boxCtx)
 	if cs == nil {
 		return nil
 	}
@@ -341,12 +362,11 @@ func (s *Service) clashServer() *clashapi.Server {
 }
 
 func (s *Service) QueryProxies() string {
-	s.mu.Lock()
-	inst := s.instance
-	s.mu.Unlock()
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return "[]"
 	}
+	inst := rs.instance
 
 	srv := s.clashServer()
 
@@ -355,7 +375,7 @@ func (s *Service) QueryProxies() string {
 	if srv != nil {
 		history = srv.HistoryStorage()
 	}
-	cache = service.FromContext[adapter.CacheFile](s.boxCtx)
+	cache = service.FromContext[adapter.CacheFile](rs.boxCtx)
 
 	var groups []ProxyGroup
 	for _, out := range inst.Outbound().Outbounds() {
@@ -439,14 +459,12 @@ func (s *Service) QueryMode() string {
 }
 
 func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
-	s.mu.Lock()
-	inst := s.instance
-	s.mu.Unlock()
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return -1
 	}
 
-	out, ok := inst.Outbound().Outbound(outboundTag)
+	out, ok := rs.instance.Outbound().Outbound(outboundTag)
 	if !ok {
 		return -1
 	}
@@ -462,12 +480,11 @@ func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
 }
 
 func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
-	s.mu.Lock()
-	inst := s.instance
-	s.mu.Unlock()
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return fmt.Errorf("service not running")
 	}
+	inst := rs.instance
 
 	out, ok := inst.Outbound().Outbound(groupTag)
 	if !ok {
@@ -519,7 +536,11 @@ func (s *Service) CloseConnections() error {
 }
 
 func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
-	cf := service.FromContext[adapter.CacheFile](s.boxCtx)
+	rs := s.running.Load()
+	if rs == nil {
+		return fmt.Errorf("service not running")
+	}
+	cf := service.FromContext[adapter.CacheFile](rs.boxCtx)
 	if cf == nil {
 		return fmt.Errorf("cache file not available")
 	}
@@ -527,11 +548,8 @@ func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
 }
 
 func (s *Service) ResetNetwork() {
-	s.mu.Lock()
-	inst := s.instance
-	s.mu.Unlock()
-	if inst != nil {
-		inst.Network().ResetNetwork()
+	if rs := s.running.Load(); rs != nil {
+		rs.instance.Network().ResetNetwork()
 	}
 }
 
@@ -539,10 +557,11 @@ func (s *Service) FlushSystemDNS()    { flushSystemDNS() }
 func (s *Service) SetLogLevel(level int32) { SetLogLevel(level) }
 
 func (s *Service) QueryRules() string {
-	inst := s.instance
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return `{"rules":[]}`
 	}
+	inst := rs.instance
 	rules := inst.Router().Rules()
 	entries := make([]ruleEntry, len(rules))
 	for i, r := range rules {
@@ -557,7 +576,11 @@ func (s *Service) QueryRules() string {
 }
 
 func (s *Service) FlushFakeIP() error {
-	cf := service.FromContext[adapter.CacheFile](s.boxCtx)
+	rs := s.running.Load()
+	if rs == nil {
+		return fmt.Errorf("service not running")
+	}
+	cf := service.FromContext[adapter.CacheFile](rs.boxCtx)
 	if cf == nil {
 		return fmt.Errorf("cache file not available")
 	}
@@ -599,7 +622,11 @@ type ruleEntry struct {
 }
 
 func (s *Service) QueryDNS(name string, qType uint16) string {
-	dnsRouter := service.FromContext[adapter.DNSRouter](s.boxCtx)
+	rs := s.running.Load()
+	if rs == nil {
+		return `{"Status":2,"Server":"","Answer":null}`
+	}
+	dnsRouter := service.FromContext[adapter.DNSRouter](rs.boxCtx)
 	if dnsRouter == nil {
 		return `{"Status":2,"Server":"","Answer":null}`
 	}
@@ -664,7 +691,11 @@ func dnsFieldData(rr dns.RR) string {
 
 // FlushDNSCache clears the internal DNS query cache.
 func (s *Service) FlushDNSCache() error {
-	dnsRouter := service.FromContext[adapter.DNSRouter](s.boxCtx)
+	rs := s.running.Load()
+	if rs == nil {
+		return fmt.Errorf("service not running")
+	}
+	dnsRouter := service.FromContext[adapter.DNSRouter](rs.boxCtx)
 	if dnsRouter == nil {
 		return fmt.Errorf("DNS router not available")
 	}
@@ -675,12 +706,11 @@ func (s *Service) FlushDNSCache() error {
 // TestGroupDelay runs URL tests for all outbounds in a group.
 // Returns a JSON map of {tag: delay_ms}. -1 means failure/timeout.
 func (s *Service) TestGroupDelay(groupTag string, timeoutMs int32) string {
-	s.mu.Lock()
-	inst := s.instance
-	s.mu.Unlock()
-	if inst == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return "{}"
 	}
+	inst := rs.instance
 
 	out, ok := inst.Outbound().Outbound(groupTag)
 	if !ok {
@@ -734,15 +764,35 @@ func (s *Service) TriggerGC() {
 // --- Callbacks ---
 
 func (s *Service) SetOnEvent(fn func(int32, string)) {
-	s.onEvent = fn
+	if fn == nil {
+		s.onEvent.Store(nil)
+	} else {
+		s.onEvent.Store(&fn)
+	}
 }
 
 func (s *Service) getOnEvent() func(int32, string) {
-	return s.onEvent
+	if p := s.onEvent.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (s *Service) emitState(state State) {
+	if fn := s.getOnEvent(); fn != nil {
+		fn(EventStateChange, state.String())
+	}
+}
+
+func (s *Service) casState(oldState, newState State) bool {
+	if s.state.CompareAndSwap(oldState, newState) {
+		s.emitState(newState)
+		return true
+	}
+	return false
 }
 
 // subscribeHooks registers observable hooks on the ClashServer.
-// Must be called with s.mu held.
 func (s *Service) subscribeHooks() {
 	s.unsubscribeHooks()
 
@@ -752,7 +802,8 @@ func (s *Service) subscribeHooks() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	s.subCancel = cancel
+	cancelFn := func() { cancel() }
+	s.subCancel.Store(&cancelFn)
 
 	if fn := s.getOnEvent(); fn != nil {
 		clashSrv := srv
@@ -800,11 +851,9 @@ func observe[T any](ctx context.Context, sub *observable.Subscriber[T], fn func(
 }
 
 // unsubscribeHooks cancels all subscription goroutines.
-// Must be called with s.mu held.
 func (s *Service) unsubscribeHooks() {
-	if s.subCancel != nil {
-		s.subCancel()
-		s.subCancel = nil
+	if cancelPtr := s.subCancel.Swap(nil); cancelPtr != nil {
+		(*cancelPtr)()
 	}
 }
 

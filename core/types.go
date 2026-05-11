@@ -2,10 +2,11 @@ package core
 
 // Event type constants for the unified callback.
 const (
-	EventLog        int32 = 0
-	EventURLTest    int32 = 1
-	EventModeUpdate int32 = 2
-	EventConnEvent  int32 = 3
+	EventLog         int32 = 0
+	EventURLTest     int32 = 1
+	EventModeUpdate  int32 = 2
+	EventConnEvent   int32 = 3
+	EventStateChange int32 = 4
 )
 
 // TrafficSnapshot holds traffic and resource usage statistics.

@@ -239,7 +239,7 @@ func TestStartWithJSON_RollbackOnFailure(t *testing.T) {
 	defer svc.Destroy()
 
 	_ = svc.StartWithContent(`{invalid json`, "")
-	if svc.currentConfig != "" {
-		t.Error("currentConfig should be empty after failed StartWithContent")
+	if rs := svc.running.Load(); rs != nil {
+		t.Error("runningState should be nil after failed StartWithContent")
 	}
 }

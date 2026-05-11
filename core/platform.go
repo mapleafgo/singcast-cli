@@ -25,30 +25,24 @@ var _ adapter.PlatformInterface = (*PlatformIO)(nil)
 // Desktop: UsePlatformInterface() = false, TUN handled by sing-box internally.
 // Mobile:  UsePlatformInterface() = true, TUN via OpenInterface() with external fd.
 type PlatformIO struct {
-	mu       sync.Mutex
 	isMobile bool
 
-	// Mobile: TUN fd from VpnService (Android) or NetworkExtension (iOS).
-	tunFd int32
-
-	// Mobile: socket protector from VpnService.protect.
-	protectFn func(fd int32) bool
+	tunFd      atomic.Int32
+	protectFn  atomic.Pointer[func(int32) bool]
+	includeAll atomic.Bool
+	wifi       atomic.Pointer[wifiState]
+	ifaces     atomic.Pointer[string]
 
 	// Mobile: interface monitor, created eagerly in SetMobile(true).
 	ifaceMonitor *callbackInterfaceMonitor
 
-	// Mobile: interface data as JSON from platform.
-	interfacesJSON string
-
-	// iOS: VPN configuration uses includeAllNetworks.
-	includeAllNetworks bool
-
-	// WiFi state from mobile platform.
-	wifiSSID  string
-	wifiBSSID string
-
 	// protect counter, incremented on each successful protect call.
 	protectCount atomic.Int64
+}
+
+type wifiState struct {
+	SSID  string
+	BSSID string
 }
 
 func NewPlatformIO() *PlatformIO { return &PlatformIO{} }
@@ -62,44 +56,35 @@ func (p *PlatformIO) SetMobile(mobile bool) {
 }
 
 func (p *PlatformIO) SetTunFd(fd int32) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.tunFd = fd
+	p.tunFd.Store(fd)
 	slog.Debug("set TUN fd", "fd", fd)
 }
 
 func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.protectFn = fn
+	if fn == nil {
+		p.protectFn.Store(nil)
+	} else {
+		p.protectFn.Store(&fn)
+	}
 	slog.Info("platform: set socket protector", "nil", fn == nil)
 }
 
 func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.includeAllNetworks = v
+	p.includeAll.Store(v)
 }
 
 func (p *PlatformIO) SetWIFIState(ssid, bssid string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.wifiSSID = ssid
-	p.wifiBSSID = bssid
+	p.wifi.Store(&wifiState{SSID: ssid, BSSID: bssid})
 }
 
 func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.interfacesJSON = jsonStr
+	p.ifaces.Store(&jsonStr)
 	slog.Info("platform: set interfaces JSON", "len", len(jsonStr))
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
 func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
-	p.mu.Lock()
 	m := p.ifaceMonitor
-	p.mu.Unlock()
 	if m != nil && m.MyInterface() == name {
 		slog.Debug("platform: skip default interface update for TUN", "name", name)
 		return
@@ -115,16 +100,13 @@ func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive 
 func (p *PlatformIO) Initialize(adapter.NetworkManager) error { return nil }
 
 func (p *PlatformIO) UsePlatformInterface() bool {
-	return p.isMobile && p.tunFd != 0
+	return p.isMobile && p.tunFd.Load() != 0
 }
 
 func (p *PlatformIO) IsMobile() bool { return p.isMobile }
 
 func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOptions) (tun.Tun, error) {
-	p.mu.Lock()
-	fd := p.tunFd
-	p.mu.Unlock()
-
+	fd := p.tunFd.Load()
 	if fd == 0 {
 		return nil, fmt.Errorf("no TUN fd available")
 	}
@@ -134,10 +116,8 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	if err != nil {
 		return nil, err
 	}
-	p.mu.Lock()
-	p.tunFd = 0
+	p.tunFd.Store(0)
 	m := p.ifaceMonitor
-	p.mu.Unlock()
 
 	if m != nil {
 		if name, nameErr := tunDev.Name(); nameErr == nil {
@@ -154,17 +134,14 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool { return true }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
-	p.mu.Lock()
-	fn := p.protectFn
-	p.mu.Unlock()
-
-	if fn == nil {
+	fnPtr := p.protectFn.Load()
+	if fnPtr == nil {
 		if p.isMobile {
 			slog.Warn("platform: protect called but protectFn is nil")
 		}
 		return nil
 	}
-	if !fn(int32(fd)) {
+	if !(*fnPtr)(int32(fd)) {
 		slog.Warn("platform: protect failed", "fd", fd)
 		return fmt.Errorf("protect fd %d failed", fd)
 	}
@@ -186,14 +163,11 @@ func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInt
 func (p *PlatformIO) UsePlatformNetworkInterfaces() bool { return p.isMobile }
 
 func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
-	p.mu.Lock()
-	jsonStr := p.interfacesJSON
-	p.mu.Unlock()
-
-	if jsonStr == "" {
+	ptr := p.ifaces.Load()
+	if ptr == nil || *ptr == "" {
 		return nil, fmt.Errorf("mobile: call SetInterfacesJSON() before starting")
 	}
-	ifaces, err := parseAdapterInterfaces(jsonStr)
+	ifaces, err := parseAdapterInterfaces(*ptr)
 	if err != nil {
 		return nil, err
 	}
@@ -205,15 +179,11 @@ func (p *PlatformIO) UnderNetworkExtension() bool {
 	if runtime.GOOS != "ios" {
 		return false
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.tunFd != 0
+	return p.tunFd.Load() != 0
 }
 
 func (p *PlatformIO) NetworkExtensionIncludeAllNetworks() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.includeAllNetworks
+	return p.includeAll.Load()
 }
 
 func (p *PlatformIO) ClearDNSCache() { flushSystemDNS() }
@@ -221,9 +191,10 @@ func (p *PlatformIO) ClearDNSCache() { flushSystemDNS() }
 func (p *PlatformIO) RequestPermissionForWIFIState() error { return nil }
 
 func (p *PlatformIO) ReadWIFIState() adapter.WIFIState {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return adapter.WIFIState{SSID: p.wifiSSID, BSSID: p.wifiBSSID}
+	if ws := p.wifi.Load(); ws != nil {
+		return adapter.WIFIState{SSID: ws.SSID, BSSID: ws.BSSID}
+	}
+	return adapter.WIFIState{}
 }
 
 func (p *PlatformIO) SystemCertificates() []string { return nil }
