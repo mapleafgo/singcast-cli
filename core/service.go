@@ -222,14 +222,16 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("create instance: %w", err)
 	}
 
-	// Populate NetworkManager's interface list before Start().
-	// Without this, selectInterfaces gets an empty list and fails
-	// with "no available network interface" on mobile.
 	if s.platform.IsMobile() {
-		if nm := service.FromContext[adapter.NetworkManager](ctx); nm != nil {
+		nm := service.FromContext[adapter.NetworkManager](ctx)
+		if nm != nil {
 			if err := nm.UpdateInterfaces(); err != nil {
-				slog.Debug("update interfaces", "error", err)
+				slog.Warn("update interfaces failed", "error", err)
+			} else {
+				slog.Debug("update interfaces", "count", len(nm.NetworkInterfaces()))
 			}
+		} else {
+			slog.Warn("update interfaces: NetworkManager is nil")
 		}
 	}
 

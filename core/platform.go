@@ -70,6 +70,7 @@ func (p *PlatformIO) SetSocketProtector(fn func(fd int32) bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.protectFn = fn
+	slog.Debug("platform: set socket protector", "nil", fn == nil)
 }
 
 func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
@@ -89,6 +90,7 @@ func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.interfacesJSON = jsonStr
+	slog.Debug("platform: set interfaces JSON", "len", len(jsonStr))
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
@@ -96,6 +98,7 @@ func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive 
 	p.mu.Lock()
 	m := p.ifaceMonitor
 	p.mu.Unlock()
+	slog.Debug("platform: update default interface", "name", name, "index", index, "monitor", m != nil)
 	if m != nil {
 		m.update(name, int(index), expensive)
 	}
@@ -125,6 +128,7 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	if fd == 0 {
 		return nil, fmt.Errorf("no TUN fd available")
 	}
+	slog.Debug("platform: opening TUN interface", "fd", fd)
 	options.FileDescriptor = int(fd)
 	tunDev, err := tun.New(*options)
 	if err != nil {
@@ -133,6 +137,7 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	p.mu.Lock()
 	p.tunFd = 0
 	p.mu.Unlock()
+	slog.Debug("platform: TUN interface opened", "fd", fd)
 	return tunDev, nil
 }
 
@@ -143,11 +148,14 @@ func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
 	fn := p.protectFn
 	p.mu.Unlock()
 
-	if fn != nil {
-		if !fn(int32(fd)) {
-			return fmt.Errorf("protect fd %d failed", fd)
-		}
+	if fn == nil {
+		return nil
 	}
+	if !fn(int32(fd)) {
+		slog.Warn("platform: protect failed", "fd", fd)
+		return fmt.Errorf("protect fd %d failed", fd)
+	}
+
 	return nil
 }
 
@@ -180,7 +188,12 @@ func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
 	if jsonStr == "" {
 		return nil, fmt.Errorf("mobile: call SetInterfacesJSON() before starting")
 	}
-	return parseAdapterInterfaces(jsonStr)
+	ifaces, err := parseAdapterInterfaces(jsonStr)
+	if err != nil {
+		return nil, err
+	}
+	slog.Debug("platform: network interfaces", "count", len(ifaces))
+	return ifaces, nil
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
@@ -264,6 +277,7 @@ func (m *callbackInterfaceMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdat
 	el := m.callbacks.PushBack(cb)
 	iface := m.iface
 	m.mu.Unlock()
+	slog.Debug("platform: register interface callback", "has_iface", iface != nil)
 	if iface != nil {
 		cb(iface, 0)
 	}
@@ -284,9 +298,10 @@ func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool
 		Index: index,
 	}
 	m.iface = iface
+	n := m.callbacks.Len()
 	cbs := m.callbacks
 	m.mu.Unlock()
-
+	slog.Debug("platform: interface monitor update", "name", name, "index", index, "callbacks", n)
 	for el := cbs.Front(); el != nil; el = el.Next() {
 		el.Value(iface, 0)
 	}
@@ -307,6 +322,7 @@ func parseAdapterInterfaces(jsonStr string) ([]adapter.NetworkInterface, error) 
 	if err := json.Unmarshal([]byte(jsonStr), &mobileIfaces); err != nil {
 		return nil, fmt.Errorf("parse interfaces JSON: %w", err)
 	}
+	slog.Debug("platform: parsing interfaces", "count", len(mobileIfaces))
 	result := make([]adapter.NetworkInterface, 0, len(mobileIfaces))
 	for _, mi := range mobileIfaces {
 		addrs, err := parseInterfaceAddrs(mi.Addresses)
