@@ -31,6 +31,13 @@ func translateRules(_ *RawConfig, t *translation) {
 // generateGeoRoute creates country-specific route rules.
 func generateGeoRoute(cc string, proxyTag string, t *translation) {
 	if cc == "cn" {
+		// overseas-ai → proxy (overseas AI services like ChatGPT, Claude, etc.)
+		ensureCustomRuleSetDef("overseas-ai", "https://raw.githubusercontent.com/viewer12/OverseasAI.list/main/rule/Singbox/OverseasAI/OverseasAI.srs", t)
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+			"rule_set": []string{"overseas-ai"},
+			"outbound": proxyTag,
+		})
+
 		// Non-CN geolocation → proxy (must come BEFORE cn rule so foreign domains
 		// like gstatic.com are never accidentally caught by geolocation-cn).
 		ensureRuleSetDef("geosite-geolocation-!cn", "geosite", "geolocation-!cn", t)
@@ -55,7 +62,6 @@ func generateGeoRoute(cc string, proxyTag string, t *translation) {
 		})
 
 		// CN geolocation → direct
-		ensureRuleSetDef("geosite-geolocation-cn", "geosite", "geolocation-cn", t)
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"rule_set": []string{"geosite-geolocation-cn"},
 			"outbound": "DIRECT",
@@ -65,7 +71,6 @@ func generateGeoRoute(cc string, proxyTag string, t *translation) {
 		// Uses logical AND to prevent DNS-polluted foreign domains from going direct:
 		// if a domain is in geolocation-!cn (e.g. google.com), it won't match this rule
 		// even when DNS pollution resolves it to a CN IP.
-		ensureRuleSetDef("geoip-cn", "geoip", "cn", t)
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"type": "logical",
 			"mode": "and",
@@ -75,18 +80,27 @@ func generateGeoRoute(cc string, proxyTag string, t *translation) {
 			},
 			"outbound": "DIRECT",
 		})
-	} else {
-		// geoip-{cc} → direct
-		ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
+
+		// .cn domain suffix → direct (fallback after all geo rules; catches .cn
+		// domains not in any geosite rule set, e.g. pub-web.flutter-io.cn).
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-			"rule_set": []string{"geoip-" + cc},
-			"outbound": "DIRECT",
+			"domain_suffix": []string{"." + cc},
+			"outbound":      "DIRECT",
+		})
+	} else {
+		// Non-CN geolocation → proxy (must come first so foreign domains
+		// are never accidentally caught by country-specific rules).
+		ensureRuleSetDef("geosite-geolocation-!cn", "geosite", "geolocation-!cn", t)
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+			"rule_set": []string{"geosite-geolocation-!cn"},
+			"outbound": proxyTag,
 		})
 
 		// geosite-{cc} domain resolving to non-{cc} IP → proxy.
 		// Prevents country-specific domains from going DIRECT when they
 		// resolve to foreign IPs that may be unreachable (e.g. behind a firewall).
 		ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
+		ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"type": "logical",
 			"mode": "and",
@@ -98,18 +112,27 @@ func generateGeoRoute(cc string, proxyTag string, t *translation) {
 		})
 
 		// geosite-{cc} → direct
-		ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 			"rule_set": []string{"geosite-" + cc},
 			"outbound": "DIRECT",
 		})
 
-		// Non-CN geolocation → proxy (after country-specific rules so local
-		// domains matched by geosite-{cc} are not caught).
-		ensureRuleSetDef("geosite-geolocation-!cn", "geosite", "geolocation-!cn", t)
+		// Domains NOT in geolocation-!cn that resolve to {cc} IP → direct.
+		// Uses logical AND to prevent DNS-polluted foreign domains from going direct.
 		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-			"rule_set": []string{"geosite-geolocation-!cn"},
-			"outbound": proxyTag,
+			"type": "logical",
+			"mode": "and",
+			"rules": []map[string]any{
+				{"rule_set": []string{"geosite-geolocation-!cn"}, "invert": true},
+				{"rule_set": []string{"geoip-" + cc}},
+			},
+			"outbound": "DIRECT",
+		})
+
+		// .{cc} domain suffix → direct (fallback after all geo rules).
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+			"domain_suffix": []string{"." + cc},
+			"outbound":      "DIRECT",
 		})
 	}
 

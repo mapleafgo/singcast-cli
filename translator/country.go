@@ -35,11 +35,12 @@ func DetectCountry(override string) string {
 // detectCountryByIP races multiple geolocation services concurrently and returns
 // the first successful 2-letter country code.
 func detectCountryByIP() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	providers := []func(context.Context) (string, error){
-		detectByCloudflare,
+		detectByIPSb,
+		detectByIPWhoIs,
 		detectByCountryIs,
 		detectByIPInfo,
 		detectByIPApi,
@@ -68,7 +69,7 @@ func detectCountryByIP() (string, error) {
 	return "", fmt.Errorf("all geolocation services failed")
 }
 
-var geoHTTPClient = &http.Client{Timeout: time.Second}
+var geoHTTPClient = &http.Client{}
 
 func httpGet(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -76,29 +77,6 @@ func httpGet(ctx context.Context, url string) (*http.Response, error) {
 		return nil, err
 	}
 	return geoHTTPClient.Do(req)
-}
-
-// detectByCloudflare uses Cloudflare's /cdn-cgi/trace endpoint.
-// Global 300+ PoPs, accessible in China, no API key required.
-func detectByCloudflare(ctx context.Context) (string, error) {
-	resp, err := httpGet(ctx, "https://1.1.1.1/cdn-cgi/trace")
-	if err != nil {
-		return "", fmt.Errorf("cloudflare: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("cloudflare status: %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if err != nil {
-		return "", fmt.Errorf("cloudflare read: %w", err)
-	}
-	for line := range strings.SplitSeq(string(body), "\n") {
-		if strings.HasPrefix(line, "loc=") {
-			return strings.TrimSpace(line[4:]), nil
-		}
-	}
-	return "", fmt.Errorf("cloudflare: loc field not found")
 }
 
 // detectByCountryIs uses api.country.is. Minimal JSON, Cloudflare CDN, no key.
@@ -154,6 +132,48 @@ func detectByIPApi(ctx context.Context) (string, error) {
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 512)).Decode(&result); err != nil {
 		return "", fmt.Errorf("ip-api decode: %w", err)
+	}
+	return result.CountryCode, nil
+}
+
+// detectByIPSb uses api.ip.sb. Fast, China-friendly, no key required.
+func detectByIPSb(ctx context.Context) (string, error) {
+	resp, err := httpGet(ctx, "https://api.ip.sb/geoip")
+	if err != nil {
+		return "", fmt.Errorf("ip.sb: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ip.sb status: %d", resp.StatusCode)
+	}
+	var result struct {
+		CountryCode string `json:"country_code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512)).Decode(&result); err != nil {
+		return "", fmt.Errorf("ip.sb decode: %w", err)
+	}
+	return result.CountryCode, nil
+}
+
+// detectByIPWhoIs uses ipwho.is. Fast, no key required.
+func detectByIPWhoIs(ctx context.Context) (string, error) {
+	resp, err := httpGet(ctx, "https://ipwho.is/")
+	if err != nil {
+		return "", fmt.Errorf("ipwho.is: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ipwho.is status: %d", resp.StatusCode)
+	}
+	var result struct {
+		Success     bool   `json:"success"`
+		CountryCode string `json:"country_code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&result); err != nil {
+		return "", fmt.Errorf("ipwho.is decode: %w", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("ipwho.is: request unsuccessful")
 	}
 	return result.CountryCode, nil
 }

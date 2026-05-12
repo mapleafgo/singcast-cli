@@ -2,31 +2,46 @@ package translator
 
 import "strings"
 
-// ensureRuleSetDef creates a rule_set definition for GEOIP/GEOSITE if not already present.
-func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
+const rawGitHubPrefix = "https://raw.githubusercontent.com/"
+
+// proxyURL prepends the rule-set proxy prefix for raw.githubusercontent.com URLs.
+func proxyURL(rawURL string, opts *Options) string {
+	if opts != nil {
+		if prefix := strings.TrimRight(opts.RuleSetURLPrefix, "/"); prefix != "" {
+			if strings.HasPrefix(rawURL, rawGitHubPrefix) {
+				return prefix + "/" + rawURL
+			}
+		}
+	}
+	return rawURL
+}
+
+// registerRuleSet adds a rule_set definition if not already present.
+func registerRuleSet(tag string, rawURL string, t *translation) {
 	if _, exists := t.ruleSetDefs[tag]; exists {
 		return
 	}
-
-	var base string
-	if geoType == "geoip" {
-		base = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-" + strings.ToLower(name) + ".srs"
-	} else {
-		base = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-" + strings.ToLower(name) + ".srs"
-	}
-
-	url := base
-	if t.opts != nil {
-		if prefix := strings.TrimRight(t.opts.RuleSetURLPrefix, "/"); prefix != "" {
-			url = prefix + "/" + base
-		}
-	}
-
 	t.ruleSetDefs[tag] = map[string]any{
 		"type":            "remote",
 		"tag":             tag,
 		"format":          "binary",
-		"url":             url,
+		"url":             proxyURL(rawURL, t.opts),
 		"update_interval": "1d",
 	}
+}
+
+// ensureRuleSetDef creates a rule_set definition for GEOIP/GEOSITE if not already present.
+func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
+	var base string
+	if geoType == "geoip" {
+		base = rawGitHubPrefix + "SagerNet/sing-geoip/rule-set/geoip-" + strings.ToLower(name) + ".srs"
+	} else {
+		base = rawGitHubPrefix + "SagerNet/sing-geosite/rule-set/geosite-" + strings.ToLower(name) + ".srs"
+	}
+	registerRuleSet(tag, base, t)
+}
+
+// ensureCustomRuleSetDef creates a rule_set definition with a custom URL if not already present.
+func ensureCustomRuleSetDef(tag string, rawURL string, t *translation) {
+	registerRuleSet(tag, rawURL, t)
 }
