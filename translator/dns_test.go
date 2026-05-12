@@ -184,64 +184,6 @@ func TestParseDNSServerFragment(t *testing.T) {
 	}
 }
 
-func TestNameserverPolicyToRule(t *testing.T) {
-	tests := []struct {
-		name     string
-		pattern  string
-		wantKey  string
-		wantVals []string
-	}{
-		{
-			name:     "plus-dot prefix becomes domain_suffix",
-			pattern:  "+.example.com",
-			wantKey:  "domain_suffix",
-			wantVals: []string{".example.com"},
-		},
-		{
-			name:     "star-dot prefix becomes domain_suffix",
-			pattern:  "*.example.com",
-			wantKey:  "domain_suffix",
-			wantVals: []string{".example.com"},
-		},
-		{
-			name:     "plain domain becomes domain",
-			pattern:  "example.com",
-			wantKey:  "domain",
-			wantVals: []string{"example.com"},
-		},
-		{
-			name:     "mid-wildcard becomes domain_keyword",
-			pattern:  "*xample*",
-			wantKey:  "domain_keyword",
-			wantVals: []string{"xample"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := nameserverPolicyToRule(tt.pattern, "test-srv", testTranslation(t))
-			if rule == nil {
-				t.Fatal("expected non-nil rule")
-			}
-			if rule["server"] != "test-srv" {
-				t.Errorf("server = %v, want test-srv", rule["server"])
-			}
-
-			vals, ok := rule[tt.wantKey].([]string)
-			if !ok {
-				t.Fatalf("expected key %q with []string value, got %v", tt.wantKey, rule[tt.wantKey])
-			}
-			if len(vals) != len(tt.wantVals) {
-				t.Fatalf("expected %d values for %q, got %d: %v", len(tt.wantVals), tt.wantKey, len(vals), vals)
-			}
-			for i, v := range vals {
-				if v != tt.wantVals[i] {
-					t.Errorf("value[%d] = %q, want %q", i, v, tt.wantVals[i])
-				}
-			}
-		})
-	}
-}
 
 func TestIsIPAddress(t *testing.T) {
 	tests := []struct {

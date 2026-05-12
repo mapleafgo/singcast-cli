@@ -20,7 +20,7 @@ import (
 	"github.com/sagernet/sing/common/json"
 )
 
-const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.singcast/profiles/1778090845688.yaml"
+const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.singcast/profiles/1778575671321.yaml"
 
 // TestConnectivity_Google starts the service with a real config and verifies
 // that google.com is reachable through the mixed proxy inbound.
@@ -34,7 +34,9 @@ func TestConnectivity_Google(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.Translate(data)
+	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
+		RuleSetURLPrefix: "https://gh-proxy.org",
+	})
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -104,6 +106,28 @@ func TestConnectivity_Google(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Test domestic site: aliyun.com should be routed DIRECT (not through proxy).
+	// If auto-routing works correctly, the proxy handles DNS + routing internally.
+	aliyunReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://www.aliyun.com", nil)
+	if err != nil {
+		t.Fatalf("create aliyun request: %v", err)
+	}
+	aliyunReq.Header.Set("User-Agent", "singcast-connectivity-test/1.0")
+
+	aliyunResp, err := client.Do(aliyunReq)
+	if err != nil {
+		t.Fatalf("GET aliyun.com through proxy: %v", err)
+	}
+	defer aliyunResp.Body.Close()
+
+	aliyunBody, _ := io.ReadAll(io.LimitReader(aliyunResp.Body, 4096))
+	t.Logf("aliyun.com Status: %d", aliyunResp.StatusCode)
+	t.Logf("aliyun.com Body (first 200 bytes): %.200s", string(aliyunBody))
+
+	if aliyunResp.StatusCode != http.StatusOK {
+		t.Errorf("aliyun.com: expected status 200, got %d", aliyunResp.StatusCode)
 	}
 }
 

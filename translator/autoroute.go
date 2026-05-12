@@ -119,29 +119,69 @@ func generateCountryRoutes(cc string, proxyTag string, t *translation) {
 	})
 }
 
-// generateDNSRule creates a DNS rule that routes domestic domain queries
-// to the first domestic DNS server, based on the detected country.
-func generateDNSRule(cc string, t *translation) {
+// generateDNSRules creates DNS rules following sing-box best practices.
+// Must be called after translateDNS so DNS servers are available.
+//
+// CN rules (in order):
+//  1. outbound:"any" → remote DNS (resolve proxy server domains)
+//  2. clash_mode:"Direct" → direct DNS
+//  3. geosite-cn → direct DNS (domestic domains)
+//  4. geoip-cn → direct DNS (domestic IPs)
+//  5. query_type:A/AAAA → fakeip (if enabled)
+//
+// Non-CN rules:
+//  1. clash_mode:"Direct" → direct DNS
+//  2. geosite-{cc} → direct DNS
+//  3. geoip-{cc} → direct DNS
+//  4. query_type:A/AAAA → fakeip (if enabled)
+func generateDNSRules(cc string, t *translation) {
 	if t.config.DNS == nil || len(t.config.DNS.Servers) == 0 {
 		return
 	}
-	tag := "geosite-" + cc
-	ensureRuleSetDef(tag, "geosite", cc, t)
 
-	// Find first DNS server without detour (domestic, not routed through proxy)
-	for _, srv := range t.config.DNS.Servers {
-		if srv["type"] == "fakeip" {
-			continue
-		}
-		if _, hasDetour := srv["detour"]; hasDetour {
-			continue
-		}
-		if srvTag, _ := srv["tag"].(string); srvTag != "" {
-			t.config.DNS.Rules = append(t.config.DNS.Rules, map[string]any{
-				"rule_set": []string{tag},
-				"server":   srvTag,
-			})
-			return
-		}
+	directTag := findFirstDirectDNSTag(t)
+	remoteTag := findFirstRemoteDNSTag(t)
+	fakeipTag := findFakeIPTag(t)
+
+	if directTag == "" {
+		t.warn("no direct DNS server found; DNS rules not generated")
+		return
 	}
+
+	var rules []map[string]any
+
+	if cc == "cn" && remoteTag != "" {
+		// Resolve proxy server domains via remote DNS
+		rules = append(rules, map[string]any{
+			"outbound": "any",
+			"server":   remoteTag,
+		})
+	}
+
+	// Direct mode → domestic DNS
+	rules = append(rules, map[string]any{
+		"clash_mode": "Direct",
+		"server":     directTag,
+	})
+
+		// Domestic geosite + geoip → direct DNS
+		geositeTag := "geosite-" + cc
+		geoipTag := "geoip-" + cc
+		ensureRuleSetDef(geositeTag, "geosite", cc, t)
+		ensureRuleSetDef(geoipTag, "geoip", cc, t)
+		rules = append(rules, map[string]any{
+			"rule_set": []string{geositeTag, geoipTag},
+			"server":   directTag,
+		})
+
+	// FakeIP for A/AAAA queries
+	if fakeipTag != "" {
+		rules = append(rules, map[string]any{
+			"query_type": []string{"A", "AAAA"},
+			"server":     fakeipTag,
+		})
+	}
+
+	// Prepend our rules before any existing rules (e.g., fakeip-filter, hosts)
+	t.config.DNS.Rules = append(rules, t.config.DNS.Rules...)
 }
