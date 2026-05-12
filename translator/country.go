@@ -5,19 +5,29 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
+var (
+	cachedCountry     string
+	cachedCountryOnce sync.Once
+)
+
 // DetectCountry determines the user's two-letter country code (ISO 3166-1 alpha-2).
-// Priority: explicit argument > IP geolocation > fallback "CN".
+// Priority: explicit argument > cached IP geolocation > fallback "CN".
 func DetectCountry(override string) string {
 	if cc := strings.TrimSpace(override); len(cc) == 2 {
 		return strings.ToUpper(cc)
 	}
-	if cc, err := detectCountryByIP(); err == nil && len(cc) == 2 {
-		return strings.ToUpper(cc)
-	}
-	return "CN"
+	cachedCountryOnce.Do(func() {
+		if cc, err := detectCountryByIP(); err == nil && len(cc) == 2 {
+			cachedCountry = strings.ToUpper(cc)
+		} else {
+			cachedCountry = "CN"
+		}
+	})
+	return cachedCountry
 }
 
 // detectCountryByIP queries ipinfo.io for the country of the current public IP.
