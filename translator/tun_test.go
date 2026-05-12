@@ -292,8 +292,10 @@ func TestTranslateTUNAutoDetectInterface(t *testing.T) {
 	tt.config.Route.AutoDetectInterface = true // simulate general.go default
 	translateTUN(cfg, tt)
 
-	if tt.config.Route.AutoDetectInterface != false {
-		t.Errorf("auto_detect_interface = %v, want false", tt.config.Route.AutoDetectInterface)
+	// translateTUN no longer overrides auto_detect_interface;
+	// the true default from translateGeneral should be preserved.
+	if tt.config.Route.AutoDetectInterface != true {
+		t.Errorf("auto_detect_interface = %v, want true", tt.config.Route.AutoDetectInterface)
 	}
 }
 
