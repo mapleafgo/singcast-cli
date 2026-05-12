@@ -219,7 +219,7 @@ func TestNameserverPolicyToRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := nameserverPolicyToRule(tt.pattern, "test-srv")
+			rule := nameserverPolicyToRule(tt.pattern, "test-srv", testTranslation(t))
 			if rule == nil {
 				t.Fatal("expected non-nil rule")
 			}

@@ -28,6 +28,8 @@ func translateRules(_ *RawConfig, t *translation) {
 	} else {
 		generateCountryRoutes(cc, proxyTag, t)
 	}
+
+	// DNS rule generated after translateDNS (Step 6) when t.config.DNS is available.
 }
 
 // generateCNRoutes builds CN routing rules for GFW bypass with DNS pollution guards.
@@ -81,7 +83,6 @@ func generateCNRoutes(proxyTag string, t *translation) {
 		"domain_suffix": []string{".cn"},
 		"outbound":      "DIRECT",
 	})
-
 }
 
 // generateCountryRoutes builds non-CN routing rules: local traffic → direct, rest → proxy.
@@ -116,4 +117,31 @@ func generateCountryRoutes(cc string, proxyTag string, t *translation) {
 		"domain_suffix": []string{"." + cc},
 		"outbound":      "DIRECT",
 	})
+}
+
+// generateDNSRule creates a DNS rule that routes domestic domain queries
+// to the first domestic DNS server, based on the detected country.
+func generateDNSRule(cc string, t *translation) {
+	if t.config.DNS == nil || len(t.config.DNS.Servers) == 0 {
+		return
+	}
+	tag := "geosite-" + cc
+	ensureRuleSetDef(tag, "geosite", cc, t)
+
+	// Find first DNS server without detour (domestic, not routed through proxy)
+	for _, srv := range t.config.DNS.Servers {
+		if srv["type"] == "fakeip" {
+			continue
+		}
+		if _, hasDetour := srv["detour"]; hasDetour {
+			continue
+		}
+		if srvTag, _ := srv["tag"].(string); srvTag != "" {
+			t.config.DNS.Rules = append(t.config.DNS.Rules, map[string]any{
+				"rule_set": []string{tag},
+				"server":   srvTag,
+			})
+			return
+		}
+	}
 }

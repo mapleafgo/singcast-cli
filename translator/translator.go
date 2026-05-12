@@ -64,6 +64,9 @@ func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) 
 	// Step 6: Translate DNS
 	translateDNS(cfg, t)
 
+	// Step 6b: Generate DNS rule based on detected country (needs DNS servers from Step 6)
+	generateDNSRule(detectCC(t), t)
+
 	// Step 7: Translate TUN
 	translateTUN(cfg, t)
 

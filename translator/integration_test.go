@@ -8,17 +8,17 @@ import (
 )
 
 // realConfigPath points to the actual production YAML profile.
-const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.clash_for_flutter/profiles/1777039692584.yaml"
+const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.singcast/profiles/1778575671321.yaml"
 
 // TestIntegrationRealProfile loads the real production YAML file,
-// translates it with auto-routing, and validates the output structure.
+// translates it with auto-routing, and validates every aspect of the output
+// against sing-box specification requirements.
 func TestIntegrationRealProfile(t *testing.T) {
 	data, err := os.ReadFile(realConfigPath)
 	if err != nil {
 		t.Skipf("real profile not found: %v", err)
 	}
 
-	// Force CN country for deterministic test
 	out, warns, err := TranslateWithOptions(data, &Options{Country: "CN"})
 	if err != nil {
 		t.Fatalf("Translate failed: %v", err)
@@ -31,20 +31,26 @@ func TestIntegrationRealProfile(t *testing.T) {
 		t.Logf("WARN: %s", w)
 	}
 
+	// === Log ===
+	logSec := m["log"].(map[string]any)
+	if logSec["level"] != "info" {
+		t.Errorf("log.level = %v, want info", logSec["level"])
+	}
+
 	// === Inbounds ===
 	inbounds := m["inbounds"].([]any)
-	if len(inbounds) < 1 {
-		t.Fatal("expected at least 1 inbound")
+	if len(inbounds) != 1 {
+		t.Fatalf("expected 1 inbound, got %d", len(inbounds))
 	}
 	mixedInb := inbounds[0].(map[string]any)
 	if mixedInb["type"] != "mixed" {
-		t.Errorf("first inbound type = %v, want mixed", mixedInb["type"])
-	}
-	if mixedInb["listen_port"].(float64) != 9870 {
-		t.Errorf("listen_port = %v, want 9870", mixedInb["listen_port"])
+		t.Errorf("inbound type = %v, want mixed", mixedInb["type"])
 	}
 	if mixedInb["listen"] != "0.0.0.0" {
 		t.Errorf("listen = %v, want 0.0.0.0 (allow-lan=true)", mixedInb["listen"])
+	}
+	if mixedInb["listen_port"].(float64) != 7890 {
+		t.Errorf("listen_port = %v, want 7890", mixedInb["listen_port"])
 	}
 
 	// === Outbounds ===
@@ -52,70 +58,156 @@ func TestIntegrationRealProfile(t *testing.T) {
 	tags := collectTags(outbounds)
 	t.Logf("Total outbounds: %d", len(outbounds))
 
-	// Must have DIRECT
-	if !tags["DIRECT"] {
-		t.Error("missing DIRECT outbound")
+	// First outbound must be DIRECT
+	ob0 := outbounds[0].(map[string]any)
+	if ob0["type"] != "direct" || ob0["tag"] != "DIRECT" {
+		t.Errorf("first outbound = %v %v, want direct DIRECT", ob0["type"], ob0["tag"])
 	}
 
-	// Must have both proxy groups
-	if !tags["节点选择"] {
-		t.Error("missing 节点选择 group")
+	// Must have proxy groups from the real profile
+	firstGroup := "CrossWall (克洛斯)"
+	if !tags[firstGroup] {
+		t.Errorf("missing %q group", firstGroup)
 	}
-	if !tags["自动选择"] {
-		t.Error("missing 自动选择 group")
-	}
-
-	// Verify group types
-	proxySel := findOutbound(outbounds, "节点选择")
-	if proxySel == nil {
-		t.Fatal("节点选择 group not found")
-	}
-	if proxySel["type"] != "selector" {
-		t.Errorf("节点选择 type = %v, want selector", proxySel["type"])
+	if !tags["🌍自动选择"] {
+		t.Error("missing 🌍自动选择 urltest group")
 	}
 
-	autoTest := findOutbound(outbounds, "自动选择")
-	if autoTest == nil {
-		t.Fatal("自动选择 group not found")
+	// Verify selector group
+	sel := findOutbound(outbounds, firstGroup)
+	if sel == nil {
+		t.Fatalf("%q group not found", firstGroup)
 	}
-	if autoTest["type"] != "urltest" {
-		t.Errorf("自动选择 type = %v, want urltest", autoTest["type"])
+	if sel["type"] != "selector" {
+		t.Errorf("%q type = %v, want selector", firstGroup, sel["type"])
 	}
 
-	// === Route (auto-routing) ===
+	// Verify urltest groups
+	for _, gName := range []string{"🌍自动选择", "🇺🇸美国自动选择", "🇭🇰香港自动选择", "🇪🇺欧洲自动选择"} {
+		g := findOutbound(outbounds, gName)
+		if g == nil {
+			t.Errorf("group %q not found", gName)
+			continue
+		}
+		if g["type"] != "urltest" {
+			t.Errorf("%q type = %v, want urltest", gName, g["type"])
+		}
+		if g["url"] == nil {
+			t.Errorf("%q missing url field", gName)
+		}
+	}
+
+	// Verify fallback group (sing-box maps fallback → urltest with high tolerance)
+	fb := findOutbound(outbounds, "故障转移")
+	if fb == nil {
+		t.Fatal("故障转移 group not found")
+	}
+	if fb["type"] != "urltest" {
+		t.Errorf("故障转移 type = %v, want urltest (fallback→urltest)", fb["type"])
+	}
+
+	// Verify proxy node types: anytls and hysteria2
+	foundAnyTLS, foundHysteria2 := false, false
+	for _, ob := range outbounds {
+		obMap := ob.(map[string]any)
+		switch obMap["type"] {
+		case "anytls":
+			foundAnyTLS = true
+		case "hysteria2":
+			foundHysteria2 = true
+		}
+	}
+	if !foundAnyTLS {
+		t.Error("expected at least one anytls outbound")
+	}
+	if !foundHysteria2 {
+		t.Error("expected at least one hysteria2 outbound")
+	}
+
+	// === Route ===
 	route := m["route"].(map[string]any)
 
-	// route.final should be 节点选择 (first group)
-	if route["final"] != "节点选择" {
-		t.Errorf("route.final = %v, want 节点选择", route["final"])
+	if route["final"] != firstGroup {
+		t.Errorf("route.final = %v, want %q", route["final"], firstGroup)
+	}
+	if route["auto_detect_interface"] != true {
+		t.Error("expected auto_detect_interface = true")
+	}
+	if route["find_process"] != true {
+		t.Error("expected find_process = true (find-process-mode: strict)")
 	}
 
 	rules := route["rules"].([]any)
 	t.Logf("Total route rules: %d", len(rules))
 
-	// First two rules: sniff + hijack-dns
-	if rules[0].(map[string]any)["action"] != "sniff" {
-		t.Errorf("first rule action = %v, want sniff", rules[0].(map[string]any)["action"])
+	// Rule 0-1: sniff + hijack-dns (no outbound, no clash_mode)
+	assertAction(t, rules[0], "sniff", "rule 0")
+	assertAction(t, rules[1], "hijack-dns", "rule 1")
+
+	// Rule 2: clash_mode:Direct → DIRECT
+	assertClashModeRule(t, rules[2], "Direct", "DIRECT", "rule 2")
+
+	// Rule 3: clash_mode:Global → first group
+	assertClashModeRule(t, rules[3], "Global", firstGroup, "rule 3")
+
+	// Rule 4: ip_is_private → DIRECT (clash_mode:Rule)
+	r4 := asMap(t, rules[4], "rule 4")
+	if r4["ip_is_private"] != true {
+		t.Error("rule 4 should have ip_is_private=true")
 	}
-	if rules[1].(map[string]any)["action"] != "hijack-dns" {
-		t.Errorf("second rule action = %v, want hijack-dns", rules[1].(map[string]any)["action"])
+	if r4["clash_mode"] != "Rule" {
+		t.Error("rule 4 should have clash_mode=Rule")
+	}
+	if r4["outbound"] != "DIRECT" {
+		t.Errorf("rule 4 outbound = %v, want DIRECT", r4["outbound"])
 	}
 
-	// Verify auto-routing rules present (ip_is_private instead of geoip-private)
-	ruleJSON, _ := json.Marshal(rules)
-	ruleStr := string(ruleJSON)
-
-	type check struct{ substr, desc string }
-	checks := []check{
-		{`"ip_is_private":true`, "private IP inline rule"},
-		{`"geosite-geolocation-!cn"`, "non-CN geolocation rule_set"},
-		{`"geoip-cn"`, "CN geoip rule_set"},
-		{`"geosite-cn"`, "CN geolocation rule_set"},
+	// Rule 5: overseas-ai → proxy
+	r5 := asMap(t, rules[5], "rule 5")
+	assertRuleSetOutbound(t, r5, "overseas-ai", firstGroup)
+	if r5["clash_mode"] != "Rule" {
+		t.Error("rule 5 should have clash_mode=Rule")
 	}
-	for _, c := range checks {
-		if !strings.Contains(ruleStr, c.substr) {
-			t.Errorf("missing %s in rules", c.desc)
-		}
+
+	// Rule 6: geosite-geolocation-!cn → proxy
+	r6 := asMap(t, rules[6], "rule 6")
+	assertRuleSetOutbound(t, r6, "geosite-geolocation-!cn", firstGroup)
+	if r6["clash_mode"] != "Rule" {
+		t.Error("rule 6 should have clash_mode=Rule")
+	}
+
+	// Rule 7: logical(geosite-cn AND NOT geoip-cn AND clash_mode=Rule) → proxy
+	r7 := asMap(t, rules[7], "rule 7")
+	assertLogicalRule(t, r7, "and", firstGroup, 3, "rule 7")
+	// Sub-rule 2 must be clash_mode:Rule
+	subRules7 := r7["rules"].([]any)
+	subRule7x2 := subRules7[2].(map[string]any)
+	if subRule7x2["clash_mode"] != "Rule" {
+		t.Error("rule 7 sub-rule 2 should have clash_mode=Rule")
+	}
+
+	// Rule 8: geosite-cn → DIRECT (clash_mode:Rule)
+	r8 := asMap(t, rules[8], "rule 8")
+	assertRuleSetOutbound(t, r8, "geosite-cn", "DIRECT")
+	if r8["clash_mode"] != "Rule" {
+		t.Error("rule 8 should have clash_mode=Rule")
+	}
+
+	// Rule 9: logical(NOT geolocation-!cn AND geoip-cn AND clash_mode=Rule) → DIRECT
+	r9 := asMap(t, rules[9], "rule 9")
+	assertLogicalRule(t, r9, "and", "DIRECT", 3, "rule 9")
+
+	// Rule 10: domain_suffix:.cn → DIRECT (clash_mode:Rule)
+	r10 := asMap(t, rules[10], "rule 10")
+	if r10["clash_mode"] != "Rule" {
+		t.Error("rule 10 should have clash_mode=Rule")
+	}
+	ds10, _ := r10["domain_suffix"].([]any)
+	if len(ds10) != 1 || ds10[0] != ".cn" {
+		t.Errorf("rule 10 domain_suffix = %v, want [.cn]", ds10)
+	}
+	if r10["outbound"] != "DIRECT" {
+		t.Errorf("rule 10 outbound = %v, want DIRECT", r10["outbound"])
 	}
 
 	// === rule_set definitions ===
@@ -128,13 +220,24 @@ func TestIntegrationRealProfile(t *testing.T) {
 		tag := rsMap["tag"].(string)
 		rsTagMap[tag] = true
 
-		// Verify download_detour is DIRECT
+		if rsMap["type"] != "remote" {
+			t.Errorf("rule_set %q type = %v, want remote", tag, rsMap["type"])
+		}
+		if rsMap["format"] != "binary" {
+			t.Errorf("rule_set %q format = %v, want binary", tag, rsMap["format"])
+		}
 		if rsMap["download_detour"] != "DIRECT" {
 			t.Errorf("rule_set %q download_detour = %v, want DIRECT", tag, rsMap["download_detour"])
 		}
+		url, _ := rsMap["url"].(string)
+		if url == "" {
+			t.Errorf("rule_set %q missing url", tag)
+		}
+		if !strings.HasSuffix(url, ".srs") {
+			t.Errorf("rule_set %q url should end with .srs: %s", tag, url)
+		}
 	}
-	// Verify auto-routing rule_set definitions (no geoip-private)
-	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-cn"} {
+	for _, tag := range []string{"overseas-ai", "geosite-geolocation-!cn", "geosite-cn", "geoip-cn"} {
 		if !rsTagMap[tag] {
 			t.Errorf("missing rule_set definition: %s", tag)
 		}
@@ -144,9 +247,27 @@ func TestIntegrationRealProfile(t *testing.T) {
 	dns := m["dns"].(map[string]any)
 	dnsServers := dns["servers"].([]any)
 	if len(dnsServers) < 2 {
-		t.Errorf("expected at least 2 DNS servers, got %d", len(dnsServers))
+		t.Fatalf("expected at least 2 DNS servers, got %d", len(dnsServers))
 	}
 	t.Logf("DNS servers: %d", len(dnsServers))
+
+	// Verify DNS server types
+	dnsTypes := map[string]bool{"quic": false, "udp": false, "fakeip": false}
+	for _, srv := range dnsServers {
+		srvMap := srv.(map[string]any)
+		t := srvMap["type"].(string)
+		dnsTypes[t] = true
+	}
+	for dt, found := range dnsTypes {
+		if !found {
+			t.Errorf("expected DNS server type %q not found", dt)
+		}
+	}
+
+	// DNS final
+	if dns["final"] == nil || dns["final"] == "" {
+		t.Error("dns.final should be set")
+	}
 
 	// DNS rules (from nameserver-policy)
 	dnsRules := dns["rules"].([]any)
@@ -154,17 +275,9 @@ func TestIntegrationRealProfile(t *testing.T) {
 		t.Error("expected at least 1 DNS rule (from nameserver-policy)")
 	}
 
-	// FakeIP server should exist
-	foundFakeIP := false
-	for _, srv := range dnsServers {
-		srvMap := srv.(map[string]any)
-		if srvMap["type"] == "fakeip" {
-			foundFakeIP = true
-			break
-		}
-	}
-	if !foundFakeIP {
-		t.Error("expected fakeip DNS server (enhanced-mode: fake-ip)")
+	// DNS strategy
+	if dns["strategy"] != "prefer_ipv6" {
+		t.Errorf("dns.strategy = %v, want prefer_ipv6 (ipv6=true)", dns["strategy"])
 	}
 
 	// === Experimental / Clash API ===
@@ -173,6 +286,80 @@ func TestIntegrationRealProfile(t *testing.T) {
 	if clashAPI["external_controller"] != "127.0.0.1:9090" {
 		t.Errorf("external_controller = %v, want 127.0.0.1:9090", clashAPI["external_controller"])
 	}
+	if clashAPI["default_mode"] != "Rule" {
+		t.Errorf("default_mode = %v, want Rule", clashAPI["default_mode"])
+	}
+
+	// Cache file
+	cache := exp["cache_file"].(map[string]any)
+	if cache["enabled"] != true {
+		t.Error("cache_file should be enabled")
+	}
+	if cache["store_fakeip"] != true {
+		t.Error("store_fakeip should be true (profile.store-fake-ip)")
+	}
+	if cache["store_rdrc"] != true {
+		t.Error("store_rdrc should be true")
+	}
+}
+
+func assertAction(t *testing.T, rule any, wantAction, ctx string) {
+	t.Helper()
+	r := asMap(t, rule, ctx)
+	if r["action"] != wantAction {
+		t.Errorf("%s action = %v, want %s", ctx, r["action"], wantAction)
+	}
+}
+
+func assertClashModeRule(t *testing.T, rule any, mode, wantOutbound, ctx string) {
+	t.Helper()
+	r := asMap(t, rule, ctx)
+	if r["clash_mode"] != mode {
+		t.Errorf("%s clash_mode = %v, want %s", ctx, r["clash_mode"], mode)
+	}
+	if r["outbound"] != wantOutbound {
+		t.Errorf("%s outbound = %v, want %s", ctx, r["outbound"], wantOutbound)
+	}
+}
+
+func assertRuleSetOutbound(t *testing.T, r map[string]any, wantRS, wantOutbound string) {
+	t.Helper()
+	rs, _ := r["rule_set"].([]any)
+	if len(rs) != 1 || rs[0] != wantRS {
+		t.Errorf("rule_set = %v, want [%s]", rs, wantRS)
+	}
+	if r["outbound"] != wantOutbound {
+		t.Errorf("outbound = %v, want %s", r["outbound"], wantOutbound)
+	}
+}
+
+func assertLogicalRule(t *testing.T, r map[string]any, wantMode, wantOutbound string, wantSubRules int, ctx string) {
+	t.Helper()
+	if r["type"] != "logical" {
+		t.Fatalf("%s type = %v, want logical", ctx, r["type"])
+	}
+	if r["mode"] != wantMode {
+		t.Errorf("%s mode = %v, want %s", ctx, r["mode"], wantMode)
+	}
+	if r["outbound"] != wantOutbound {
+		t.Errorf("%s outbound = %v, want %s", ctx, r["outbound"], wantOutbound)
+	}
+	if r["action"] != "route" {
+		t.Errorf("%s action = %v, want route", ctx, r["action"])
+	}
+	subRules, ok := r["rules"].([]any)
+	if !ok || len(subRules) != wantSubRules {
+		t.Fatalf("%s sub-rules: ok=%v len=%d, want %d", ctx, ok, len(subRules), wantSubRules)
+	}
+}
+
+func asMap(t *testing.T, v any, ctx string) map[string]any {
+	t.Helper()
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("%s: expected map, got %T", ctx, v)
+	}
+	return m
 }
 
 // TestIntegrationNoDuplicateTags verifies outbound tags are unique.
@@ -231,8 +418,8 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// overseas-ai + geolocation-!cn + logical(geolocation-cn AND NOT geoip-cn) +
-	// geolocation-cn + logical(NOT !cn AND geoip-cn) + domain_suffix:.cn = 11
+	// overseas-ai + geolocation-!cn + logical(geosite-cn AND NOT geoip-cn) +
+	// geosite-cn + logical(NOT !cn AND geoip-cn) + domain_suffix:.cn = 11
 	if len(rules) != 11 {
 		t.Fatalf("expected 11 rules for CN, got %d", len(rules))
 	}

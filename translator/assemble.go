@@ -86,17 +86,23 @@ func addRouteAction(t *translation) {
 }
 
 // addClashModeCondition adds clash_mode:"Rule" to all rules with an outbound.
-// This ensures Direct/Global catch-all rules take priority when mode is switched,
-// while Rule-mode rules only apply when the mode is "Rule".
+// For logical rules (which don't support top-level clash_mode), a sub-rule with
+// clash_mode:"Rule" is appended to the AND conditions instead.
 func addClashModeCondition(t *translation) {
 	for _, rule := range t.config.Route.Rules {
-		if ruleType, _ := rule["type"].(string); ruleType == "logical" {
+		if _, hasOutbound := rule["outbound"]; !hasOutbound {
 			continue
 		}
-		if _, hasOutbound := rule["outbound"]; hasOutbound {
-			if _, has := rule["clash_mode"]; !has {
-				rule["clash_mode"] = "Rule"
+		if _, has := rule["clash_mode"]; has {
+			continue
+		}
+		if ruleType, _ := rule["type"].(string); ruleType == "logical" {
+			if mode, _ := rule["mode"].(string); mode == "and" {
+				subRules, _ := rule["rules"].([]map[string]any)
+				rule["rules"] = append(subRules, map[string]any{"clash_mode": "Rule"})
 			}
+		} else {
+			rule["clash_mode"] = "Rule"
 		}
 	}
 }
