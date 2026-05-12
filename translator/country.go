@@ -16,7 +16,7 @@ var (
 	cachedCountryOnce sync.Once
 )
 
-// DetectCountry determines the user's two-letter country code (ISO 3166-1 alpha-2).
+// DetectCountry returns the user's two-letter country code (ISO 3166-1 alpha-2).
 // Priority: explicit argument > cached IP geolocation > fallback "CN".
 func DetectCountry(override string) string {
 	if cc := strings.TrimSpace(override); len(cc) == 2 {
@@ -32,8 +32,7 @@ func DetectCountry(override string) string {
 	return cachedCountry
 }
 
-// detectCountryByIP races multiple geolocation services concurrently and returns
-// the first successful 2-letter country code.
+// detectCountryByIP races multiple geolocation services and returns the first successful result.
 func detectCountryByIP() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -79,7 +78,7 @@ func httpGet(ctx context.Context, url string) (*http.Response, error) {
 	return geoHTTPClient.Do(req)
 }
 
-// detectByCountryIs uses api.country.is. Minimal JSON, Cloudflare CDN, no key.
+// detectByCountryIs uses api.country.is (no key required).
 func detectByCountryIs(ctx context.Context) (string, error) {
 	resp, err := httpGet(ctx, "https://api.country.is")
 	if err != nil {
@@ -98,7 +97,7 @@ func detectByCountryIs(ctx context.Context) (string, error) {
 	return result.Country, nil
 }
 
-// detectByIPInfo uses ipinfo.io. Well-known service, free 50k/month, no key required.
+// detectByIPInfo uses ipinfo.io (no key required).
 func detectByIPInfo(ctx context.Context) (string, error) {
 	resp, err := httpGet(ctx, "https://ipinfo.io/json")
 	if err != nil {
@@ -117,7 +116,7 @@ func detectByIPInfo(ctx context.Context) (string, error) {
 	return result.Country, nil
 }
 
-// detectByIPApi uses ip-api.com. Very fast, free unlimited, HTTP only, no key required.
+// detectByIPApi uses ip-api.com (no key required).
 func detectByIPApi(ctx context.Context) (string, error) {
 	resp, err := httpGet(ctx, "http://ip-api.com/json/?fields=countryCode")
 	if err != nil {
@@ -136,7 +135,7 @@ func detectByIPApi(ctx context.Context) (string, error) {
 	return result.CountryCode, nil
 }
 
-// detectByIPSb uses api.ip.sb. Fast, China-friendly, no key required.
+// detectByIPSb uses api.ip.sb (China-friendly, no key required).
 func detectByIPSb(ctx context.Context) (string, error) {
 	resp, err := httpGet(ctx, "https://api.ip.sb/geoip")
 	if err != nil {
@@ -155,7 +154,7 @@ func detectByIPSb(ctx context.Context) (string, error) {
 	return result.CountryCode, nil
 }
 
-// detectByIPWhoIs uses ipwho.is. Fast, no key required.
+// detectByIPWhoIs uses ipwho.is (no key required).
 func detectByIPWhoIs(ctx context.Context) (string, error) {
 	resp, err := httpGet(ctx, "https://ipwho.is/")
 	if err != nil {

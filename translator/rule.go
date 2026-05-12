@@ -4,7 +4,7 @@ import "strings"
 
 const rawGitHubPrefix = "https://raw.githubusercontent.com/"
 
-// proxyURL prepends the rule-set proxy prefix for raw.githubusercontent.com URLs.
+// proxyURL prepends the proxy prefix for raw.githubusercontent.com URLs.
 func proxyURL(rawURL string, opts *Options) string {
 	if opts != nil {
 		if prefix := strings.TrimRight(opts.RuleSetURLPrefix, "/"); prefix != "" {
@@ -16,7 +16,7 @@ func proxyURL(rawURL string, opts *Options) string {
 	return rawURL
 }
 
-// registerRuleSet adds a rule_set definition if not already present.
+// registerRuleSet adds a rule_set definition if absent.
 func registerRuleSet(tag string, rawURL string, t *translation) {
 	if _, exists := t.ruleSetDefs[tag]; exists {
 		return
@@ -30,7 +30,7 @@ func registerRuleSet(tag string, rawURL string, t *translation) {
 	}
 }
 
-// ensureRuleSetDef creates a rule_set definition for GEOIP/GEOSITE if not already present.
+// ensureRuleSetDef creates a rule_set definition for GEOIP/GEOSITE if absent.
 func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 	var base string
 	if geoType == "geoip" {
@@ -41,7 +41,7 @@ func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 	registerRuleSet(tag, base, t)
 }
 
-// ensureCustomRuleSetDef creates a rule_set definition with a custom URL if not already present.
+// ensureCustomRuleSetDef creates a rule_set definition with a custom URL if absent.
 func ensureCustomRuleSetDef(tag string, rawURL string, t *translation) {
 	registerRuleSet(tag, rawURL, t)
 }

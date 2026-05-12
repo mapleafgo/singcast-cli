@@ -110,7 +110,7 @@ func TestIntegrationRealProfile(t *testing.T) {
 		{`"ip_is_private":true`, "private IP inline rule"},
 		{`"geosite-geolocation-!cn"`, "non-CN geolocation rule_set"},
 		{`"geoip-cn"`, "CN geoip rule_set"},
-		{`"geosite-geolocation-cn"`, "CN geolocation rule_set"},
+		{`"geosite-cn"`, "CN geolocation rule_set"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(ruleStr, c.substr) {
@@ -134,7 +134,7 @@ func TestIntegrationRealProfile(t *testing.T) {
 		}
 	}
 	// Verify auto-routing rule_set definitions (no geoip-private)
-	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-geolocation-cn"} {
+	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-cn"} {
 		if !rsTagMap[tag] {
 			t.Errorf("missing rule_set definition: %s", tag)
 		}
@@ -294,11 +294,11 @@ proxy-groups:
 		t.Errorf("rule 10 outbound = %v, want DIRECT", cnSuffixRule["outbound"])
 	}
 
-	// Verify geosite-geolocation-cn → DIRECT rule
+	// Verify geosite-cn → DIRECT rule
 	geoCNRule := rules[8].(map[string]any)
 	geoCNRS, _ := geoCNRule["rule_set"].([]any)
-	if len(geoCNRS) != 1 || geoCNRS[0] != "geosite-geolocation-cn" {
-		t.Errorf("rule 8 rule_set = %v, want [geosite-geolocation-cn]", geoCNRS)
+	if len(geoCNRS) != 1 || geoCNRS[0] != "geosite-cn" {
+		t.Errorf("rule 8 rule_set = %v, want [geosite-cn]", geoCNRS)
 	}
 	if geoCNRule["outbound"] != "DIRECT" {
 		t.Errorf("rule 8 outbound = %v, want DIRECT", geoCNRule["outbound"])
@@ -311,7 +311,7 @@ proxy-groups:
 		rsMap := rs.(map[string]any)
 		rsTags[rsMap["tag"].(string)] = true
 	}
-	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-geolocation-cn", "overseas-ai"} {
+	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-cn", "overseas-ai"} {
 		if !rsTags[tag] {
 			t.Errorf("missing rule_set: %s", tag)
 		}
@@ -340,32 +340,22 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// geolocation-!cn + logical(geosite-jp AND NOT geoip-jp) + geosite-jp +
-	// logical(NOT geolocation-!cn AND geoip-jp) + domain_suffix:.jp = 10
-	if len(rules) != 10 {
-		t.Fatalf("expected 10 rules for JP, got %d", len(rules))
+	// logical(geosite-jp AND NOT geoip-jp) + geosite-jp + geoip-jp +
+	// domain_suffix:.jp = 9
+	if len(rules) != 9 {
+		t.Fatalf("expected 9 rules for JP, got %d", len(rules))
 	}
 
-	// Verify geoip-jp, geosite-jp and geolocation-!cn rule_set definitions exist
+	// Verify geoip-jp and geosite-jp rule_set definitions exist
 	rsDefs := route["rule_set"].([]any)
 	rsTags := map[string]bool{}
 	for _, rs := range rsDefs {
 		rsMap := rs.(map[string]any)
 		rsTags[rsMap["tag"].(string)] = true
 	}
-	for _, tag := range []string{"geoip-jp", "geosite-jp", "geosite-geolocation-!cn"} {
+	for _, tag := range []string{"geoip-jp", "geosite-jp"} {
 		if !rsTags[tag] {
 			t.Errorf("missing rule_set: %s", tag)
 		}
-	}
-
-	// Verify first auto-route rule is geolocation-!cn → PROXY
-	notCNRule := rules[5].(map[string]any)
-	notCNRS, _ := notCNRule["rule_set"].([]any)
-	if len(notCNRS) != 1 || notCNRS[0] != "geosite-geolocation-!cn" {
-		t.Errorf("rule 5 rule_set = %v, want [geosite-geolocation-!cn]", notCNRS)
-	}
-	if notCNRule["outbound"] != "PROXY" {
-		t.Errorf("rule 5 outbound = %v, want PROXY", notCNRule["outbound"])
 	}
 }

@@ -25,7 +25,7 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	tr.groupTagOrder = []string{"PROXY"}
 	tr.opts = &Options{Country: "cn"}
 
-	generateGeoRoute("cn", "PROXY", tr)
+	generateCNRoutes("PROXY", tr)
 
 	rules := tr.config.Route.Rules
 	if len(rules) != 6 {
@@ -38,11 +38,11 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	// Rule 1: geolocation-!cn → PROXY (must come before cn rule)
 	assertRuleSet(t, rules[1], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
 
-	// Rule 2: logical AND — geolocation-cn AND NOT geoip-cn → PROXY
-	assertGeoIPMismatchGuard(t, rules[2], "geosite-geolocation-cn", "geoip-cn", "PROXY")
+	// Rule 2: logical AND — geosite-cn AND NOT geoip-cn → PROXY
+	assertGeoIPMismatchGuard(t, rules[2], "geosite-cn", "geoip-cn", "PROXY")
 
-	// Rule 3: geolocation-cn → DIRECT
-	assertRuleSet(t, rules[3], "geosite-geolocation-cn", "DIRECT", "geolocation-cn")
+	// Rule 3: geosite-cn → DIRECT
+	assertRuleSet(t, rules[3], "geosite-cn", "DIRECT", "geosite-cn")
 
 	// Rule 4: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
 	logical := rules[4]
@@ -77,7 +77,7 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	assertDomainSuffix(t, rules[5], ".cn", "DIRECT")
 
 	// Verify rule_set definitions
-	expectedDefs := []string{"geosite-geolocation-cn", "geosite-geolocation-!cn", "geoip-cn", "overseas-ai"}
+	expectedDefs := []string{"geosite-cn", "geosite-geolocation-!cn", "geoip-cn", "overseas-ai"}
 	for _, tag := range expectedDefs {
 		if _, ok := tr.ruleSetDefs[tag]; !ok {
 			t.Errorf("missing rule_set definition for %q", tag)
@@ -96,54 +96,27 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 	tr := testTranslation(t)
 	tr.groupTagOrder = []string{"PROXY"}
 
-	generateGeoRoute("us", "PROXY", tr)
+	generateCountryRoutes("us", "PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 5 {
-		t.Fatalf("expected 5 geo rules for US, got %d", len(rules))
+	if len(rules) != 4 {
+		t.Fatalf("expected 4 geo rules for US, got %d", len(rules))
 	}
 
-	// Rule 0: geolocation-!cn → PROXY
-	assertRuleSet(t, rules[0], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
+	// Rule 0: logical AND — geosite-us AND NOT geoip-us → PROXY
+	assertGeoIPMismatchGuard(t, rules[0], "geosite-us", "geoip-us", "PROXY")
 
-	// Rule 1: logical AND — geosite-us AND NOT geoip-us → PROXY
-	assertGeoIPMismatchGuard(t, rules[1], "geosite-us", "geoip-us", "PROXY")
+	// Rule 1: geosite-us → DIRECT
+	assertRuleSet(t, rules[1], "geosite-us", "DIRECT", "geosite-us")
 
-	// Rule 2: geosite-us → DIRECT
-	assertRuleSet(t, rules[2], "geosite-us", "DIRECT", "geosite-us")
+	// Rule 2: geoip-us → DIRECT
+	assertRuleSet(t, rules[2], "geoip-us", "DIRECT", "geoip-us")
 
-	// Rule 3: logical AND — NOT geolocation-!cn AND geoip-us → DIRECT
-	geoIPRule := rules[3]
-	if geoIPRule["type"] != "logical" {
-		t.Fatalf("rule 3 type = %v, want logical", geoIPRule["type"])
-	}
-	if geoIPRule["mode"] != "and" {
-		t.Fatalf("rule 3 mode = %v, want and", geoIPRule["mode"])
-	}
-	if geoIPRule["outbound"] != "DIRECT" {
-		t.Fatalf("rule 3 outbound = %v, want DIRECT", geoIPRule["outbound"])
-	}
-	subRules, ok := geoIPRule["rules"].([]map[string]any)
-	if !ok || len(subRules) != 2 {
-		t.Fatalf("rule 3 sub-rules: ok=%v len=%d", ok, len(subRules))
-	}
-	if subRules[0]["invert"] != true {
-		t.Error("sub-rule 0 should have invert=true")
-	}
-	rs0, _ := subRules[0]["rule_set"].([]string)
-	if len(rs0) != 1 || rs0[0] != "geosite-geolocation-!cn" {
-		t.Errorf("sub-rule 0 rule_set = %v, want [geosite-geolocation-!cn]", rs0)
-	}
-	rs1, _ := subRules[1]["rule_set"].([]string)
-	if len(rs1) != 1 || rs1[0] != "geoip-us" {
-		t.Errorf("sub-rule 1 rule_set = %v, want [geoip-us]", rs1)
-	}
-
-	// Rule 4: .us domain suffix → DIRECT (fallback)
-	assertDomainSuffix(t, rules[4], ".us", "DIRECT")
+	// Rule 3: .us domain suffix → DIRECT (fallback)
+	assertDomainSuffix(t, rules[3], ".us", "DIRECT")
 
 	// Verify rule_set definitions
-	expectedDefs := []string{"geosite-geolocation-!cn", "geosite-us", "geoip-us"}
+	expectedDefs := []string{"geosite-us", "geoip-us"}
 	for _, tag := range expectedDefs {
 		if _, ok := tr.ruleSetDefs[tag]; !ok {
 			t.Errorf("missing rule_set definition for %q", tag)
@@ -154,7 +127,7 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 func TestGenerateGeoRoute_NoGroups(t *testing.T) {
 	tr := testTranslation(t)
 
-	generateGeoRoute("cn", "DIRECT", tr)
+	generateCNRoutes("DIRECT", tr)
 
 	for _, rule := range tr.config.Route.Rules {
 		if ob, ok := rule["outbound"].(string); ok && ob != "DIRECT" {
@@ -167,7 +140,7 @@ func TestGenerateGeoRoute_RuleSetURLs(t *testing.T) {
 	tr := testTranslation(t)
 	tr.groupTagOrder = []string{"PROXY"}
 
-	generateGeoRoute("cn", "PROXY", tr)
+	generateCNRoutes("PROXY", tr)
 
 	for tag, def := range tr.ruleSetDefs {
 		url, _ := def["url"].(string)
@@ -189,7 +162,7 @@ func TestGenerateGeoRoute_RuleSetURLPrefix(t *testing.T) {
 	tr.groupTagOrder = []string{"PROXY"}
 	tr.opts = &Options{RuleSetURLPrefix: "https://gh-proxy.org"}
 
-	generateGeoRoute("cn", "PROXY", tr)
+	generateCNRoutes("PROXY", tr)
 
 	for tag, def := range tr.ruleSetDefs {
 		url, _ := def["url"].(string)
