@@ -28,8 +28,9 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	generateCNRoutes("PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 6 {
-		t.Fatalf("expected 6 geo rules for CN, got %d", len(rules))
+	// overseas-ai + geolocation-!cn + geosite-cn + geoip-cn + .cn = 5
+	if len(rules) != 5 {
+		t.Fatalf("expected 5 geo rules for CN, got %d", len(rules))
 	}
 
 	// Rule 0: overseas-ai → PROXY
@@ -38,43 +39,14 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	// Rule 1: geolocation-!cn → PROXY (must come before cn rule)
 	assertRuleSet(t, rules[1], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
 
-	// Rule 2: logical AND — geosite-cn AND NOT geoip-cn → PROXY
-	assertGeoIPMismatchGuard(t, rules[2], "geosite-cn", "geoip-cn", "PROXY")
+	// Rule 2: geosite-cn → DIRECT
+	assertRuleSet(t, rules[2], "geosite-cn", "DIRECT", "geosite-cn")
 
-	// Rule 3: geosite-cn → DIRECT
-	assertRuleSet(t, rules[3], "geosite-cn", "DIRECT", "geosite-cn")
+	// Rule 3: geoip-cn → DIRECT
+	assertRuleSet(t, rules[3], "geoip-cn", "DIRECT", "geoip-cn")
 
-	// Rule 4: logical AND — (NOT geolocation-!cn) AND geoip-cn → DIRECT
-	logical := rules[4]
-	if logical["type"] != "logical" {
-		t.Fatalf("rule 4 type = %v, want logical", logical["type"])
-	}
-	if logical["mode"] != "and" {
-		t.Fatalf("rule 4 mode = %v, want and", logical["mode"])
-	}
-	if logical["outbound"] != "DIRECT" {
-		t.Fatalf("rule 4 outbound = %v, want DIRECT", logical["outbound"])
-	}
-	subRules, ok := logical["rules"].([]map[string]any)
-	if !ok || len(subRules) != 2 {
-		t.Fatalf("rule 4 sub-rules: ok=%v len=%d", ok, len(subRules))
-	}
-	// Sub-rule 0: geolocation-!cn inverted
-	if subRules[0]["invert"] != true {
-		t.Error("sub-rule 0 should have invert=true")
-	}
-	rs0, _ := subRules[0]["rule_set"].([]string)
-	if len(rs0) != 1 || rs0[0] != "geosite-geolocation-!cn" {
-		t.Errorf("sub-rule 0 rule_set = %v, want [geosite-geolocation-!cn]", rs0)
-	}
-	// Sub-rule 1: geoip-cn
-	rs1, _ := subRules[1]["rule_set"].([]string)
-	if len(rs1) != 1 || rs1[0] != "geoip-cn" {
-		t.Errorf("sub-rule 1 rule_set = %v, want [geoip-cn]", rs1)
-	}
-
-	// Rule 5: .cn domain suffix → DIRECT (fallback after all geo rules)
-	assertDomainSuffix(t, rules[5], ".cn", "DIRECT")
+	// Rule 4: .cn domain suffix → DIRECT (fallback)
+	assertDomainSuffix(t, rules[4], ".cn", "DIRECT")
 
 	// Verify rule_set definitions
 	expectedDefs := []string{"geosite-cn", "geosite-geolocation-!cn", "geoip-cn", "overseas-ai"}
@@ -99,21 +71,19 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 	generateCountryRoutes("us", "PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	if len(rules) != 4 {
-		t.Fatalf("expected 4 geo rules for US, got %d", len(rules))
+	// geosite-us + geoip-us + .us = 3
+	if len(rules) != 3 {
+		t.Fatalf("expected 3 geo rules for US, got %d", len(rules))
 	}
 
-	// Rule 0: logical AND — geosite-us AND NOT geoip-us → PROXY
-	assertGeoIPMismatchGuard(t, rules[0], "geosite-us", "geoip-us", "PROXY")
+	// Rule 0: geosite-us → DIRECT
+	assertRuleSet(t, rules[0], "geosite-us", "DIRECT", "geosite-us")
 
-	// Rule 1: geosite-us → DIRECT
-	assertRuleSet(t, rules[1], "geosite-us", "DIRECT", "geosite-us")
+	// Rule 1: geoip-us → DIRECT
+	assertRuleSet(t, rules[1], "geoip-us", "DIRECT", "geoip-us")
 
-	// Rule 2: geoip-us → DIRECT
-	assertRuleSet(t, rules[2], "geoip-us", "DIRECT", "geoip-us")
-
-	// Rule 3: .us domain suffix → DIRECT (fallback)
-	assertDomainSuffix(t, rules[3], ".us", "DIRECT")
+	// Rule 2: .us domain suffix → DIRECT (fallback)
+	assertDomainSuffix(t, rules[2], ".us", "DIRECT")
 
 	// Verify rule_set definitions
 	expectedDefs := []string{"geosite-us", "geoip-us"}
@@ -195,40 +165,5 @@ func assertDomainSuffix(t *testing.T, rule map[string]any, expectedSuffix, expec
 	ob, _ := rule["outbound"].(string)
 	if ob != expectedOutbound {
 		t.Errorf("domain_suffix rule: outbound = %q, want %q", ob, expectedOutbound)
-	}
-}
-
-func assertGeoIPMismatchGuard(t *testing.T, rule map[string]any, geositeTag, geoipTag, expectedOutbound string) {
-	t.Helper()
-	if rule["type"] != "logical" {
-		b, _ := json.Marshal(rule)
-		t.Fatalf("expected logical rule, got: %s", b)
-	}
-	if rule["mode"] != "and" {
-		t.Fatalf("mode = %v, want and", rule["mode"])
-	}
-	ob, _ := rule["outbound"].(string)
-	if ob != expectedOutbound {
-		t.Fatalf("outbound = %q, want %q", ob, expectedOutbound)
-	}
-	subRules, ok := rule["rules"].([]map[string]any)
-	if !ok || len(subRules) != 2 {
-		t.Fatalf("sub-rules: ok=%v len=%d", ok, len(subRules))
-	}
-	// Sub-rule 0: geosite match (no invert)
-	rs0, _ := subRules[0]["rule_set"].([]string)
-	if len(rs0) != 1 || rs0[0] != geositeTag {
-		t.Errorf("sub-rule 0 rule_set = %v, want [%s]", rs0, geositeTag)
-	}
-	if subRules[0]["invert"] != nil {
-		t.Error("sub-rule 0 should not have invert")
-	}
-	// Sub-rule 1: geoip match with invert
-	rs1, _ := subRules[1]["rule_set"].([]string)
-	if len(rs1) != 1 || rs1[0] != geoipTag {
-		t.Errorf("sub-rule 1 rule_set = %v, want [%s]", rs1, geoipTag)
-	}
-	if subRules[1]["invert"] != true {
-		t.Error("sub-rule 1 should have invert=true")
 	}
 }

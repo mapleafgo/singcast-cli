@@ -32,7 +32,9 @@ func translateRules(_ *RawConfig, t *translation) {
 	// DNS rule generated after translateDNS (Step 6) when t.config.DNS is available.
 }
 
-// generateCNRoutes builds CN routing rules for GFW bypass with DNS pollution guards.
+// generateCNRoutes builds CN routing rules following sing-box best practices.
+// DNS pollution is handled at the DNS layer (direct DNS for Chinese domains),
+// so route rules use simple geosite/geoip matching without logical guards.
 func generateCNRoutes(proxyTag string, t *translation) {
 	// overseas-ai → proxy
 	ensureCustomRuleSetDef("overseas-ai", "https://raw.githubusercontent.com/viewer12/OverseasAI.list/main/rule/Singbox/OverseasAI/OverseasAI.srs", t)
@@ -48,33 +50,17 @@ func generateCNRoutes(proxyTag string, t *translation) {
 		"outbound": proxyTag,
 	})
 
-	// geosite-cn domain resolving to non-CN IP → proxy (DNS pollution guard)
-	ensureRuleSetDef("geosite-cn", "geosite", "cn", t)
-	ensureRuleSetDef("geoip-cn", "geoip", "cn", t)
-	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-		"type": "logical",
-		"mode": "and",
-		"rules": []map[string]any{
-			{"rule_set": []string{"geosite-cn"}},
-			{"rule_set": []string{"geoip-cn"}, "invert": true},
-		},
-		"outbound": proxyTag,
-	})
-
 	// geosite-cn → direct
+	ensureRuleSetDef("geosite-cn", "geosite", "cn", t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 		"rule_set": []string{"geosite-cn"},
 		"outbound": "DIRECT",
 	})
 
-	// Non-!cn domain resolving to CN IP → direct (inverted !cn guards DNS pollution)
+	// geoip-cn → direct
+	ensureRuleSetDef("geoip-cn", "geoip", "cn", t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-		"type": "logical",
-		"mode": "and",
-		"rules": []map[string]any{
-			{"rule_set": []string{"geosite-geolocation-!cn"}, "invert": true},
-			{"rule_set": []string{"geoip-cn"}},
-		},
+		"rule_set": []string{"geoip-cn"},
 		"outbound": "DIRECT",
 	})
 
@@ -87,26 +73,15 @@ func generateCNRoutes(proxyTag string, t *translation) {
 
 // generateCountryRoutes builds non-CN routing rules: local traffic → direct, rest → proxy.
 func generateCountryRoutes(cc string, proxyTag string, t *translation) {
-	// geosite-{cc} domain resolving to non-{cc} IP → proxy (CDN mismatch guard)
-	ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
-	ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
-	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-		"type": "logical",
-		"mode": "and",
-		"rules": []map[string]any{
-			{"rule_set": []string{"geosite-" + cc}},
-			{"rule_set": []string{"geoip-" + cc}, "invert": true},
-		},
-		"outbound": proxyTag,
-	})
-
 	// geosite-{cc} → direct
+	ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 		"rule_set": []string{"geosite-" + cc},
 		"outbound": "DIRECT",
 	})
 
 	// geoip-{cc} → direct
+	ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
 		"rule_set": []string{"geoip-" + cc},
 		"outbound": "DIRECT",
@@ -121,26 +96,18 @@ func generateCountryRoutes(cc string, proxyTag string, t *translation) {
 
 // generateDNSRules creates DNS rules following sing-box best practices.
 // Must be called after translateDNS so DNS servers are available.
+// Proxy server domain resolution is handled by route.default_domain_resolver (deprecated outbound:"any" removed).
 //
-// CN rules (in order):
-//  1. outbound:"any" → remote DNS (resolve proxy server domains)
-//  2. clash_mode:"Direct" → direct DNS
-//  3. geosite-cn → direct DNS (domestic domains)
-//  4. geoip-cn → direct DNS (domestic IPs)
-//  5. query_type:A/AAAA → fakeip (if enabled)
-//
-// Non-CN rules:
+// Rules (in order):
 //  1. clash_mode:"Direct" → direct DNS
-//  2. geosite-{cc} → direct DNS
-//  3. geoip-{cc} → direct DNS
-//  4. query_type:A/AAAA → fakeip (if enabled)
+//  2. geosite-{cc} + geoip-{cc} → direct DNS (domestic)
+//  3. query_type:A/AAAA → fakeip (if enabled)
 func generateDNSRules(cc string, t *translation) {
 	if t.config.DNS == nil || len(t.config.DNS.Servers) == 0 {
 		return
 	}
 
 	directTag := findFirstDirectDNSTag(t)
-	remoteTag := findFirstRemoteDNSTag(t)
 	fakeipTag := findFakeIPTag(t)
 
 	if directTag == "" {
@@ -149,14 +116,6 @@ func generateDNSRules(cc string, t *translation) {
 	}
 
 	var rules []map[string]any
-
-	if cc == "cn" && remoteTag != "" {
-		// Resolve proxy server domains via remote DNS
-		rules = append(rules, map[string]any{
-			"outbound": "any",
-			"server":   remoteTag,
-		})
-	}
 
 	// Direct mode → domestic DNS
 	rules = append(rules, map[string]any{

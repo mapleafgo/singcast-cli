@@ -26,6 +26,7 @@ func registerRuleSet(tag string, rawURL string, t *translation) {
 		"tag":             tag,
 		"format":          "binary",
 		"url":             proxyURL(rawURL, t.opts),
+		"download_detour": "DIRECT",
 		"update_interval": "1d",
 	}
 }

@@ -60,10 +60,9 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// overseas-ai + geolocation-!cn + logical(geosite-cn AND NOT geoip-cn) +
-	// geosite-cn + logical(NOT !cn AND geoip-cn) + domain_suffix:.cn = 11
-	if len(rules) != 11 {
-		t.Fatalf("expected 11 rules for CN, got %d", len(rules))
+	// overseas-ai + geolocation-!cn + geosite-cn + geoip-cn + domain_suffix:.cn = 10
+	if len(rules) != 10 {
+		t.Fatalf("expected 10 rules for CN, got %d", len(rules))
 	}
 
 	// Verify clash_mode:Direct catch-all
@@ -113,24 +112,34 @@ proxy-groups:
 		t.Error("geolocation-!cn rule should have clash_mode=Rule")
 	}
 
-	// Verify domain_suffix:.cn → DIRECT rule (fallback after geo rules)
-	cnSuffixRule := rules[10].(map[string]any)
-	cnDS, _ := cnSuffixRule["domain_suffix"].([]any)
-	if len(cnDS) != 1 || cnDS[0] != ".cn" {
-		t.Errorf("rule 10 domain_suffix = %v, want [.cn]", cnDS)
-	}
-	if cnSuffixRule["outbound"] != "DIRECT" {
-		t.Errorf("rule 10 outbound = %v, want DIRECT", cnSuffixRule["outbound"])
-	}
-
 	// Verify geosite-cn → DIRECT rule
-	geoCNRule := rules[8].(map[string]any)
+	geoCNRule := rules[7].(map[string]any)
 	geoCNRS, _ := geoCNRule["rule_set"].([]any)
 	if len(geoCNRS) != 1 || geoCNRS[0] != "geosite-cn" {
-		t.Errorf("rule 8 rule_set = %v, want [geosite-cn]", geoCNRS)
+		t.Errorf("rule 7 rule_set = %v, want [geosite-cn]", geoCNRS)
 	}
 	if geoCNRule["outbound"] != "DIRECT" {
-		t.Errorf("rule 8 outbound = %v, want DIRECT", geoCNRule["outbound"])
+		t.Errorf("rule 7 outbound = %v, want DIRECT", geoCNRule["outbound"])
+	}
+
+	// Verify geoip-cn → DIRECT rule
+	geoipCNRule := rules[8].(map[string]any)
+	geoipCNRS, _ := geoipCNRule["rule_set"].([]any)
+	if len(geoipCNRS) != 1 || geoipCNRS[0] != "geoip-cn" {
+		t.Errorf("rule 8 rule_set = %v, want [geoip-cn]", geoipCNRS)
+	}
+	if geoipCNRule["outbound"] != "DIRECT" {
+		t.Errorf("rule 8 outbound = %v, want DIRECT", geoipCNRule["outbound"])
+	}
+
+	// Verify domain_suffix:.cn → DIRECT rule (fallback after geo rules)
+	cnSuffixRule := rules[9].(map[string]any)
+	cnDS, _ := cnSuffixRule["domain_suffix"].([]any)
+	if len(cnDS) != 1 || cnDS[0] != ".cn" {
+		t.Errorf("rule 9 domain_suffix = %v, want [.cn]", cnDS)
+	}
+	if cnSuffixRule["outbound"] != "DIRECT" {
+		t.Errorf("rule 9 outbound = %v, want DIRECT", cnSuffixRule["outbound"])
 	}
 
 	// Verify rule_set definitions
@@ -169,10 +178,9 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// logical(geosite-jp AND NOT geoip-jp) + geosite-jp + geoip-jp +
-	// domain_suffix:.jp = 9
-	if len(rules) != 9 {
-		t.Fatalf("expected 9 rules for JP, got %d", len(rules))
+	// geosite-jp + geoip-jp + domain_suffix:.jp = 8
+	if len(rules) != 8 {
+		t.Fatalf("expected 8 rules for JP, got %d", len(rules))
 	}
 
 	// Verify geoip-jp and geosite-jp rule_set definitions exist
