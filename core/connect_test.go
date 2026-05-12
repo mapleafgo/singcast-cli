@@ -129,6 +129,27 @@ func TestConnectivity_Google(t *testing.T) {
 	if aliyunResp.StatusCode != http.StatusOK {
 		t.Errorf("aliyun.com: expected status 200, got %d", aliyunResp.StatusCode)
 	}
+
+	// Test domestic site: flutter-io.cn (.cn suffix) should also route DIRECT.
+	flutterReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://pub-web.flutter-io.cn/", nil)
+	if err != nil {
+		t.Fatalf("create flutter-io.cn request: %v", err)
+	}
+	flutterReq.Header.Set("User-Agent", "singcast-connectivity-test/1.0")
+
+	flutterResp, err := client.Do(flutterReq)
+	if err != nil {
+		t.Fatalf("GET flutter-io.cn through proxy: %v", err)
+	}
+	defer flutterResp.Body.Close()
+
+	flutterBody, _ := io.ReadAll(io.LimitReader(flutterResp.Body, 4096))
+	t.Logf("flutter-io.cn Status: %d", flutterResp.StatusCode)
+	t.Logf("flutter-io.cn Body (first 200 bytes): %.200s", string(flutterBody))
+
+	if flutterResp.StatusCode != http.StatusOK {
+		t.Errorf("flutter-io.cn: expected status 200, got %d", flutterResp.StatusCode)
+	}
 }
 
 // TestConnectivity_SOCKS5 verifies google.com is reachable through SOCKS5.
