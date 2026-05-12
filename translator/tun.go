@@ -100,13 +100,9 @@ func translateTUN(cfg *RawConfig, t *translation) {
 		tunInbound["exclude_package"] = cfg.Tun.ExcludePackage
 	}
 
-	// Route-level: auto-detect-interface (mihomo tun field → sing-box route field).
-	// mihomo defaults auto-detect-interface to false; propagate when explicitly set.
-	// On mobile, service.go force-enables this regardless — VpnService.protect()
-	// requires auto_detect_interface to bypass VPN routing on outbound sockets.
-	if !cfg.Tun.AutoDetectInterface {
-		t.config.Route.AutoDetectInterface = false
-	}
+	// auto_detect_interface is set to true by translateGeneral (correct default
+	// for all platforms including desktop Linux TUN). Do not override it here.
+	// On mobile, service.go also force-enables it for VpnService.protect().
 
 	// Note: dns-hijack is handled by assemble() default rule {"protocol":"dns","action":"hijack-dns"}
 
