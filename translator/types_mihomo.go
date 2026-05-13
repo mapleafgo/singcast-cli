@@ -6,6 +6,8 @@ type RawConfig struct {
 	RedirPort          int                       `yaml:"redir-port" json:"redir-port"`
 	TProxyPort         int                       `yaml:"tproxy-port" json:"tproxy-port"`
 	MixedPort          int                       `yaml:"mixed-port" json:"mixed-port"`
+	// Extension: not a standard mihomo field. Translates to sing-box mixed inbound set_system_proxy.
+	MixedSystemProxy   bool                      `yaml:"mixed-system-proxy" json:"mixed-system-proxy"`
 	Authentication     []string                  `yaml:"authentication" json:"authentication"`
 	AllowLan           bool                      `yaml:"allow-lan" json:"allow-lan"`
 	BindAddress        string                    `yaml:"bind-address" json:"bind-address"`

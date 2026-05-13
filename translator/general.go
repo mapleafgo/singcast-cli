@@ -20,6 +20,9 @@ func translateGeneral(cfg *RawConfig, result *singboxConfig) {
 			"listen":      listen,
 			"listen_port": cfg.MixedPort,
 		}
+		if cfg.MixedSystemProxy {
+			inbound["set_system_proxy"] = true
+		}
 		applyInboundAuth(cfg.Authentication, inbound)
 		result.Inbounds = append(result.Inbounds, inbound)
 	}

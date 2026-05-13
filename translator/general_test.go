@@ -152,6 +152,53 @@ func TestTranslateGeneralFindProcess(t *testing.T) {
 	}
 }
 
+func TestTranslateGeneralMixedSystemProxy(t *testing.T) {
+	tests := []struct {
+		name      string
+		enabled   bool
+		wantMixed bool
+	}{
+		{"enabled", true, true},
+		{"disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &RawConfig{
+				MixedPort:        7890,
+				Port:             8080,
+				MixedSystemProxy: tt.enabled,
+			}
+			result := &singboxConfig{}
+
+			translateGeneral(cfg, result)
+
+			for _, ib := range result.Inbounds {
+				tag := ib["tag"].(string)
+				got, _ := ib["set_system_proxy"].(bool)
+				if tag == "mixed-in" && got != tt.wantMixed {
+					t.Errorf("mixed-in set_system_proxy = %v, want %v", got, tt.wantMixed)
+				}
+				if tag == "http-in" && got {
+					t.Error("http-in should never have set_system_proxy from MixedSystemProxy")
+				}
+			}
+		})
+	}
+}
+
+func TestTranslateGeneralMixedSystemProxyOmitted(t *testing.T) {
+	cfg := &RawConfig{MixedPort: 7890}
+	result := &singboxConfig{}
+
+	translateGeneral(cfg, result)
+
+	ib := result.Inbounds[0]
+	if _, ok := ib["set_system_proxy"]; ok {
+		t.Error("set_system_proxy should be absent when MixedSystemProxy is false")
+	}
+}
+
 func TestTranslateGeneralInterface(t *testing.T) {
 	cfg := &RawConfig{
 		Interface:   "eth0",
