@@ -1,6 +1,6 @@
 # API Reference
 
-cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **Mobile** (gomobile). Both layers wrap the same core runtime.
+Singcast exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **Mobile** (gomobile). Both layers wrap the same core runtime powered by [sing-box](https://github.com/SagerNet/sing-box), with built-in Clash Meta (Mihomo) YAML to sing-box JSON translation.
 
 ## Overview
 
@@ -8,7 +8,7 @@ cff-core exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 |------------|---------|--------|
 | Service lifecycle | CoreInit / Start / Stop / Destroy | Init / Start / Stop / Destroy |
 | State query | CoreQueryState | State |
-| Config management | CheckConfig | CheckConfig |
+| Config management | CoreCheckConfig | CheckConfig |
 | Proxy control | Select / Test / TestGroup / Mode | Select / Test / TestGroup / Mode |
 | Query API | Query* functions | Query* methods |
 | Connection tracking | Query / Close | Query / Close |
@@ -31,7 +31,7 @@ Exported as C-compatible symbols via `c-shared` build mode. The desktop FFI dire
 | `CoreStartWithContent` | `char* CoreStartWithContent(const char* content, const char* ruleSetProxy)` | Start with Clash YAML or sing-box JSON content |
 | `CoreStop` | `char* CoreStop()` | Stop the service |
 | `CoreDestroy` | `void CoreDestroy()` | Release all resources (terminal) |
-| `CoreQueryState` | `int CoreQueryState()` | Service state: 0=Created, 1=Initialized, 2=Running, 3=Destroyed |
+| `CoreQueryState` | `char* CoreQueryState()` | Service state string: `created`, `initialized`, `starting`, `running`, `destroyed` |
 
 ### Config
 
@@ -43,7 +43,7 @@ Exported as C-compatible symbols via `c-shared` build mode. The desktop FFI dire
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `CoreSetLogLevel` | `void CoreSetLogLevel(int level)` | Set min log level (2=Error .. 6=Trace) |
+| `CoreSetLogLevel` | `void CoreSetLogLevel(int level)` | Set min log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace) |
 
 ### Network
 
@@ -66,7 +66,7 @@ Exported as C-compatible symbols via `c-shared` build mode. The desktop FFI dire
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `CoreQueryProxies` | `char* CoreQueryProxies()` | Proxy groups and nodes |
-| `CoreQueryStats` | `char* CoreQueryStats()` | Traffic + memory snapshot: up/down/connections/memory |
+| `CoreQueryStats` | `char* CoreQueryStats()` | Traffic + memory snapshot |
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
 | `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
 | `CoreQueryRules` | `char* CoreQueryRules()` | Routing rule list |
@@ -125,6 +125,7 @@ Callback signature: `void (*)(int eventType, const char* json)`
 | 1 | URLTest | `""` (empty) |
 | 2 | ModeUpdate | Mode string, e.g. `"rule"` |
 | 3 | ConnEvent | Connection JSON with `event` field (0=New, 1=Update, 2=Closed) |
+| 4 | StateChange | State string, e.g. `"running"` |
 
 Must be set before `CoreStartWithContent`. Persists across restarts.
 
@@ -143,6 +144,7 @@ void onEvent(int eventType, Pointer<Utf8> json) {
     case 1: // URLTest updated
     case 2: // ModeUpdate — str is "rule", "global", or "direct"
     case 3: // ConnEvent — str is connection JSON with "event" field
+    case 4: // StateChange — str is "initialized", "running", etc.
   }
 }
 ```
@@ -162,7 +164,7 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 | `StartWithContent(content, ruleSetProxy string) error` | Start with config |
 | `Stop() error` | Stop service |
 | `Destroy()` | Release resources (terminal) |
-| `State() int32` | Service state: 0=Created, 1=Initialized, 2=Running, 3=Destroyed |
+| `State() string` | Service state: `"created"`, `"initialized"`, `"starting"`, `"running"`, `"destroyed"` |
 
 ### Platform IO
 
@@ -185,7 +187,7 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 
 | Method | Description |
 |--------|-------------|
-| `SetLogLevel(level int32)` | Set min log level (2–6) |
+| `SetLogLevel(level int32)` | Set min log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace) |
 
 ### Network
 
@@ -208,7 +210,7 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 | Method | Description |
 |--------|-------------|
 | `QueryProxies() string` | Proxy groups (JSON) |
-| `QueryStats() string` | Traffic + memory snapshot: up/down/connections/memory |
+| `QueryStats() string` | Traffic + memory snapshot |
 | `QueryConnections() string` | Active connections (JSON) |
 | `QueryMode() string` | Current mode and available modes |
 | `QueryRules() string` | Routing rule list (JSON) |
@@ -250,7 +252,7 @@ A single unified listener delivers all events. Called from background threads. R
 |--------|-----------|
 | `SetOnEvent(l)` | `EventListener.OnEvent(eventType int32, json string)` |
 
-eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent. See the Desktop Event Callback section for payload details.
+eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent, 4=StateChange. See the Desktop Event Callback section for payload details.
 
 ---
 
@@ -333,6 +335,7 @@ On Android VPN, all traffic routes through the TUN interface. Without `SetSocket
 ```json
 [
   {
+    "event": 0,
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "network": "tcp",
     "source": "192.168.1.2:54321",
@@ -346,6 +349,20 @@ On Android VPN, all traffic routes through the TUN interface. Without `SetSocket
   }
 ]
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event` | int32 | Connection event type (ConnEvent only): 0=New, 1=Update, 2=Closed |
+| `id` | string | Connection UUID |
+| `network` | string | Protocol: `tcp` or `udp` |
+| `source` | string | Source address |
+| `destination` | string | Destination address |
+| `domain` | string | Domain name (absent if not resolved) |
+| `outbound` | string | Outbound tag used |
+| `rule` | string | Matched rule (absent if no rule) |
+| `upload` | int64 | Uploaded bytes |
+| `download` | int64 | Downloaded bytes |
+| `start` | string | Start time (RFC3339) |
 
 ### Mode
 
@@ -389,7 +406,7 @@ On Android VPN, all traffic routes through the TUN interface. Without `SetSocket
 ```json
 {
   "Status": 0,
-  "Question": [{ "Name": "example.com.", "Qtype": 1, "Qclass": 1 }],
+  "Question": [{ "name": "example.com.", "qtype": 1, "qclass": 1 }],
   "Answer": [
     { "name": "example.com.", "type": 1, "TTL": 300, "data": "93.184.216.34" }
   ],

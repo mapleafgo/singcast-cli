@@ -1,16 +1,22 @@
-# singcast
+<div align="center">
+  <img src="docs/logo.svg" alt="Singcast" width="120" height="120">
+  <h1>Singcast</h1>
+  <p><strong>Dual-Format Proxy Core — Clash & sing-box Config, sing-box Engine</strong></p>
+</div>
 
-**English** | [中文](README_zh.md)
+<p align="center">
+  <a href="README.md">English</a> | <a href="README_zh.md">中文</a>
+</p>
 
-A lightweight proxy core based on [sing-box](https://github.com/SagerNet/sing-box), with automatic Clash Meta (Mihomo) YAML configuration translation. Provides both CLI and FFI interfaces for integration with any application.
+A lightweight proxy core powered by [sing-box](https://github.com/SagerNet/sing-box). Accepts both **Clash Meta (Mihomo) YAML** and **sing-box JSON** configurations — automatically translating Clash configs at runtime while running everything through the high-performance sing-box engine.
 
 ## Features
 
-- **Config Translation** — Automatically converts Mihomo YAML to sing-box JSON
+- **Clash → sing-box Translation** — Automatically converts Mihomo YAML to sing-box JSON at startup
+- **Native sing-box JSON** — Also accepts sing-box configs directly, no translation needed
 - **Multi-Protocol** — VLESS, VMess, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, SOCKS5, HTTP, AnyTLS
 - **Auto Routing** — GeoIP/GeoSite-based routing with country detection
 - **Multi-Platform** — Linux, macOS, Windows, Android, iOS
-- **FFI** — C-compatible shared library for mobile/desktop integration
 - **Daemon Mode** — Background process with PID file and signal-based reload
 
 ## CLI
@@ -76,63 +82,8 @@ task ffi-ios-arm64
 task all
 ```
 
-Build tags: `with_clash_api,with_utls,with_quic,with_gvisor,with_v2ray_api`
-
-## FFI Interface
-
-Desktop (c-shared) and Mobile (gomobile) FFI interfaces for integration with any application.
-
-### Capabilities
-
-- **Service lifecycle** — init, start, stop, destroy with hot-reload support
-- **Config management** — validate, reload TUN, VPN split-tunneling
-- **Proxy control** — node selection, URL test delay, routing mode switch
-- **Query API** — proxies, traffic, logs, connections, memory stats via JSON
-- **Platform IO** — TUN fd, socket protector, WiFi state (mobile)
-- **Resource monitoring** — memory stats, goroutines, OOM protection
-
-### Quick Start (Desktop)
-
-```c
-#include "cff_core.h"
-
-CoreInit("{\"home_dir\":\"/tmp/singcast\"}");
-CoreStartWithContent(yaml_content, "");
-
-// Query state
-char* proxies = CoreQueryProxies();
-CoreFreeString(proxies);
-
-CoreStop();
-CoreDestroy();
-```
-
-### Quick Start (Mobile)
-
-**Android (Kotlin):**
-```kotlin
-val singcast = Singcast()
-singcast.init("""{"home_dir":"$homeDir"}""}")
-
-val fd = vpnService.Builder()
-    .addAddress("172.18.0.1", 30)
-    .establish().fileDescriptor
-singcast.setTunFd(fd.toInt())
-singcast.startWithContent(yamlContent, "")
-```
-
-**iOS (Swift):**
-```swift
-let singcast = Singcast()
-singcast.init("{\"home_dir\":\"\(homeDir)\"}")
-
-let fd = tunnelFileDescriptor  // from NetworkExtension
-singcast.setTunFd(fd)
-singcast.startWithContent(yamlContent, "")
-```
-
-Full API reference: [docs/api-reference.md](docs/api-reference.md)
+Build tags: `with_clash_api,with_utls,with_quic,with_gvisor`
 
 ## License
 
-MIT
+GPL-3.0
