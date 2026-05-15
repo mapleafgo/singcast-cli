@@ -119,6 +119,7 @@ type runningState struct {
 	instance      *box.Box
 	boxCtx        context.Context
 	currentConfig string
+	startedAt     int64
 }
 
 type Service struct {
@@ -290,6 +291,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		instance:      inst,
 		boxCtx:        ctx,
 		currentConfig: jsonContent,
+		startedAt:     time.Now().UnixMilli(),
 	})
 	if !s.casState(StateStarting, StateRunning) {
 		s.running.Swap(nil)
@@ -419,11 +421,16 @@ func (s *Service) QueryStats() string {
 		return `{"up":0,"down":0,"connections":0,"memory":0}`
 	}
 	snap := srv.TrafficManager().Snapshot()
+	var startedAt int64
+	if rs := s.running.Load(); rs != nil {
+		startedAt = rs.startedAt
+	}
 	data, _ := json.Marshal(map[string]any{
 		"up":          snap.Upload,
 		"down":        snap.Download,
 		"connections": len(snap.Connections),
 		"memory":      snap.Memory,
+		"started_at":  startedAt,
 	})
 	return string(data)
 }
