@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/miekg/dns"
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
@@ -629,20 +628,6 @@ func (s *Service) FlushFakeIP() error {
 	return cf.FakeIPReset()
 }
 
-type DNSAnswer struct {
-	Name string `json:"name"`
-	Type uint16 `json:"type"`
-	TTL  uint32 `json:"TTL"`
-	Data string `json:"data"`
-}
-
-type DNSQueryResult struct {
-	Status   uint16         `json:"Status"`
-	Question []dns.Question `json:"Question"`
-	Answer   []DNSAnswer    `json:"Answer"`
-	Server   string         `json:"Server"`
-}
-
 type connEntry struct {
 	Event       int32  `json:"event"`
 	ID          string `json:"id"`
@@ -661,74 +646,6 @@ type ruleEntry struct {
 	Type    string `json:"type"`
 	Payload string `json:"payload"`
 	Proxy   string `json:"proxy"`
-}
-
-func (s *Service) QueryDNS(name string, qType uint16) string {
-	rs := s.running.Load()
-	if rs == nil {
-		return `{"Status":2,"Server":"","Answer":null}`
-	}
-	dnsRouter := service.FromContext[adapter.DNSRouter](rs.boxCtx)
-	if dnsRouter == nil {
-		return `{"Status":2,"Server":"","Answer":null}`
-	}
-
-	msg := dns.Msg{}
-	msg.SetQuestion(dns.Fqdn(name), qType)
-	msg.RecursionDesired = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	resp, err := dnsRouter.Exchange(ctx, &msg, adapter.DNSQueryOptions{})
-	if err != nil {
-		data, _ := json.Marshal(DNSQueryResult{Status: 2, Server: "internal"})
-		return string(data)
-	}
-
-	answers := make([]DNSAnswer, len(resp.Answer))
-	for i, rr := range resp.Answer {
-		answers[i] = DNSAnswer{
-			Name: rr.Header().Name,
-			Type: rr.Header().Rrtype,
-			TTL:  rr.Header().Ttl,
-			Data: dnsFieldData(rr),
-		}
-	}
-
-	data, _ := json.Marshal(DNSQueryResult{
-		Status:   uint16(resp.Rcode),
-		Question: msg.Question,
-		Answer:   answers,
-		Server:   "internal",
-	})
-	return string(data)
-}
-
-func dnsFieldData(rr dns.RR) string {
-	switch v := rr.(type) {
-	case *dns.A:
-		return v.A.String()
-	case *dns.AAAA:
-		return v.AAAA.String()
-	case *dns.CNAME:
-		return v.Target
-	case *dns.MX:
-		return fmt.Sprintf("%d %s", v.Preference, v.Mx)
-	case *dns.TXT:
-		if len(v.Txt) > 0 {
-			return v.Txt[0]
-		}
-		return ""
-	case *dns.NS:
-		return v.Ns
-	case *dns.PTR:
-		return v.Ptr
-	case *dns.SRV:
-		return fmt.Sprintf("%d %d %d %s", v.Priority, v.Weight, v.Port, v.Target)
-	default:
-		return ""
-	}
 }
 
 // FlushDNSCache clears the internal DNS query cache.

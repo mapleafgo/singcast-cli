@@ -136,11 +136,6 @@ func CoreQueryRules() *C.char { return cString(svc.QueryRules()) }
 //export CoreFlushFakeIP
 func CoreFlushFakeIP() *C.char { return errorString(svc.FlushFakeIP()) }
 
-//export CoreQueryDNS
-func CoreQueryDNS(name *C.char, qType C.int) *C.char {
-	return cString(svc.QueryDNS(goString(name), uint16(qType)))
-}
-
 //export CoreFlushDNSCache
 func CoreFlushDNSCache() *C.char { return errorString(svc.FlushDNSCache()) }
 

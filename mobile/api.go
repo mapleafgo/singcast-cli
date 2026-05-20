@@ -162,9 +162,6 @@ func (s *Singcast) QueryRules() string { return s.svc.QueryRules() }
 // FlushFakeIP clears the FakeIP address cache.
 func (s *Singcast) FlushFakeIP() error { return s.svc.FlushFakeIP() }
 
-// QueryDNS performs a DNS query and returns the result as JSON.
-func (s *Singcast) QueryDNS(name string, qType uint16) string { return s.svc.QueryDNS(name, qType) }
-
 // FlushDNSCache clears the internal DNS query cache.
 func (s *Singcast) FlushDNSCache() error { return s.svc.FlushDNSCache() }
 
