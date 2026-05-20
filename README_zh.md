@@ -16,7 +16,6 @@
 - **原生 sing-box JSON** — 也直接接受 sing-box 配置，无需翻译
 - **多协议** — VLESS、VMess、Shadowsocks、Trojan、Hysteria2、TUIC、WireGuard、SOCKS5、HTTP、AnyTLS
 - **自动路由** — 基于 GeoIP/GeoSite 的分流，自动检测所在国家
-- **多平台** — Linux、macOS、Windows、Android、iOS
 - **守护进程** — 后台运行，支持 PID 文件和信号重载
 
 ## 命令行

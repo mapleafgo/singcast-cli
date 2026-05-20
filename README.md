@@ -16,7 +16,6 @@ A lightweight proxy core powered by [sing-box](https://github.com/SagerNet/sing-
 - **Native sing-box JSON** — Also accepts sing-box configs directly, no translation needed
 - **Multi-Protocol** — VLESS, VMess, Shadowsocks, Trojan, Hysteria2, TUIC, WireGuard, SOCKS5, HTTP, AnyTLS
 - **Auto Routing** — GeoIP/GeoSite-based routing with country detection
-- **Multi-Platform** — Linux, macOS, Windows, Android, iOS
 - **Daemon Mode** — Background process with PID file and signal-based reload
 
 ## CLI

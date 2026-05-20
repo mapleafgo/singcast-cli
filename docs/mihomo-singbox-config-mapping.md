@@ -1,6 +1,6 @@
 # mihomo ↔ sing-box 配置映射表
 
-> 版本基准：**mihomo v1.19.24** (2026-04-20) ↔ **sing-box v1.13.11** (2026-04-23)
+> 版本基准：**mihomo v1.19.24** (2026-04-20) ↔ **sing-box v1.13.12** (2026-05-08)
 >
 > 本文档用于指导 singcast 配置翻译器的开发。翻译方向：mihomo YAML → sing-box JSON。
 
@@ -29,7 +29,7 @@
 | `keep-alive-interval: 30` | dial fields `tcp_keep_alive_interval: "30s"` | 需加单位 |
 | `find-process-mode: strict` | `route.find_process: true/false` | always/strict→true, off→false |
 | `geodata-mode: true` | (sing-box 使用 rule_set binary) | 影响规则格式选择 |
-| `sniffer.enable: true` | route rules `action: "sniff"` | sing-box 通过路由规则控制嗅探 |
+| `sniffer.*` | route rules `action: "sniff"` + `action: "hijack-dns"` | **独立实现**：忽略 mihomo sniffer 配置，无条件启用嗅探和 DNS 劫持（见节 T.1） |
 
 **注意**：mihomo 把代理端口放在顶层，sing-box 放在 `inbounds` 数组中。翻译时根据 mihomo 配置的端口生成对应的 inbound 列表。
 
@@ -298,7 +298,7 @@ mihomo relay 已弃用（建议用 dialer-proxy）。sing-box 无对应。跳过
 | mihomo | sing-box | 说明 |
 |---|---|---|
 | `DIRECT` | `{type: "direct", tag: "DIRECT"}` | 必须显式定义 |
-| `REJECT` | `{type: "block", tag: "REJECT"}` | 也可用 route rule `action:"reject"`，但定义为 outbound 更便于翻译 |
+| `REJECT` | route rule `action: "reject"` | sing-box 1.13.0 移除了 `block` outbound，改为 route rule action |
 
 ---
 
@@ -415,27 +415,22 @@ sing-box 使用 `dns.servers` + `dns.rules` 的路由模式。
 | `direct-nameserver: [system]` | `{type:"local", tag:"dns-local"}` | 本地解析 |
 | `proxy-server-nameserver: [...]` | DNS rule 中匹配代理域名后路由到该服务器 | 通过规则路由 |
 
-### E.3 DNS 策略路由
+### E.3 DNS 策略路由（独立实现）
 
-mihomo 的 `fallback-filter` + `nameserver-policy` 需要翻译为 sing-box 的 `dns.rules`：
+> **注意**：mihomo 的 `nameserver-policy` 是**解析但不翻译**的。翻译器在 `autoroute.go` 的 `generateDNSRules()` 中独立实现了等效功能——基于 geosite/geoip rule_set 自动生成 DNS 路由规则，而非翻译用户的 nameserver-policy 映射（见节 T.2）。
+
+实际生成的 DNS 规则策略：
+- `clash_mode: "Direct"` → 国内 DNS
+- 国内 geosite/geoip → 国内 DNS
+- A/AAAA 查询 → FakeIP 服务器（如启用）
+- 其他 → DNS final 服务器
 
 ```
-mihomo:
-  fallback-filter:
-    geoip: true
-    geoip-code: CN
-    geosite: [gfw]
-  nameserver-policy:
-    '+.cn': [https://doh.pub/dns-query]
-
-sing-box:
-  dns.rules: [
-    # nameserver-policy: .cn 域名用 doh-pub
-    {domain_suffix: [".cn"], server: "doh-pub"},
-    # fallback-filter: gfw 列表中的域名用 fallback
-    {rule_set: ["geosite-gfw"], server: "fallback-1"},
-    # fallback-filter: 非 CN IP 用 fallback (需 rule_set)
-    {rule_set: ["geoip-!cn"], server: "fallback-1"},
+sing-box dns.rules（自动生成）:
+  [
+    {clash_mode: "Direct", server: "dns-local"},
+    {rule_set: ["geosite-cn", "geoip-cn"], server: "dns-local"},
+    {query_type: ["A", "AAAA"], server: "fakeip"},
   ]
 ```
 
@@ -483,9 +478,12 @@ sing-box:
     "timestamp": true
   },
   "dns": {
-    "servers": [],
+    "servers": [
+      {"type": "udp", "tag": "def-0", "server": "223.5.5.5"},
+      {"type": "https", "tag": "ns-0", "server": "dns.google", "detour": "PROXY"}
+    ],
     "rules": [],
-    "final": "",
+    "final": "ns-0",
     "strategy": "prefer_ipv4"
   },
   "inbounds": [
@@ -498,16 +496,22 @@ sing-box:
   ],
   "outbounds": [
     {"type": "direct", "tag": "DIRECT"},
-    {"type": "block", "tag": "REJECT"},
-    {"type": "dns", "tag": "dns-out"},
     {"type": "selector", "tag": "...", "outbounds": []},
     {"type": "vless", "tag": "...", ...}
   ],
   "route": {
-    "rules": [],
-    "rule_set": [],
-    "final": "DIRECT",
+    "rules": [
+      {"action": "sniff"},
+      {"protocol": "dns", "action": "hijack-dns"},
+      {"clash_mode": "Direct", "outbound": "DIRECT", "action": "route"},
+      {"clash_mode": "Global", "outbound": "PROXY", "action": "route"}
+    ],
+    "rule_set": [
+      {"type": "remote", "tag": "geosite-cn", "format": "binary", "url": "...", "download_detour": "DIRECT", "update_interval": "1d"}
+    ],
+    "final": "PROXY",
     "auto_detect_interface": true,
+    "default_domain_resolver": "def-0",
     "find_process": true
   },
   "experimental": {
@@ -1144,3 +1148,146 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 | `exclude-type` | 翻译时过滤 | 按类型排除 |
 | `payload` | 直接解析 | inline 内容 |
 | `header` | 用于下载请求 | HTTP 头 |
+
+---
+
+## T. 独立实现功能（非翻译）
+
+以下功能**不是从 mihomo 配置翻译而来**，而是 singcast 根据运行环境自动生成。这些功能的 mihomo 对应配置即使存在也会被忽略。
+
+### T.1 嗅探器（Sniffer）
+
+**mihomo 配置**：`sniffer.enable`、`sniffer.sniffing`、`sniffer.skip-dest`、`sniffer.force`、`sniffer.parse-pure-ip`、`sniffer.force-dns-mapping`
+
+**singcast 处理**：完全忽略 mihomo 的 sniffer 配置，在 `assemble()` 中无条件注入以下 route rules：
+
+```json
+[
+  {"action": "sniff"},
+  {"protocol": "dns", "action": "hijack-dns"}
+]
+```
+
+- `action: "sniff"` — 检测 HTTP Host、TLS SNI、QUIC SNI，提取真实域名用于路由匹配（geosite、domain 规则）
+- `action: "hijack-dns"` — 将所有 DNS 查询劫持到 sing-box 的 DNS 管线，由 `generateDNSRules()` 生成的 DNS 规则根据 clash_mode 和 geosite/geoip 路由到正确的 DNS 服务器
+
+**代码位置**：`translator/assemble.go`
+
+### T.2 DNS 策略路由（nameserver-policy）
+
+**mihomo 配置**：`nameserver-policy`（将域名模式映射到指定 DNS 服务器）
+
+**singcast 处理**：`RawConfig.NameServerPolicy` 被解析但**不翻译**。翻译器在 `autoroute.go` 的 `generateDNSRules()` 中独立实现等效功能——基于检测到的国家代码自动生成 geo-based DNS 路由规则：
+
+| 条件 | DNS 服务器 |
+|------|-----------|
+| `clash_mode: "Direct"` | 国内 DNS（local 类型） |
+| 国内 geosite + geoip | 国内 DNS（local 类型） |
+| A/AAAA 查询 | FakeIP 服务器（如启用） |
+| 其他 | DNS final 服务器 |
+
+这与 mihomo 的 nameserver-policy 不同：mihomo 由用户显式映射模式到服务器，singcast 基于 geosite/geoip 自动生成。
+
+**代码位置**：`translator/autoroute.go`
+
+### T.3 自动路由规则
+
+**mihomo 配置**：mihomo 的 `rules` 由用户手动指定
+
+**singcast 处理**：`autoroute.go` 的 `translateRules()` 基于检测到的国家代码自动生成路由规则，与用户定义的 rules 合并：
+
+**CN 用户**（`generateCNRoutes`）：
+
+| 规则 | 出站 |
+|------|------|
+| 私有 IP | DIRECT |
+| overseas-ai rule_set | 代理组 |
+| geosite-geolocation-!cn | 代理组 |
+| geosite-cn | DIRECT |
+| geoip-cn | DIRECT |
+| .cn 域名后缀 | DIRECT |
+
+**非 CN 用户**（`generateCountryRoutes`）：
+
+| 规则 | 出站 |
+|------|------|
+| 私有 IP | DIRECT |
+| geosite-{cc} | DIRECT |
+| geoip-{cc} | DIRECT |
+| .{cc} 域名后缀 | DIRECT |
+
+**代码位置**：`translator/autoroute.go`
+
+### T.4 Clash 模式条件
+
+**mihomo 配置**：`mode: rule/global/direct` 控制整体行为
+
+**singcast 处理**：`assemble()` 中的 `addClashModeCondition()` 为所有有 outbound 的 route rule 自动添加 `clash_mode: "Rule"` 条件，并在路由最前面插入 Direct/Global 兜底规则：
+
+```json
+[
+  {"clash_mode": "Direct", "outbound": "DIRECT", "action": "route"},
+  {"clash_mode": "Global", "outbound": "PROXY", "action": "route"}
+]
+```
+
+这确保 Rule 模式下用户的规则生效，切换到 Direct/Global 时立即接管所有流量。
+
+**代码位置**：`translator/assemble.go`
+
+### T.5 REJECT 处理
+
+**mihomo 配置**：`REJECT` 作为特殊 outbound
+
+**sing-box 变更**：sing-box 1.13.0 移除了 `block` outbound 类型
+
+**singcast 处理**：`assemble()` 中的 `convertRejectActions()` 将所有 `outbound: "REJECT"` 替换为 `action: "reject"` route rule action，不再生成 `{type: "block", tag: "REJECT"}` outbound。
+
+**代码位置**：`translator/assemble.go`
+
+### T.6 DNS 服务器 detour 自动设置
+
+**mihomo 行为**：DNS 服务器（nameserver/fallback）直连
+
+**singcast 处理**：`translateDNS()` 中自动为 nameserver/fallback 服务器设置 `detour` 字段指向第一个代理组。原因：在 GFW 环境下，外国 DoH/DoT 服务器（Cloudflare、Google）必须通过代理才能访问，否则 DNS 解析失败。
+
+```json
+// nameserver/fallback DNS 服务器自动添加 detour
+{"type": "https", "tag": "ns-0", "server": "dns.google", "detour": "PROXY"}
+```
+
+default-nameserver 和 proxy-server-nameserver 不设置 detour（它们使用国内 IP 直连 DNS）。
+
+**代码位置**：`translator/dns.go`
+
+### T.7 DNS 域名解析器（default_domain_resolver）
+
+**mihomo 行为**：`default-nameserver` 隐式用于解析其他 DNS 服务器的域名
+
+**singcast 处理**：sing-box 要求显式设置 `route.default_domain_resolver` 解决 DNS 鸡生蛋问题（代理服务器域名需要 DNS 解析，但 DNS 服务器本身可能也是域名）。翻译器自动从 default-nameserver 中优先选择 IP-based UDP 类型服务器作为 `default_domain_resolver`，同时为所有域名地址的 DNS 服务器设置 `domain_resolver` 字段避免循环依赖。
+
+```
+dns.servers[].server = "dns.google"  (域名)
+dns.servers[].domain_resolver = "def-0"  (指向 IP-based UDP 服务器)
+
+route.default_domain_resolver = "def-0"
+```
+
+**代码位置**：`translator/dns.go`
+
+### T.8 rule_set 默认参数注入
+
+**mihomo 行为**：rule-provider 各自配置 path、interval 等
+
+**singcast 处理**：`rule.go` 的 `registerRuleSet()` 为所有自动生成的 rule_set 定义统一注入默认参数：
+
+| 字段 | 值 | 说明 |
+|------|-----|------|
+| `download_detour` | `"DIRECT"` | 规则集下载走直连，避免通过不可达的代理形成环路 |
+| `update_interval` | `"1d"` | 默认每天更新一次 |
+| `format` | `"binary"` | 使用 sing-box binary 格式（更高效） |
+| `type` | `"remote"` | 所有自动注册的 rule_set 都是远程类型 |
+
+`download_detour: "DIRECT"` 是关键安全措施——如果 rule_set 下载经过代理，而代理服务器本身需要 rule_set 规则才能正确路由，就会形成循环依赖。用户在 GFW 环境下应使用 `--rule-set-proxy` 进行 URL 级别代理（如 gh-proxy.org 镜像），而非让下载走代理 outbound。
+
+**代码位置**：`translator/rule.go`

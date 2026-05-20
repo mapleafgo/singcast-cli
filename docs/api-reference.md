@@ -12,7 +12,7 @@ Singcast exposes a dual-layer FFI interface: **Desktop** (c-shared C ABI) and **
 | Proxy control | Select / Test / TestGroup / Mode | Select / Test / TestGroup / Mode |
 | Query API | Query* functions | Query* methods |
 | Connection tracking | Query / Close | Query / Close |
-| Rules / DNS / Cache | QueryRules / QueryDNS / Flush* | QueryRules / QueryDNS / Flush* |
+| Rules / Cache | QueryRules / Flush* | QueryRules / Flush* |
 | Event callbacks | CoreSetEventCallback | SetOnEvent |
 | Platform IO (TUN, WiFi, DNS) | — | Full (TUN fd, SocketProtector, WiFi) |
 | Memory management | SetMemoryLimit / TriggerGC | SetMemoryLimit / TriggerGC |
@@ -70,7 +70,6 @@ Exported as C-compatible symbols via `c-shared` build mode. The desktop FFI dire
 | `CoreQueryConnections` | `char* CoreQueryConnections()` | Active connections |
 | `CoreQueryMode` | `char* CoreQueryMode()` | Current mode and available modes |
 | `CoreQueryRules` | `char* CoreQueryRules()` | Routing rule list |
-| `CoreQueryDNS` | `char* CoreQueryDNS(const char* name, int qType)` | DNS query result |
 
 ### Connection Management
 
@@ -214,7 +213,6 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 | `QueryConnections() string` | Active connections (JSON) |
 | `QueryMode() string` | Current mode and available modes |
 | `QueryRules() string` | Routing rule list (JSON) |
-| `QueryDNS(name string, qType uint16) string` | DNS query result (JSON) |
 
 ### Connection Management
 
@@ -398,19 +396,6 @@ On Android VPN, all traffic routes through the TUN interface. Without `SetSocket
   "rules": [
     { "type": "default", "payload": "...", "proxy": "direct" }
   ]
-}
-```
-
-### DNS Query Result
-
-```json
-{
-  "Status": 0,
-  "Question": [{ "name": "example.com.", "qtype": 1, "qclass": 1 }],
-  "Answer": [
-    { "name": "example.com.", "type": 1, "TTL": 300, "data": "93.184.216.34" }
-  ],
-  "Server": "internal"
 }
 ```
 
