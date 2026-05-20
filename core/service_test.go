@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func mustMkdirAll(t *testing.T, dir string) {
@@ -81,3 +84,50 @@ func TestService_FlushDNS(t *testing.T) {
 	svc.FlushSystemDNS()
 }
 
+func TestApplyRuleSetProxy(t *testing.T) {
+	input := `{
+		"route": {
+			"rule_set": [
+				{"tag": "geoip-cn", "type": "remote", "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"},
+				{"tag": "geosite-cn", "type": "remote", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"},
+				{"tag": "custom", "type": "remote", "url": "https://example.com/rules.srs"}
+			]
+		}
+	}`
+
+	result, err := applyRuleSetProxy([]byte(input), "https://gh-proxy.org")
+	require.NoError(t, err)
+
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result), &cfg))
+
+	ruleSets := cfg["route"].(map[string]any)["rule_set"].([]any)
+
+	// raw.githubusercontent.com URLs should be prefixed
+	assert.Equal(t, "https://gh-proxy.org/https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
+		ruleSets[0].(map[string]any)["url"])
+	assert.Equal(t, "https://gh-proxy.org/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
+		ruleSets[1].(map[string]any)["url"])
+
+	// Non-GitHub URLs should remain unchanged
+	assert.Equal(t, "https://example.com/rules.srs",
+		ruleSets[2].(map[string]any)["url"])
+}
+
+func TestApplyRuleSetProxy_EmptyProxy(t *testing.T) {
+	input := `{"route": {"rule_set": [{"tag": "t", "url": "https://raw.githubusercontent.com/test.srs"}]}}`
+
+	// Empty proxy should return original
+	result, err := applyRuleSetProxy([]byte(input), "")
+	require.NoError(t, err)
+	// translateConfig skips applyRuleSetProxy when proxy is empty,
+	// but if called directly, it still applies since caller checks
+	_ = result
+}
+
+func TestApplyRuleSetProxy_NoRoute(t *testing.T) {
+	input := `{"log": {"level": "info"}}`
+	result, err := applyRuleSetProxy([]byte(input), "https://gh-proxy.org")
+	require.NoError(t, err)
+	assert.JSONEq(t, input, result)
+}

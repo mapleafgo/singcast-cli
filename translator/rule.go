@@ -2,16 +2,22 @@ package translator
 
 import "strings"
 
-const rawGitHubPrefix = "https://raw.githubusercontent.com/"
+const RawGitHubPrefix = "https://raw.githubusercontent.com/"
 
-// proxyURL prepends the proxy prefix for raw.githubusercontent.com URLs.
+// ProxyURL prepends the proxy prefix for raw.githubusercontent.com URLs.
+func ProxyURL(rawURL, proxy string) string {
+	if prefix := strings.TrimRight(proxy, "/"); prefix != "" {
+		if strings.HasPrefix(rawURL, RawGitHubPrefix) {
+			return prefix + "/" + rawURL
+		}
+	}
+	return rawURL
+}
+
+// proxyURL wraps ProxyURL with Options for internal use.
 func proxyURL(rawURL string, opts *Options) string {
 	if opts != nil {
-		if prefix := strings.TrimRight(opts.RuleSetURLPrefix, "/"); prefix != "" {
-			if strings.HasPrefix(rawURL, rawGitHubPrefix) {
-				return prefix + "/" + rawURL
-			}
-		}
+		return ProxyURL(rawURL, opts.RuleSetURLPrefix)
 	}
 	return rawURL
 }
@@ -35,9 +41,9 @@ func registerRuleSet(tag string, rawURL string, t *translation) {
 func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 	var base string
 	if geoType == "geoip" {
-		base = rawGitHubPrefix + "SagerNet/sing-geoip/rule-set/geoip-" + strings.ToLower(name) + ".srs"
+		base = RawGitHubPrefix + "SagerNet/sing-geoip/rule-set/geoip-" + strings.ToLower(name) + ".srs"
 	} else {
-		base = rawGitHubPrefix + "SagerNet/sing-geosite/rule-set/geosite-" + strings.ToLower(name) + ".srs"
+		base = RawGitHubPrefix + "SagerNet/sing-geosite/rule-set/geosite-" + strings.ToLower(name) + ".srs"
 	}
 	registerRuleSet(tag, base, t)
 }

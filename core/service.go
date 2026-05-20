@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,7 +23,7 @@ import (
 	singboxlog "github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group"
-	"github.com/sagernet/sing/common/json"
+	singjson "github.com/sagernet/sing/common/json"
 	"github.com/sagernet/sing/common/observable"
 	"github.com/sagernet/sing/service"
 
@@ -75,7 +76,7 @@ func CheckConfig(content string) error {
 		data = []byte(result)
 	}
 	ctx := include.Context(context.Background())
-	_, err := json.UnmarshalExtendedContext[option.Options](ctx, data)
+	_, err := singjson.UnmarshalExtendedContext[option.Options](ctx, data)
 	return err
 }
 
@@ -218,7 +219,41 @@ func (s *Service) translateConfig(data []byte, format translator.Format, ruleSet
 		}
 		return result, nil
 	}
+	if ruleSetProxy != "" {
+		return applyRuleSetProxy(data, ruleSetProxy)
+	}
 	return string(data), nil
+}
+
+// applyRuleSetProxy prepends the proxy prefix to raw.githubusercontent.com URLs
+// in sing-box JSON route.rule_set[].url, using translator.ProxyURL.
+func applyRuleSetProxy(data []byte, proxy string) (string, error) {
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		return "", fmt.Errorf("parse json: %w", err)
+	}
+	route, _ := root["route"].(map[string]any)
+	if route == nil {
+		return string(data), nil
+	}
+	ruleSets, _ := route["rule_set"].([]any)
+	if ruleSets == nil {
+		return string(data), nil
+	}
+	for _, rs := range ruleSets {
+		def, _ := rs.(map[string]any)
+		if def == nil {
+			continue
+		}
+		if url, _ := def["url"].(string); url != "" {
+			def["url"] = translator.ProxyURL(url, proxy)
+		}
+	}
+	out, err := json.Marshal(root)
+	if err != nil {
+		return "", fmt.Errorf("marshal json: %w", err)
+	}
+	return string(out), nil
 }
 
 func (s *Service) startWithJSON(jsonContent string) error {
@@ -244,7 +279,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		ctx = service.ContextWith[adapter.PlatformInterface](ctx, s.platform)
 	}
 
-	options, err := json.UnmarshalExtendedContext[option.Options](ctx, []byte(jsonContent))
+	options, err := singjson.UnmarshalExtendedContext[option.Options](ctx, []byte(jsonContent))
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
