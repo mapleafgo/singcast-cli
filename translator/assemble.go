@@ -18,7 +18,14 @@ func assemble(t *translation) {
 	// Add clash_mode condition to all outbound rules so mode switching works
 	addClashModeCondition(t)
 
-	// Inject default route rules at the beginning (sniff + DNS hijack, always active)
+	// Inject default route rules at the beginning (sniff + DNS hijack, always active).
+	//
+	// Note: mihomo's RawSniffer config (enable, sniff, skip-dest, force, parse-pure-ip,
+	// force-dns-mapping) is intentionally NOT translated. Instead, sniffing is always enabled
+	// unconditionally. The sniff action detects HTTP Host, TLS SNI, and QUIC SNI to extract
+	// real domain names for route matching (geosite, domain rules). DNS hijack captures all
+	// DNS queries into sing-box's DNS pipeline, where generateDNSRules in autoroute.go
+	// routes them to the correct DNS server based on clash_mode and geosite/geoip matching.
 	defaultRules := []map[string]any{
 		{"action": "sniff"},
 		{"protocol": "dns", "action": "hijack-dns"},

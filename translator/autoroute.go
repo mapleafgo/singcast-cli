@@ -94,14 +94,14 @@ func generateCountryRoutes(cc string, proxyTag string, t *translation) {
 	})
 }
 
-// generateDNSRules creates DNS rules following sing-box best practices.
-// Must be called after translateDNS so DNS servers are available.
-// Proxy server domain resolution is handled by route.default_domain_resolver (deprecated outbound:"any" removed).
+// generateDNSRules implements singcast's equivalent of mihomo's nameserver-policy.
+// Instead of translating the user's nameserver-policy map (which is parsed but intentionally
+// ignored), we generate geo-based DNS routing rules using sing-box rule_set.
 //
-// Rules (in order):
-//  1. clash_mode:"Direct" → direct DNS
-//  2. geosite-{cc} + geoip-{cc} → direct DNS (domestic)
-//  3. query_type:A/AAAA → fakeip (if enabled)
+// Must be called after translateDNS so DNS servers are available.
+//
+// Strategy: domestic geosite/geoip → direct DNS, everything else → fallback/fakeip.
+// This differs from mihomo where users explicitly map patterns to servers.
 func generateDNSRules(cc string, t *translation) {
 	if t.config.DNS == nil || len(t.config.DNS.Servers) == 0 {
 		return

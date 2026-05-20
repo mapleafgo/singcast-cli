@@ -10,6 +10,12 @@ import (
 // This is the most complex translator due to the fundamentally different architectures:
 // mihomo uses nameserver+fallback+fallback-filter+nameserver-policy (layered model),
 // sing-box uses servers+rules (routing model).
+//
+// Note: mihomo's nameserver-policy is NOT translated here. Instead, the equivalent
+// functionality is independently implemented in autoroute.go's generateDNSRules(),
+// which generates geo-based DNS routing rules (domestic → direct DNS, foreign → fallback)
+// using sing-box's rule_set mechanism. The RawConfig.NameServerPolicy field is parsed
+// but intentionally ignored — see autoroute.go for the implementation.
 func translateDNS(cfg *RawConfig, t *translation) {
 	dns := cfg.DNS
 	if !dns.Enable {
