@@ -83,7 +83,7 @@ type RawTun struct {
 	Stack                  string   `yaml:"stack" json:"stack"`
 	DNSHijack              []string `yaml:"dns-hijack" json:"dns-hijack"`
 	AutoRoute              bool     `yaml:"auto-route" json:"auto-route"`
-	AutoDetectInterface    bool     `yaml:"auto-detect-interface" json:"auto-detect-interface"`
+	AutoDetectInterface    *bool    `yaml:"auto-detect-interface" json:"auto-detect-interface"`
 	AutoRedirect           bool     `yaml:"auto-redirect" json:"auto-redirect"`
 	MTU                    uint32   `yaml:"mtu" json:"mtu"`
 	Inet4Address           string   `yaml:"inet4-address" json:"inet4-address"`

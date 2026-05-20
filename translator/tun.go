@@ -100,9 +100,12 @@ func translateTUN(cfg *RawConfig, t *translation) {
 		tunInbound["exclude_package"] = cfg.Tun.ExcludePackage
 	}
 
-	// auto_detect_interface is set to true by translateGeneral (correct default
-	// for all platforms including desktop Linux TUN). Do not override it here.
+	// auto_detect_interface: sing-box route-level setting, mapped from Mihomo tun.auto-detect-interface.
+	// general.go defaults to true; override here only when user explicitly sets it.
 	// On mobile, service.go also force-enables it for VpnService.protect().
+	if cfg.Tun.AutoDetectInterface != nil {
+		t.config.Route.AutoDetectInterface = *cfg.Tun.AutoDetectInterface
+	}
 
 	// Note: dns-hijack is handled by assemble() default rule {"protocol":"dns","action":"hijack-dns"}
 
