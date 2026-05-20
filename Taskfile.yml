@@ -146,6 +146,12 @@ tasks:
     cmds:
       - go test -tags '{{.BUILDTAGS}}' ./translator/... ./core/...
 
+  tidy:
+    desc: Update all direct dependencies to latest and tidy
+    cmds:
+      - GOPROXY=https://proxy.golang.org,direct go get -u ./...
+      - go mod tidy
+
   clean:
     desc: Remove build artifacts
     cmds:
