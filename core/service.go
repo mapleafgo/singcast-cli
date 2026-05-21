@@ -798,7 +798,7 @@ func observe[T any](ctx context.Context, sub *observable.Subscriber[T], fn func(
 		case <-done:
 			return
 		case <-ctx.Done():
-			sub.Close()
+				sub.Close()
 			return
 		case v, ok := <-ch:
 			if !ok {

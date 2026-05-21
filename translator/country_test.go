@@ -32,7 +32,7 @@ func TestDetectCountry_FallbackOnEmpty(t *testing.T) {
 func TestDetectCountryByIP_ParseResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ip":"1.2.3.4","country":"JP"}`))
+		_, _ = w.Write([]byte(`{"ip":"1.2.3.4","country":"JP"}`))
 	}))
 	defer srv.Close()
 

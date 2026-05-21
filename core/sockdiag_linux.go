@@ -77,8 +77,8 @@ func querySockDiag(family, protocol uint8, srcIP net.IP, srcPort uint16, dstIP n
 	defer syscall.Close(fd)
 
 	timeout := &syscall.Timeval{Usec: 100}
-	syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_SNDTIMEO, timeout)
-	syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, timeout)
+	_ = syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_SNDTIMEO, timeout)
+	_ = syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, timeout)
 
 	if err := syscall.Connect(fd, &syscall.SockaddrNetlink{Family: syscall.AF_NETLINK}); err != nil {
 		return 0, 0, fmt.Errorf("connect netlink: %w", err)

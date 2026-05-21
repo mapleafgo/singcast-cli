@@ -379,7 +379,7 @@ rules:
 }
 
 func TestTranslateInvalidYAML(t *testing.T) {
-	translateMustFail(t, "\t\n  invalid: [\n yaml: {")
+	translateMustFail(t, "\t\n  invalid: [\n yaml: {") //nolint:errcheck
 }
 
 func TestTranslateDuplicateTag(t *testing.T) {
@@ -396,7 +396,7 @@ proxies:
 rules:
   - MATCH,dup
 `
-	translateMustFail(t, yaml)
+	translateMustFail(t, yaml) //nolint:errcheck
 }
 
 func TestTranslateUnsupportedProxy(t *testing.T) {

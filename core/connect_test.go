@@ -20,16 +20,22 @@ import (
 	"github.com/sagernet/sing/common/json"
 )
 
-const realConfigPath = "/home/mapleafgo/.local/share/cn.mapleafgo.singcast/profiles/1778575671321.yaml"
+func testConfigPath() string {
+	if p := os.Getenv("SINGCAST_TEST_CONFIG"); p != "" {
+		return p
+	}
+	return ""
+}
 
 // TestConnectivity_Google starts the service with a real config and verifies
 // that google.com is reachable through the mixed proxy inbound.
 func TestConnectivity_Google(t *testing.T) {
-	if _, err := os.Stat(realConfigPath); err != nil {
-		t.Skipf("real config not found: %s", realConfigPath)
+	cfgPath := testConfigPath()
+	if cfgPath == "" {
+		t.Skip("SINGCAST_TEST_CONFIG not set, skipping")
 	}
 
-	data, err := os.ReadFile(realConfigPath)
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -154,11 +160,12 @@ func TestConnectivity_Google(t *testing.T) {
 
 // TestConnectivity_SOCKS5 verifies google.com is reachable through SOCKS5.
 func TestConnectivity_SOCKS5(t *testing.T) {
-	if _, err := os.Stat(realConfigPath); err != nil {
-		t.Skipf("real config not found: %s", realConfigPath)
+	cfgPath := testConfigPath()
+	if cfgPath == "" {
+		t.Skip("SINGCAST_TEST_CONFIG not set, skipping")
 	}
 
-	data, err := os.ReadFile(realConfigPath)
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -243,11 +250,12 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 
 // TestConnectivity_HTTPS verifies an HTTPS site is reachable through the proxy.
 func TestConnectivity_HTTPS(t *testing.T) {
-	if _, err := os.Stat(realConfigPath); err != nil {
-		t.Skipf("real config not found: %s", realConfigPath)
+	cfgPath := testConfigPath()
+	if cfgPath == "" {
+		t.Skip("SINGCAST_TEST_CONFIG not set, skipping")
 	}
 
-	data, err := os.ReadFile(realConfigPath)
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -417,11 +425,12 @@ func TestConnectivity_TUN(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("TUN test requires root (run with sudo)")
 	}
-	if _, err := os.Stat(realConfigPath); err != nil {
-		t.Skipf("real config not found: %s", realConfigPath)
+	cfgPath := testConfigPath()
+	if cfgPath == "" {
+		t.Skip("SINGCAST_TEST_CONFIG not set, skipping")
 	}
 
-	data, err := os.ReadFile(realConfigPath)
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}

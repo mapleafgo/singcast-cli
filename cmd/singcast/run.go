@@ -68,7 +68,6 @@ func runCommand() *cli.Command {
 
 			outPath := filepath.Join(homeDir, "config.json")
 
-			// Translate YAML to sing-box JSON if needed
 			var jsonContent string
 			if translator.DetectFormat(data) == translator.FormatYAML {
 				opts := &translator.Options{RuleSetURLPrefix: proxyPrefix}
@@ -102,7 +101,7 @@ func runCommand() *cli.Command {
 	}
 }
 
-func runForeground(homeDir, configPath string, jsonContent string) error {
+func runForeground(homeDir, configPath, jsonContent string) error {
 	svc := core.NewService()
 	if err := svc.Init(`{"home_dir":"` + homeDir + `"}`); err != nil {
 		return fmt.Errorf("init core: %w", err)

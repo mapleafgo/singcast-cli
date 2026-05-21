@@ -44,7 +44,7 @@ func TestLogging_HandleAttrs(t *testing.T) {
 
 	SetOnLogEvent(func(_ int32, jsonStr string) {
 		var entry LogEntry
-		json.Unmarshal([]byte(jsonStr), &entry)
+		_ = json.Unmarshal([]byte(jsonStr), &entry)
 		mu.Lock()
 		messages = append(messages, entry.Message)
 		mu.Unlock()

@@ -479,23 +479,6 @@ func findFirstDirectDNSTag(t *translation) string {
 	return ""
 }
 
-// findFirstRemoteDNSTag returns the tag of the first DNS server with a detour
-// (i.e., routed through proxy). Used as the "remote DNS" target.
-func findFirstRemoteDNSTag(t *translation) string {
-	if t.config.DNS == nil {
-		return ""
-	}
-	for _, srv := range t.config.DNS.Servers {
-		if _, hasDetour := srv["detour"]; !hasDetour {
-			continue
-		}
-		if tag, _ := srv["tag"].(string); tag != "" {
-			return tag
-		}
-	}
-	return ""
-}
-
 // findFakeIPTag returns the tag of the fakeip DNS server, or empty if not present.
 func findFakeIPTag(t *translation) string {
 	if t.config.DNS == nil {

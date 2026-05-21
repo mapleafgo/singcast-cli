@@ -13,7 +13,6 @@ func startDaemon(homeDir, configPath, ruleSetProxy, apiAddr string) error {
 	logPath := filepath.Join(homeDir, "singcast.log")
 	pidPath := filepath.Join(homeDir, "singcast.pid")
 
-	// Check for stale PID file
 	if pidData, err := os.ReadFile(pidPath); err == nil {
 		var pid int
 		if _, err := fmt.Sscanf(string(pidData), "%d", &pid); err == nil && pid > 0 {
