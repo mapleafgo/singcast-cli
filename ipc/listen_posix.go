@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -37,9 +38,22 @@ func (s *Server) listenPlatform() error {
 	}
 	s.listener = listener
 
-	if uid := os.Getuid(); uid != 0 {
-		if err := os.Chmod(s.ipcPath, 0o600); err != nil {
-			slog.Warn("chmod socket", "error", err)
+	// Set restrictive permissions: only the owner can connect.
+	if err := os.Chmod(s.ipcPath, 0o600); err != nil {
+		slog.Warn("chmod socket", "error", err)
+	}
+
+	// When running setuid root, the socket is owned by root and the
+	// GUI process (running as user) cannot connect. Chown the socket
+	// to the home directory owner so the user can access it.
+	if os.Getuid() == 0 {
+		dirInfo, err := os.Stat(filepath.Dir(s.ipcPath))
+		if err != nil {
+			slog.Warn("stat socket dir for chown", "error", err)
+		} else if stat, ok := dirInfo.Sys().(*syscall.Stat_t); ok && stat.Uid != 0 {
+			if err := os.Chown(s.ipcPath, int(stat.Uid), int(stat.Gid)); err != nil {
+				slog.Warn("chown socket", "error", err)
+			}
 		}
 	}
 
