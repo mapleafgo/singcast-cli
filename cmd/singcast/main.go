@@ -17,6 +17,7 @@ func main() {
 		Usage:   "A lightweight proxy core powered by sing-box",
 		Commands: []*cli.Command{
 			runCommand(),
+			ipcCommand(),
 			convertCommand(),
 			checkCommand(),
 			versionCommand(),

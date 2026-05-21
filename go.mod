@@ -8,10 +8,12 @@ require (
 	github.com/sagernet/sing-box v1.13.12
 	github.com/sagernet/sing-tun v0.8.9
 	github.com/stretchr/testify v1.11.1
+	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55
 	github.com/urfave/cli/v3 v3.9.0
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/mobile v0.0.0-20260519152538-35b1249819c3
+	golang.org/x/mobile v0.0.0-20260520154334-0e4426e1883d
 	golang.org/x/net v0.54.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
@@ -37,10 +39,10 @@ require (
 	github.com/florianl/go-nfqueue/v2 v2.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
-	github.com/gaissmai/bart v0.27.1 // indirect
+	github.com/gaissmai/bart v0.28.0 // indirect
 	github.com/go-chi/chi/v5 v5.2.5 // indirect
 	github.com/go-chi/render v1.0.3 // indirect
-	github.com/go-json-experiment/json v0.0.0-20260505212615-e40f80bf6836 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260520185125-572e7c383686 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
@@ -128,7 +130,6 @@ require (
 	github.com/sagernet/ws v0.0.0-20231204124109-acfe8907c854 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20231202035212-d3fa0460f47e // indirect
-	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect
 	github.com/tailscale/goupnp v1.0.1-0.20210804011211-c64d0f06ea05 // indirect
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd // indirect
 	github.com/tailscale/netlink v1.1.1-0.20240822203006-4d49adab4de7 // indirect
@@ -154,7 +155,6 @@ require (
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
