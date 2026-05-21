@@ -43,17 +43,12 @@ func (s *Server) listenPlatform() error {
 		slog.Warn("chmod socket", "error", err)
 	}
 
-	// When running setuid root, the socket is owned by root and the
-	// GUI process (running as user) cannot connect. Chown the socket
-	// to the home directory owner so the user can access it.
-	if os.Getuid() == 0 {
-		dirInfo, err := os.Stat(filepath.Dir(s.ipcPath))
-		if err != nil {
-			slog.Warn("stat socket dir for chown", "error", err)
-		} else if stat, ok := dirInfo.Sys().(*syscall.Stat_t); ok && stat.Uid != 0 {
-			if err := os.Chown(s.ipcPath, int(stat.Uid), int(stat.Gid)); err != nil {
-				slog.Warn("chown socket", "error", err)
-			}
+	dirInfo, err := os.Stat(filepath.Dir(s.ipcPath))
+	if err != nil {
+		slog.Warn("stat socket dir for chown", "error", err)
+	} else if stat, ok := dirInfo.Sys().(*syscall.Stat_t); ok && stat.Uid != 0 {
+		if err := os.Chown(s.ipcPath, int(stat.Uid), int(stat.Gid)); err != nil {
+			slog.Warn("chown socket", "error", err)
 		}
 	}
 

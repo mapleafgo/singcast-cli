@@ -26,6 +26,9 @@ tasks:
     desc: Build singcast CLI binary for current platform
     cmds:
       - CGO_ENABLED=0 go build -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}} ./cmd/singcast
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/{{.CLI_NAME}}"
 
   cli-linux-amd64:
     desc: Build CLI for Linux amd64
@@ -41,11 +44,17 @@ tasks:
     desc: Build CLI for macOS amd64
     cmds:
       - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-darwin-amd64 ./cmd/singcast
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/{{.CLI_NAME}}-darwin-amd64"
 
   cli-darwin-arm64:
     desc: Build CLI for macOS arm64
     cmds:
       - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/{{.CLI_NAME}}-darwin-arm64 ./cmd/singcast
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/{{.CLI_NAME}}-darwin-arm64"
 
   cli-windows-amd64:
     desc: Build CLI for Windows amd64
@@ -83,11 +92,17 @@ tasks:
     desc: Build FFI shared library for macOS amd64
     cmds:
       - GOOS=darwin GOARCH=amd64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-amd64.dylib ./cmd/lib
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/lib{{.NAME}}-darwin-amd64.dylib"
 
   ffi-darwin-arm64:
     desc: Build FFI shared library for macOS arm64
     cmds:
       - GOOS=darwin GOARCH=arm64 go build -buildmode=c-shared -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -o {{.BINDIR}}/lib{{.NAME}}-darwin-arm64.dylib ./cmd/lib
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/lib{{.NAME}}-darwin-arm64.dylib"
 
   ffi-windows-amd64:
     desc: Build FFI shared library for Windows amd64
@@ -122,6 +137,9 @@ tasks:
     cmds:
       - mkdir -p {{.BINDIR}}
       - gomobile bind -trimpath -tags '{{.BUILDTAGS}}' -ldflags '{{.LDFLAGS}}' -target=ios -o {{.BINDIR}}/{{.NAME}}.xcframework ./mobile
+      - task: codesign
+        vars:
+          BINARY: "{{.BINDIR}}/{{.NAME}}.xcframework"
 
   mobile-all:
     desc: Build all mobile SDK packages
@@ -138,6 +156,14 @@ tasks:
       - task: cli-all
       - task: ffi-all
       - task: mobile-all
+
+  codesign:
+    internal: true
+    cmds:
+      - codesign -s - {{.BINARY}}
+    platforms: [darwin]
+    status:
+      - test "{{OS}}" != "darwin"
 
   # ── Development ──────────────────────────────────────
 
