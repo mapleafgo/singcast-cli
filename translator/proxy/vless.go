@@ -17,10 +17,10 @@ func TranslateVLESS(m map[string]any, warn func(string)) map[string]any {
 		return nil
 	}
 
-	// sing-box only supports "xtls-rprx-vision"; normalize all variants.
+	// Pass flow as-is; sing-box validates at runtime.
 	// https://github.com/mapleafgo/clash-for-flutter/issues/66
 	if flow := GetStr(m, "flow"); flow != "" {
-		outbound["flow"] = "xtls-rprx-vision"
+		outbound["flow"] = flow
 	}
 
 	// Packet encoding

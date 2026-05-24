@@ -75,7 +75,7 @@ func (h *Handler) Handle(req *JSONRPCRequest) JSONRPCResponse {
 	case MethodSetLogLevel:
 		return h.handleSetLogLevel(req, id)
 	case MethodServiceInstall:
-		return h.handleVoid(req, id, func() error { return InstallService() })
+		return h.handleServiceInstall(req, id)
 	case MethodServiceUninstall:
 		return h.handleVoid(req, id, func() error { return UninstallService() })
 	default:
@@ -173,6 +173,17 @@ func (h *Handler) handleSetLogLevel(req *JSONRPCRequest, id int64) JSONRPCRespon
 		return newError(id, -32602, "invalid params: "+err.Error())
 	}
 	h.svc.SetLogLevel(params.Level)
+	return newEmptyResult(id)
+}
+
+func (h *Handler) handleServiceInstall(req *JSONRPCRequest, id int64) JSONRPCResponse {
+	var params InstallServiceParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return newError(id, -32602, "invalid params: "+err.Error())
+	}
+	if err := InstallService(params.Home); err != nil {
+		return newError(id, 1, err.Error())
+	}
 	return newEmptyResult(id)
 }
 

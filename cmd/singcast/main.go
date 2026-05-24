@@ -20,6 +20,7 @@ func main() {
 			ipcCommand(),
 			convertCommand(),
 			checkCommand(),
+			serviceCommand(),
 			versionCommand(),
 		},
 	}

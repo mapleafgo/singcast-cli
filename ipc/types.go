@@ -150,6 +150,11 @@ type SetLogLevelParams struct {
 	Level int32 `json:"level"`
 }
 
+// InstallServiceParams holds parameters for service.install.
+type InstallServiceParams struct {
+	Home string `json:"home"`
+}
+
 // --- Notification payload types ---
 
 // StateUpdatePayload represents a kernel state change.
