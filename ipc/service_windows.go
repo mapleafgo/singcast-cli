@@ -54,20 +54,22 @@ func InstallService(homeDir string) error {
 }
 
 func UninstallService() error {
-	m, err := mgr.Connect()
+	// Connect to SCM with minimal access — SC_MANAGER_CONNECT is granted to
+	// Authenticated Users by default, so no elevation is needed.
+	scm, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
 	if err != nil {
 		return fmt.Errorf("connect to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer windows.CloseServiceHandle(scm)
 
 	namePtr, err := windows.UTF16PtrFromString(ServiceName)
 	if err != nil {
 		return err
 	}
 
-	// Use windows.OpenService with DELETE only — mgr.OpenService hardcodes
-	// SERVICE_ALL_ACCESS which requires standard rights the DACL does not grant.
-	h, err := windows.OpenService(m.Handle, namePtr, windows.DELETE)
+	// Open the service with DELETE only — the DACL set during install grants
+	// AU the DELETE right, so no elevation is needed.
+	h, err := windows.OpenService(scm, namePtr, windows.DELETE)
 	if err != nil {
 		return fmt.Errorf("open service %s: %w", ServiceName, err)
 	}
@@ -82,12 +84,6 @@ func UninstallService() error {
 // setServiceDACL grants Authenticated Users the rights to start, stop,
 // and query the service, so the GUI (running as a normal user) can manage
 // the service without needing elevation.
-//
-// Access mask:
-//
-//	AU (Authenticated Users): 0x100B4 — DELETE + query status + start + stop + interrogate
-//	BA (Built-in Admins):     0xF01FF — SERVICE_ALL_ACCESS
-//	SY (Local System):        0xF01FF — SERVICE_ALL_ACCESS
 func setServiceDACL(serviceName string) error {
 	sddl := "D:(A;;0x100B4;;;AU)(A;;0xF01FF;;;BA)(A;;0xF01FF;;;SY)"
 

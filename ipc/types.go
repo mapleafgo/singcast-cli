@@ -27,8 +27,6 @@ const (
 	MethodGetVersion           = "core.getVersion"
 	MethodCheckConfig          = "core.checkConfig"
 	MethodSetLogLevel          = "core.setLogLevel"
-	MethodServiceInstall       = "service.install"
-	MethodServiceUninstall     = "service.uninstall"
 )
 
 // JSON-RPC 2.0 notification names (Service → GUI).
@@ -148,11 +146,6 @@ type CheckConfigParams struct {
 // SetLogLevelParams holds parameters for core.setLogLevel.
 type SetLogLevelParams struct {
 	Level int32 `json:"level"`
-}
-
-// InstallServiceParams holds parameters for service.install.
-type InstallServiceParams struct {
-	Home string `json:"home"`
 }
 
 // --- Notification payload types ---
