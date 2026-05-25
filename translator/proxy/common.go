@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// GetStr retrieves a string value from a map. Returns "" if key is missing or not a string.
+// GetStr retrieves a string value from a map. Returns "" if key is missing, nil, or not a string.
 func GetStr(m map[string]any, key string) string {
 	v, ok := m[key]
-	if !ok {
+	if !ok || v == nil {
 		return ""
 	}
 	s, ok := v.(string)
