@@ -3,8 +3,10 @@
 package ipc
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -67,18 +69,49 @@ func UninstallService() error {
 		return err
 	}
 
-	// Open the service with DELETE only — the DACL set during install grants
-	// AU the DELETE right, so no elevation is needed.
-	h, err := windows.OpenService(scm, namePtr, windows.DELETE)
+	// Open the service with the minimum rights needed: STOP + QUERY_STATUS + DELETE.
+	// The DACL set during install grants AU these rights, so no elevation is needed.
+	h, err := windows.OpenService(scm, namePtr,
+		windows.SERVICE_STOP|windows.SERVICE_QUERY_STATUS|windows.DELETE)
 	if err != nil {
 		return fmt.Errorf("open service %s: %w", ServiceName, err)
 	}
 	defer windows.CloseServiceHandle(h)
 
+	// Stop the service first. ERROR_SERVICE_NOT_ACTIVE is harmless.
+	var svcStatus windows.SERVICE_STATUS
+	if err := windows.ControlService(h, windows.SERVICE_CONTROL_STOP, &svcStatus); err != nil {
+		if !errors.Is(err, windows.ERROR_SERVICE_NOT_ACTIVE) {
+			return fmt.Errorf("stop service: %w", err)
+		}
+	} else {
+		waitForStopped(h) // best-effort, proceed to delete regardless
+	}
+
 	if err := windows.DeleteService(h); err != nil {
 		return fmt.Errorf("delete service: %w", err)
 	}
 	return nil
+}
+
+// waitForStopped waits for the service to reach STOPPED.
+// Returns true if stopped, false if timed out — the caller should
+// proceed with DeleteService either way; SCM handles lazy cleanup.
+func waitForStopped(h windows.Handle) bool {
+	const timeout = 5 * time.Second
+	const interval = 200 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var status windows.SERVICE_STATUS
+		if windows.QueryServiceStatus(h, &status) != nil {
+			return false
+		}
+		if status.CurrentState == windows.SERVICE_STOPPED {
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return false
 }
 
 // setServiceDACL grants Authenticated Users the rights to start, stop,
