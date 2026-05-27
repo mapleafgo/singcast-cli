@@ -318,6 +318,8 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		return fmt.Errorf("start instance: %w", err)
 	}
 
+	s.platform.SetRouter(inst.Router())
+
 	s.running.Store(&runningState{
 		instance:      inst,
 		boxCtx:        ctx,
@@ -587,7 +589,7 @@ func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
 
 func (s *Service) ResetNetwork() {
 	if rs := s.running.Load(); rs != nil {
-		rs.instance.Network().ResetNetwork()
+		rs.instance.Router().ResetNetwork()
 	}
 }
 

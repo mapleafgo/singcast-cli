@@ -106,6 +106,12 @@ func (p *PlatformIO) Initialize(mgr adapter.NetworkManager) error {
 	return nil
 }
 
+func (p *PlatformIO) SetRouter(r adapter.Router) {
+	if p.ifaceMonitor != nil {
+		p.ifaceMonitor.router = r
+	}
+}
+
 func (p *PlatformIO) UsePlatformInterface() bool {
 	return p.isMobile && p.tunFd.Load() != 0
 }
@@ -250,6 +256,7 @@ type callbackInterfaceMonitor struct {
 	callbacks   list.List[tun.DefaultInterfaceUpdateCallback]
 	myInterface string
 	networkMgr  adapter.NetworkManager
+	router      adapter.Router
 }
 
 func (m *callbackInterfaceMonitor) Start() error             { return nil }
@@ -337,6 +344,9 @@ func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool
 	slog.Info("platform: interface monitor update", "name", resolved.Name, "index", resolved.Index, "callbacks", len(cbs))
 	for _, cb := range cbs {
 		cb(resolved, 0)
+	}
+	if m.router != nil {
+		m.router.ResetNetwork()
 	}
 }
 
