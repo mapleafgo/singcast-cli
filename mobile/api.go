@@ -73,9 +73,36 @@ func (s *Singcast) SetSocketProtector(p SocketProtector) {
 	})
 }
 
-// SetInterfacesJSON provides network interface data from the mobile platform.
-func (s *Singcast) SetInterfacesJSON(json string) {
-	s.svc.PlatformIO().SetInterfacesJSON(json)
+// InterfaceProvider provides network interface data on demand.
+// GetInterfaces must return a JSON array of interface objects.
+type InterfaceProvider interface {
+	GetInterfaces() string
+}
+
+// WiFiStateProvider provides WiFi state on demand.
+// GetWiFiState must return {"ssid":"...","bssid":"..."}.
+type WiFiStateProvider interface {
+	GetWiFiState() string
+}
+
+func (s *Singcast) SetInterfaceProvider(p InterfaceProvider) {
+	if p == nil {
+		s.svc.PlatformIO().SetInterfaceProvider(nil)
+		return
+	}
+	s.svc.PlatformIO().SetInterfaceProvider(func() string {
+		return p.GetInterfaces()
+	})
+}
+
+func (s *Singcast) SetWiFiStateProvider(p WiFiStateProvider) {
+	if p == nil {
+		s.svc.PlatformIO().SetWiFiStateProvider(nil)
+		return
+	}
+	s.svc.PlatformIO().SetWiFiStateProvider(func() string {
+		return p.GetWiFiState()
+	})
 }
 
 // UpdateDefaultInterface reports the current default network interface.
@@ -86,11 +113,6 @@ func (s *Singcast) UpdateDefaultInterface(name string, index int64, expensive bo
 // SetIncludeAllNetworks sets whether the VPN uses includeAllNetworks (iOS).
 func (s *Singcast) SetIncludeAllNetworks(v bool) {
 	s.svc.PlatformIO().SetIncludeAllNetworks(v)
-}
-
-// SetWIFIState reports the current WiFi SSID and BSSID from the mobile platform.
-func (s *Singcast) SetWIFIState(ssid, bssid string) {
-	s.svc.PlatformIO().SetWIFIState(ssid, bssid)
 }
 
 // --- Logging ---
@@ -177,7 +199,7 @@ func (s *Singcast) TriggerGC() { s.svc.TriggerGC() }
 // --- Event Listeners ---
 
 // EventListener is the unified callback interface for all core events.
-// eventType: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent.
+// eventType: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent, 4=StateChange, 5=Stats.
 type EventListener interface {
 	OnEvent(eventType int32, json string)
 }

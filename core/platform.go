@@ -30,19 +30,14 @@ type PlatformIO struct {
 	tunFd      atomic.Int32
 	protectFn  atomic.Pointer[func(int32) bool]
 	includeAll atomic.Bool
-	wifi       atomic.Pointer[wifiState]
-	ifaces     atomic.Pointer[string]
+	getInterfacesFn atomic.Pointer[func() string]
+	getWiFiStateFn  atomic.Pointer[func() string]
 
 	// Mobile: interface monitor, created eagerly in SetMobile(true).
 	ifaceMonitor *callbackInterfaceMonitor
 
 	// protect counter, incremented on each successful protect call.
 	protectCount atomic.Int64
-}
-
-type wifiState struct {
-	SSID  string
-	BSSID string
 }
 
 func NewPlatformIO() *PlatformIO { return &PlatformIO{} }
@@ -73,13 +68,20 @@ func (p *PlatformIO) SetIncludeAllNetworks(v bool) {
 	p.includeAll.Store(v)
 }
 
-func (p *PlatformIO) SetWIFIState(ssid, bssid string) {
-	p.wifi.Store(&wifiState{SSID: ssid, BSSID: bssid})
+func (p *PlatformIO) SetInterfaceProvider(fn func() string) {
+	if fn == nil {
+		p.getInterfacesFn.Store(nil)
+	} else {
+		p.getInterfacesFn.Store(&fn)
+	}
 }
 
-func (p *PlatformIO) SetInterfacesJSON(jsonStr string) {
-	p.ifaces.Store(&jsonStr)
-	slog.Info("platform: set interfaces JSON", "len", len(jsonStr))
+func (p *PlatformIO) SetWiFiStateProvider(fn func() string) {
+	if fn == nil {
+		p.getWiFiStateFn.Store(nil)
+	} else {
+		p.getWiFiStateFn.Store(&fn)
+	}
 }
 
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
@@ -163,16 +165,11 @@ func (p *PlatformIO) CreateDefaultInterfaceMonitor(logger.Logger) tun.DefaultInt
 func (p *PlatformIO) UsePlatformNetworkInterfaces() bool { return p.isMobile }
 
 func (p *PlatformIO) NetworkInterfaces() ([]adapter.NetworkInterface, error) {
-	ptr := p.ifaces.Load()
-	if ptr == nil || *ptr == "" {
-		return nil, fmt.Errorf("mobile: call SetInterfacesJSON() before starting")
+	fn := p.getInterfacesFn.Load()
+	if fn == nil {
+		return nil, fmt.Errorf("mobile: interface provider not registered")
 	}
-	ifaces, err := parseAdapterInterfaces(*ptr)
-	if err != nil {
-		return nil, err
-	}
-	slog.Debug("platform: network interfaces", "count", len(ifaces))
-	return ifaces, nil
+	return parseAdapterInterfaces((*fn)())
 }
 
 func (p *PlatformIO) UnderNetworkExtension() bool {
@@ -191,10 +188,19 @@ func (p *PlatformIO) ClearDNSCache() { flushSystemDNS() }
 func (p *PlatformIO) RequestPermissionForWIFIState() error { return nil }
 
 func (p *PlatformIO) ReadWIFIState() adapter.WIFIState {
-	if ws := p.wifi.Load(); ws != nil {
-		return adapter.WIFIState{SSID: ws.SSID, BSSID: ws.BSSID}
+	fn := p.getWiFiStateFn.Load()
+	if fn == nil {
+		return adapter.WIFIState{}
 	}
-	return adapter.WIFIState{}
+	var s struct {
+		SSID  string `json:"ssid"`
+		BSSID string `json:"bssid"`
+	}
+	if err := json.Unmarshal([]byte((*fn)()), &s); err != nil {
+		slog.Debug("platform: invalid wifi state json", "error", err)
+		return adapter.WIFIState{}
+	}
+	return adapter.WIFIState{SSID: s.SSID, BSSID: s.BSSID}
 }
 
 func (p *PlatformIO) SystemCertificates() []string { return nil }

@@ -7,6 +7,7 @@ const (
 	EventModeUpdate  int32 = 2
 	EventConnEvent   int32 = 3
 	EventStateChange int32 = 4
+	EventStats       int32 = 5
 )
 
 // TrafficSnapshot holds traffic and resource usage statistics.

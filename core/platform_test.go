@@ -112,7 +112,9 @@ func TestNetworkInterfaces_NoData(t *testing.T) {
 
 func TestNetworkInterfaces_ValidJSON(t *testing.T) {
 	p := newPlatform()
-	p.SetInterfacesJSON(`[{"name":"wlan0","index":3,"mtu":1500,"addresses":["192.168.1.2/24"],"flags":1,"type":1}]`)
+	p.SetInterfaceProvider(func() string {
+		return `[{"name":"wlan0","index":3,"mtu":1500,"addresses":["192.168.1.2/24"],"flags":1,"type":1}]`
+	})
 
 	ifaces, err := p.NetworkInterfaces()
 	if err != nil {
@@ -202,13 +204,15 @@ func TestNetworkExtensionIncludeAllNetworks(t *testing.T) {
 
 // --- WiFi state ---
 
-func TestSetWIFIState_ReadRoundTrip(t *testing.T) {
+func TestWiFiStateProvider_ReadRoundTrip(t *testing.T) {
 	p := newPlatform()
 	state := p.ReadWIFIState()
 	if state.SSID != "" {
 		t.Error("should be empty before set")
 	}
-	p.SetWIFIState("MyWiFi", "aa:bb:cc:dd:ee:ff")
+	p.SetWiFiStateProvider(func() string {
+		return `{"ssid":"MyWiFi","bssid":"aa:bb:cc:dd:ee:ff"}`
+	})
 	state = p.ReadWIFIState()
 	if state.SSID != "MyWiFi" || state.BSSID != "aa:bb:cc:dd:ee:ff" {
 		t.Errorf("got SSID=%q BSSID=%q", state.SSID, state.BSSID)
@@ -391,18 +395,20 @@ func TestCallbackInterfaceMonitor_Lifecycle(t *testing.T) {
 	}
 }
 
-// --- SetInterfacesJSON + NetworkInterfaces interaction ---
+// --- InterfaceProvider + NetworkInterfaces interaction ---
 
-func TestNetworkInterfaces_UsesCachedJSON(t *testing.T) {
+func TestNetworkInterfaces_UsesProviderJSON(t *testing.T) {
 	p := newPlatform()
-	p.SetInterfacesJSON(`[{"name":"rmnet0","index":5,"mtu":1400,"addresses":["10.0.0.1/32"],"flags":1,"type":0}]`)
+	p.SetInterfaceProvider(func() string {
+		return `[{"name":"rmnet0","index":5,"mtu":1400,"addresses":["10.0.0.1/32"],"flags":1,"type":0}]`
+	})
 
 	ifaces, err := p.NetworkInterfaces()
 	if err != nil {
 		t.Fatalf("NetworkInterfaces: %v", err)
 	}
 	if len(ifaces) != 1 {
-		t.Fatal("expected one interface from cached JSON")
+		t.Fatal("expected one interface from provider")
 	}
 	if ifaces[0].Name != "rmnet0" {
 		t.Errorf("Name = %q, want rmnet0", ifaces[0].Name)

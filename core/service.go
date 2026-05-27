@@ -787,6 +787,25 @@ func (s *Service) subscribeHooks() {
 			data, _ := json.Marshal(entry)
 			fn(EventConnEvent, string(data))
 		})
+
+		go s.observeStats(ctx, fn)
+	}
+}
+
+func (s *Service) observeStats(ctx context.Context, fn func(int32, string)) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			fn(EventStats, s.QueryStats())
+		case <-ctx.Done():
+			stats, _ := json.Marshal(map[string]any{
+				"up": 0, "down": 0, "connections": 0, "memory": 0, "started_at": int64(0),
+			})
+			fn(EventStats, string(stats))
+			return
+		}
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/mapleafgo/singcast/core"
 )
@@ -102,10 +101,6 @@ func (s *Server) serveConnection(ctx context.Context, conn net.Conn) {
 		s.mu.Unlock()
 		conn.Close()
 	}()
-
-	push := newTrafficPusher(s.handler.svc, s.sendNotification)
-	push.start()
-	defer push.stop()
 
 	dec := json.NewDecoder(conn)
 	for {
@@ -198,48 +193,9 @@ func (s *Server) onCoreEvent(eventType int32, payload string) {
 		s.sendNotification(NotifyConnEvent, json.RawMessage(payload))
 	case core.EventStateChange:
 		s.sendNotification(NotifyStateUpdate, StateUpdatePayload{State: payload})
+	case core.EventStats:
+		s.sendNotification(NotifyTrafficUpdate, json.RawMessage(payload))
 	}
-}
-
-// trafficPusher pushes traffic stats to the GUI every second.
-type trafficPusher struct {
-	svc     *core.Service
-	notify  func(string, any)
-	ticker  *time.Ticker
-	done    chan struct{}
-	stopped chan struct{}
-}
-
-func newTrafficPusher(svc *core.Service, notify func(string, any)) *trafficPusher {
-	return &trafficPusher{svc: svc, notify: notify}
-}
-
-func (p *trafficPusher) start() {
-	p.ticker = time.NewTicker(time.Second)
-	p.done = make(chan struct{})
-	p.stopped = make(chan struct{})
-
-	go func() {
-		defer close(p.stopped)
-		for {
-			select {
-			case <-p.ticker.C:
-				if p.svc.State() != core.StateRunning {
-					continue
-				}
-				stats := p.svc.QueryStats()
-				p.notify(NotifyTrafficUpdate, json.RawMessage(stats))
-			case <-p.done:
-				return
-			}
-		}
-	}()
-}
-
-func (p *trafficPusher) stop() {
-	p.ticker.Stop()
-	close(p.done)
-	<-p.stopped
 }
 
 // IpcPath returns the IPC socket/pipe path based on the current working directory.
