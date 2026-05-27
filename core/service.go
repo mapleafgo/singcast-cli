@@ -82,7 +82,7 @@ func CheckConfig(content string) error {
 type State int32
 
 const (
-	StateCreated     State = iota
+	StateCreated State = iota
 	StateInitialized
 	StateStarting
 	StateRunning
@@ -109,8 +109,8 @@ func (s State) String() string {
 // atomicState wraps atomic.Int32 with typed State access, eliminating int32/State casts.
 type atomicState struct{ v atomic.Int32 }
 
-func (a *atomicState) Load() State            { return State(a.v.Load()) }
-func (a *atomicState) Store(s State)           { a.v.Store(int32(s)) }
+func (a *atomicState) Load() State   { return State(a.v.Load()) }
+func (a *atomicState) Store(s State) { a.v.Store(int32(s)) }
 func (a *atomicState) CompareAndSwap(old, new State) bool {
 	return a.v.CompareAndSwap(int32(old), int32(new))
 }
@@ -594,7 +594,7 @@ func (s *Service) ResetNetwork() {
 	}
 }
 
-func (s *Service) FlushSystemDNS()    { flushSystemDNS() }
+func (s *Service) FlushSystemDNS()         { flushSystemDNS() }
 func (s *Service) SetLogLevel(level int32) { SetLogLevel(level) }
 
 func (s *Service) QueryRules() string {
@@ -737,10 +737,14 @@ func (s *Service) getOnEvent() func(int32, string) {
 	return nil
 }
 
-func (s *Service) emitState(state State) {
+func (s *Service) emitEvent(event int32, data string) {
 	if fn := s.getOnEvent(); fn != nil {
-		fn(EventStateChange, state.String())
+		fn(event, data)
 	}
+}
+
+func (s *Service) emitState(state State) {
+	s.emitEvent(EventStateChange, state.String())
 }
 
 func (s *Service) casState(oldState, newState State) bool {
@@ -764,16 +768,20 @@ func (s *Service) subscribeHooks() {
 	cancelFn := func() { cancel() }
 	s.subCancel.Store(&cancelFn)
 
-	if fn := s.getOnEvent(); fn != nil {
+	if s.getOnEvent() != nil {
 		clashSrv := srv
 
 		sub := observable.NewSubscriber[struct{}](8)
 		clashSrv.HistoryStorage().SetHook(sub)
-		go observe(ctx, sub, func(struct{}) { fn(EventURLTest, "") })
+		go observe(ctx, sub, func(struct{}) {
+			s.emitEvent(EventURLTest, "")
+		})
 
 		sub2 := observable.NewSubscriber[struct{}](8)
 		clashSrv.SetModeUpdateHook(sub2)
-		go observe(ctx, sub2, func(struct{}) { fn(EventModeUpdate, clashSrv.Mode()) })
+		go observe(ctx, sub2, func(struct{}) {
+			s.emitEvent(EventModeUpdate, clashSrv.Mode())
+		})
 
 		sub3 := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
 		clashSrv.TrafficManager().SetEventHook(sub3)
@@ -785,25 +793,25 @@ func (s *Service) subscribeHooks() {
 			entry := trackerToEntry(meta)
 			entry.Event = int32(evt.Type)
 			data, _ := json.Marshal(entry)
-			fn(EventConnEvent, string(data))
+			s.emitEvent(EventConnEvent, string(data))
 		})
 
-		go s.observeStats(ctx, fn)
+		go s.observeStats(ctx)
 	}
 }
 
-func (s *Service) observeStats(ctx context.Context, fn func(int32, string)) {
+func (s *Service) observeStats(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			fn(EventStats, s.QueryStats())
+			s.emitEvent(EventStats, s.QueryStats())
 		case <-ctx.Done():
 			stats, _ := json.Marshal(map[string]any{
 				"up": 0, "down": 0, "connections": 0, "memory": 0, "started_at": int64(0),
 			})
-			fn(EventStats, string(stats))
+			s.emitEvent(EventStats, string(stats))
 			return
 		}
 	}
@@ -817,7 +825,7 @@ func observe[T any](ctx context.Context, sub *observable.Subscriber[T], fn func(
 		case <-done:
 			return
 		case <-ctx.Done():
-				sub.Close()
+			sub.Close()
 			return
 		case v, ok := <-ch:
 			if !ok {
