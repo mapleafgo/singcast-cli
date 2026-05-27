@@ -31,9 +31,8 @@ import (
 
 var Version = "dev"
 
-// platformLogWriter routes sing-box kernel logs through the unified event callback.
 type platformLogWriter struct {
-	emit func(eventType int32, json string)
+	svc *Service
 }
 
 func (w *platformLogWriter) WriteMessage(level singboxlog.Level, message string) {
@@ -50,14 +49,12 @@ func (w *platformLogWriter) WriteMessage(level singboxlog.Level, message string)
 	default:
 		coreLevel = LogLevelTrace
 	}
-	if w.emit != nil {
-		data, _ := json.Marshal(LogEntry{
-			Level:     coreLevel,
-			Message:   message,
-			Timestamp: time.Now().UnixMilli(),
-		})
-		w.emit(EventLog, string(data))
-	}
+	data, _ := json.Marshal(LogEntry{
+		Level:     coreLevel,
+		Message:   message,
+		Timestamp: time.Now().UnixMilli(),
+	})
+	w.svc.emitEvent(EventLog, string(data))
 }
 
 func VersionJSON() string {
@@ -289,7 +286,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		options.Route.AutoDetectInterface = true
 	}
 
-	logWriter := &platformLogWriter{emit: s.getOnEvent()}
+	logWriter := &platformLogWriter{svc: s}
 	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
 	if err != nil {
 		return fmt.Errorf("create instance: %w", err)
