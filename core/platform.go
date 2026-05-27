@@ -99,7 +99,12 @@ func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive 
 
 // --- adapter.PlatformInterface ---
 
-func (p *PlatformIO) Initialize(adapter.NetworkManager) error { return nil }
+func (p *PlatformIO) Initialize(mgr adapter.NetworkManager) error {
+	if p.ifaceMonitor != nil {
+		p.ifaceMonitor.networkMgr = mgr
+	}
+	return nil
+}
 
 func (p *PlatformIO) UsePlatformInterface() bool {
 	return p.isMobile && p.tunFd.Load() != 0
@@ -244,6 +249,7 @@ type callbackInterfaceMonitor struct {
 	iface       *control.Interface
 	callbacks   list.List[tun.DefaultInterfaceUpdateCallback]
 	myInterface string
+	networkMgr  adapter.NetworkManager
 }
 
 func (m *callbackInterfaceMonitor) Start() error             { return nil }
@@ -284,21 +290,53 @@ func (m *callbackInterfaceMonitor) MyInterface() string {
 }
 
 func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool) {
+	mgr := m.networkMgr
+
+	// Refresh interface list so newly appeared interfaces (e.g. wlan0 after WiFi connect)
+	// are visible to InterfaceFinder.ByIndex below.
+	if mgr != nil {
+		if err := mgr.UpdateInterfaces(); err != nil {
+			slog.Warn("platform: refresh interfaces", "error", err)
+		}
+	}
+
 	m.mu.Lock()
-	iface := &control.Interface{
-		Name:  name,
-		Index: index,
+
+	if index == -1 {
+		m.iface = nil
+		cbs := m.callbacks.Array()
+		m.mu.Unlock()
+		slog.Info("platform: interface monitor update", "name", "", "index", -1, "callbacks", len(cbs))
+		for _, cb := range cbs {
+			cb(nil, 0)
+		}
+		return
 	}
-	m.iface = iface
-	// Snapshot callbacks under lock to avoid race with UnregisterCallback.
-	var cbs []tun.DefaultInterfaceUpdateCallback
-	for el := m.callbacks.Front(); el != nil; el = el.Next() {
-		cbs = append(cbs, el.Value)
+
+	// Resolve full interface object by index.
+	var resolved *control.Interface
+	if mgr != nil {
+		if found, err := mgr.InterfaceFinder().ByIndex(index); err == nil {
+			resolved = found
+		} else {
+			slog.Warn("platform: find interface by index", "index", index, "error", err)
+		}
 	}
+	if resolved == nil {
+		resolved = &control.Interface{Name: name, Index: index}
+	}
+
+	// Dedup: skip if interface hasn't changed.
+	if m.iface != nil && m.iface.Name == resolved.Name && m.iface.Index == resolved.Index {
+		m.mu.Unlock()
+		return
+	}
+	m.iface = resolved
+	cbs := m.callbacks.Array()
 	m.mu.Unlock()
-	slog.Info("platform: interface monitor update", "name", name, "index", index, "callbacks", len(cbs))
+	slog.Info("platform: interface monitor update", "name", resolved.Name, "index", resolved.Index, "callbacks", len(cbs))
 	for _, cb := range cbs {
-		cb(iface, 0)
+		cb(resolved, 0)
 	}
 }
 
