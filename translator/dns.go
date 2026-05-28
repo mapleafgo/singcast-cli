@@ -62,7 +62,30 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		tag := preferUDPServer(defaultServerTags, result)
 		t.config.Route.DefaultDomainResolver = tag
 	} else {
-		t.warn("no default-nameserver configured; proxy server domains may not resolve correctly")
+		// No default-nameserver configured — extract IP-based entries from nameserver
+		// as direct (no detour) bootstrap servers to avoid DNS loopback.
+		const maxBootstrap = 2
+		for _, ns := range dns.NameServer {
+			if len(defaultServerTags) >= maxBootstrap {
+				break
+			}
+			host, _, _, _, _ := extractHostPort(ns)
+			if isIPAddress(host) {
+				tag := "def-auto-" + strconv.Itoa(len(defaultServerTags))
+				srv := parseDNSServer(ns, tag, "", warn)
+				if srv != nil {
+					result.Servers = append(result.Servers, srv)
+					defaultServerTags = append(defaultServerTags, tag)
+				}
+			}
+		}
+		if len(defaultServerTags) > 0 {
+			tag := preferUDPServer(defaultServerTags, result)
+			t.config.Route.DefaultDomainResolver = tag
+			domainResolverTags = defaultServerTags
+		} else {
+			t.warn("no default-nameserver configured and no IP-based nameserver found; proxy server domains may not resolve correctly")
+		}
 	}
 
 	// Step 5: Domain resolver chain — for servers with domain-based server addresses,

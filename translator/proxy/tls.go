@@ -39,10 +39,7 @@ func TranslateTLS(m map[string]any) map[string]any {
 	}
 
 	tls := make(map[string]any)
-
-	if tlsEnabled || realityOpts != nil {
-		tls["enabled"] = true
-	}
+	tls["enabled"] = true
 
 	// SNI: mihomo uses both "sni" (trojan) and "servername" (vmess/vless)
 	serverName := sni

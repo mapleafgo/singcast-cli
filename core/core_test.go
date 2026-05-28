@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mapleafgo/singcast/translator"
 )
@@ -162,6 +163,8 @@ func TestNoIPCIDRResolveNo(t *testing.T) {
 }
 
 // TestServiceLifecycle tests Init/StartWithContent/Stop/Destroy with a minimal config.
+// StartWithContent blocks on remote rule_set downloads, so we run it in a goroutine
+// with a timeout — network errors are expected in the test environment.
 func TestServiceLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
 	homeDir := filepath.Join(tmpDir, "home")
@@ -181,15 +184,28 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Fatalf("expected StateInitialized, got %s", s)
 	}
 
-	err := svc.StartWithContent(minimalYAML, "")
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "decode config") ||
-			strings.Contains(errMsg, "unknown field") ||
-			strings.Contains(errMsg, "invalid") {
-			t.Fatalf("config parse error (not network): %v", err)
+	type result struct {
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		ch <- result{svc.StartWithContent(minimalYAML, "")}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			errMsg := r.err.Error()
+			if strings.Contains(errMsg, "decode config") ||
+				strings.Contains(errMsg, "unknown field") ||
+				strings.Contains(errMsg, "invalid") {
+				t.Fatalf("config parse error (not network): %v", r.err)
+			}
+			t.Logf("StartWithContent returned expected network error: %v", r.err)
 		}
-		t.Logf("StartWithContent returned expected network error: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Log("StartWithContent timed out (remote rule_set download blocked), stopping")
+		svc.Stop()
 	}
 
 	svc.Stop()

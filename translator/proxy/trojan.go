@@ -21,7 +21,6 @@ func TranslateTrojan(m map[string]any, warn func(string)) map[string]any {
 	tls := TranslateTLS(m)
 	if tls == nil {
 		tls = map[string]any{"enabled": true}
-		warn("trojan: no TLS config found, auto-enabling TLS (mihomo behavior)")
 	}
 	outbound["tls"] = tls
 

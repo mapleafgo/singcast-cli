@@ -27,6 +27,29 @@ func testConfigPath() string {
 	return ""
 }
 
+// injectMixedInbound replaces all inbounds with a single mixed inbound on the given port.
+// This avoids port conflicts with production services.
+func injectMixedInbound(t *testing.T, jsonContent string, port uint16) string {
+	t.Helper()
+
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonContent), &top); err != nil {
+		t.Fatalf("parse config for injection: %v", err)
+	}
+
+	mixed := map[string]any{
+		"type":        "mixed",
+		"tag":         "mixed-in",
+		"listen":      "127.0.0.1",
+		"listen_port": port,
+	}
+	mixedJSON, _ := json.Marshal(mixed)
+	top["inbounds"] = []byte("[" + string(mixedJSON) + "]")
+
+	out, _ := json.Marshal(top)
+	return string(out)
+}
+
 // TestConnectivity_Google starts the service with a real config and verifies
 // that google.com is reachable through the mixed proxy inbound.
 func TestConnectivity_Google(t *testing.T) {
@@ -50,9 +73,13 @@ func TestConnectivity_Google(t *testing.T) {
 		t.Logf("WARN: %s", w)
 	}
 
+	// Inject a mixed inbound if the config doesn't have one (e.g. profiles without mixed-port).
+	const testMixedPort uint16 = 10800
+	jsonContent = injectMixedInbound(t, jsonContent, testMixedPort)
+
 	mixedPort := extractMixedPort(t, jsonContent)
 	if mixedPort == 0 {
-		t.Fatal("no mixed inbound port found in config")
+		t.Fatal("no mixed inbound port found after injection")
 	}
 
 	tmpDir := t.TempDir()
@@ -170,7 +197,9 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.Translate(data)
+	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
+		RuleSetURLPrefix: "https://gh-proxy.org",
+	})
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -178,9 +207,11 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		t.Logf("WARN: %s", w)
 	}
 
+	const testMixedPort uint16 = 10801
+	jsonContent = injectMixedInbound(t, jsonContent, testMixedPort)
 	mixedPort := extractMixedPort(t, jsonContent)
 	if mixedPort == 0 {
-		t.Fatal("no mixed inbound port found in config")
+		t.Fatal("no mixed inbound port found after injection")
 	}
 
 	tmpDir := t.TempDir()
@@ -260,7 +291,9 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.Translate(data)
+	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
+		RuleSetURLPrefix: "https://gh-proxy.org",
+	})
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -268,9 +301,11 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		t.Logf("WARN: %s", w)
 	}
 
+	const testMixedPort uint16 = 10802
+	jsonContent = injectMixedInbound(t, jsonContent, testMixedPort)
 	mixedPort := extractMixedPort(t, jsonContent)
 	if mixedPort == 0 {
-		t.Fatal("no mixed inbound port found in config")
+		t.Fatal("no mixed inbound port found after injection")
 	}
 
 	tmpDir := t.TempDir()
@@ -435,7 +470,9 @@ func TestConnectivity_TUN(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.Translate(data)
+	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
+		RuleSetURLPrefix: "https://gh-proxy.org",
+	})
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
