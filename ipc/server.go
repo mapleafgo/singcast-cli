@@ -126,8 +126,10 @@ func (s *Server) handleRequest(req *JSONRPCRequest) {
 	if req.IsNotification() {
 		s.handler.Handle(req)
 	} else {
-		resp := s.handler.Handle(req)
-		s.sendResponse(resp)
+		go func() {
+			resp := s.handler.Handle(req)
+			s.sendResponse(resp)
+		}()
 	}
 }
 
