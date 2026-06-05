@@ -125,6 +125,11 @@ type Service struct {
 	platform  *PlatformIO
 	onEvent   atomic.Pointer[func(int32, string)]
 	subCancel atomic.Pointer[func()]
+
+	// startMu serializes StartWithContent calls. A concurrent caller waits
+	// for the current startup to finish, then stops and restarts.
+	startMu  sync.Mutex
+	startSeq atomic.Int64 // coalesce: only the latest caller proceeds
 }
 
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
@@ -175,28 +180,30 @@ func (s *Service) Init(optionsJSON string) error {
 }
 
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
+	// Translate config outside the lock — pure computation, no shared state.
 	data := []byte(content)
 	jsonContent, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
 	if err != nil {
 		return err
 	}
 
-	// CAS loop to transition to Starting — only one concurrent caller wins.
-	for {
-		st := s.state.Load()
-		if st != StateInitialized && st != StateRunning {
-			return fmt.Errorf("start: invalid state %s", st)
-		}
-		if s.casState(st, StateStarting) {
-			break
-		}
+	mySeq := s.startSeq.Add(1)
+
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	// A newer request arrived while we waited — let it win.
+	if s.startSeq.Load() != mySeq {
+		return nil
 	}
 
-	old := s.running.Swap(nil)
-	s.unsubscribeHooks()
+	// Stop any running/starting instance first.
+	if err := s.Stop(); err != nil {
+		slog.Warn("stop previous instance", "error", err)
+	}
 
-	if old != nil {
-		old.instance.Close()
+	if !s.casState(StateInitialized, StateStarting) {
+		return fmt.Errorf("start: invalid state %s", s.State())
 	}
 
 	if err := s.startWithJSON(jsonContent); err != nil {
