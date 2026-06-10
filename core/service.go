@@ -430,7 +430,7 @@ func (s *Service) QueryProxies() string {
 			Tag:        tag,
 			Type:       out.Type(),
 			Selected:   g.Now(),
-			Selectable: true,
+			Selectable: out.Type() == "selector",
 		}
 		if cache != nil {
 			if expand, loaded := cache.LoadGroupExpand(tag); loaded {
