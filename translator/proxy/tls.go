@@ -4,19 +4,24 @@ package proxy
 // Returns nil if no TLS is needed (tls field is not truthy and no reality-opts
 // or other TLS-related fields are present).
 //
-// Field mappings (see mapping doc sections B.2, K.1-K.5):
+// Sing-box OutboundTLSOptions fields mapped from Mihomo:
 //
-//	tls: true                      -> enabled: true
-//	sni / servername               -> server_name
-//	skip-cert-verify: true         -> insecure: true
-//	alpn: [h2, http/1.1]           -> alpn: ["h2", "http/1.1"]
-//	client-fingerprint: chrome     -> utls: {enabled: true, fingerprint: "chrome"}
-//	reality-opts.public-key        -> reality.public_key
-//	reality-opts.short-id          -> reality.short_id
-//	fingerprint (SHA256)           -> certificate_public_key_sha256 (array)
-//	certificate (mTLS)             -> client_certificate (array)
-//	private-key (mTLS)             -> client_key (array)
-//	ech-opts                       -> ech: {enabled, config (array), query_server_name}
+//	enabled                       <- tls
+//	server_name                   <- sni / servername
+//	insecure                      <- skip-cert-verify
+//	alpn                          <- alpn
+//	certificate_public_key_sha256 <- fingerprint
+//	client_certificate            <- certificate
+//	client_key                    <- private-key
+//	utls                          <- client-fingerprint
+//	reality                       <- reality-opts
+//	ech                           <- ech-opts
+//
+// Sing-box OutboundTLSOptions fields (Mihomo has no corresponding field):
+//
+//	disable_sni, min_version, max_version, cipher_suites,
+//	curve_preferences, certificate_path, client_certificate_path,
+//	client_key_path, fragment, fragment_fallback_delay, record_fragment
 func TranslateTLS(m map[string]any) map[string]any {
 	tlsEnabled := GetBool(m, "tls")
 	realityOpts := GetMap(m, "reality-opts")

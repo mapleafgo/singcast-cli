@@ -5,18 +5,16 @@ import "math"
 // TranslateTransport translates mihomo transport/underlay configuration to a sing-box
 // transport object. Returns nil if no transport is needed (plain TCP).
 //
-// Field mappings:
+// Each transport function maps only fields that sing-box recognizes, so unknown
+// Mihomo fields are silently dropped instead of causing DisallowUnknownFields errors.
+//
+// Field mappings (Mihomo kebab-case → sing-box snake_case):
 //
 //	network: "ws"   -> transport.type: "ws"       (WebSocket)
 //	network: "http"  -> transport.type: "http"      (HTTP/2)
 //	network: "h2"    -> transport.type: "http"      (H2 uses http transport)
 //	network: "grpc"  -> transport.type: "grpc"      (gRPC)
 //	network: "tcp"   -> nil (no transport needed)
-//
-// WebSocket opts: ws-opts.path, ws-opts.headers, ws-opts.max-early-data
-// HTTP opts: http-opts.method, http-opts.path, http-opts.headers
-// H2 opts: h2-opts.host, h2-opts.path
-// gRPC opts: grpc-opts.grpc-service-name
 func TranslateTransport(m map[string]any) map[string]any {
 	network := GetStr(m, "network")
 	if network == "" || network == "tcp" {
@@ -44,6 +42,13 @@ func TranslateTransport(m map[string]any) map[string]any {
 }
 
 // translateWS builds a WebSocket transport from ws-opts.
+//
+// Sing-box V2RayWebsocketOptions:
+//
+//	path                string
+//	headers             HTTPHeader
+//	max_early_data      uint32
+//	early_data_header_name string
 func translateWS(wsOpts map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "ws",
@@ -62,11 +67,20 @@ func translateWS(wsOpts map[string]any) map[string]any {
 	if maxEarlyData := GetInt(wsOpts, "max-early-data"); maxEarlyData > 0 {
 		transport["max_early_data"] = min(maxEarlyData, math.MaxUint32)
 	}
+	if earlyHeader := GetStr(wsOpts, "early-data-header-name"); earlyHeader != "" {
+		transport["early_data_header_name"] = earlyHeader
+	}
 
 	return transport
 }
 
 // translateHTTPUpgrade builds an HTTP Upgrade transport from ws-opts with v2ray-http-upgrade.
+//
+// Sing-box V2RayHTTPUpgradeOptions:
+//
+//	host    string
+//	path    string
+//	headers HTTPHeader
 func translateHTTPUpgrade(wsOpts map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "httpupgrade",
@@ -76,6 +90,9 @@ func translateHTTPUpgrade(wsOpts map[string]any) map[string]any {
 		return transport
 	}
 
+	if host := GetStr(wsOpts, "host"); host != "" {
+		transport["host"] = host
+	}
 	if path := GetStr(wsOpts, "path"); path != "" {
 		transport["path"] = path
 	}
@@ -87,6 +104,15 @@ func translateHTTPUpgrade(wsOpts map[string]any) map[string]any {
 }
 
 // translateHTTP builds an HTTP transport from http-opts.
+//
+// Sing-box V2RayHTTPOptions:
+//
+//	path         string
+//	method       string
+//	headers      HTTPHeader
+//	host         []string   (Mihomo http-opts has no host field)
+//	idle_timeout Duration   (Mihomo has no corresponding field)
+//	ping_timeout Duration   (Mihomo has no corresponding field)
 func translateHTTP(m map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "http",
@@ -101,7 +127,7 @@ func translateHTTP(m map[string]any) map[string]any {
 		transport["method"] = method
 	}
 
-	// http-opts.path can be a string or []string
+	// http-opts.path can be a string or []string; sing-box expects a single string.
 	if path := GetStr(httpOpts, "path"); path != "" {
 		transport["path"] = path
 	} else if paths := GetStrSlice(httpOpts, "path"); paths != nil {
@@ -118,6 +144,15 @@ func translateHTTP(m map[string]any) map[string]any {
 }
 
 // translateH2 builds an HTTP transport from h2-opts.
+//
+// Sing-box V2RayHTTPOptions (same as HTTP):
+//
+//	host         []string
+//	path         string
+//	method       string
+//	headers      HTTPHeader
+//	idle_timeout Duration  (Mihomo has no corresponding field)
+//	ping_timeout Duration  (Mihomo has no corresponding field)
 func translateH2(m map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "http",
@@ -128,6 +163,7 @@ func translateH2(m map[string]any) map[string]any {
 		return transport
 	}
 
+	// host can be a single string or []string; sing-box expects []string.
 	if host := GetStr(h2Opts, "host"); host != "" {
 		transport["host"] = []string{host}
 	} else if hosts := GetStrSlice(h2Opts, "host"); hosts != nil {
@@ -142,6 +178,13 @@ func translateH2(m map[string]any) map[string]any {
 }
 
 // translateGRPC builds a gRPC transport from grpc-opts.
+//
+// Sing-box V2RayGRPCOptions:
+//
+//	service_name           string
+//	idle_timeout           Duration  (Mihomo has no corresponding field)
+//	ping_timeout           Duration  (Mihomo has no corresponding field)
+//	permit_without_stream  bool      (Mihomo has no corresponding field)
 func translateGRPC(m map[string]any) map[string]any {
 	transport := map[string]any{
 		"type": "grpc",

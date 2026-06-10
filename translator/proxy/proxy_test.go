@@ -568,6 +568,31 @@ func TestTranslateTransportGRPC(t *testing.T) {
 	}
 }
 
+func TestTranslateTransportWSEarlyData(t *testing.T) {
+	m := map[string]any{
+		"network": "ws",
+		"ws-opts": map[string]any{
+			"path":                   "/ws",
+			"max-early-data":         2560,
+			"early-data-header-name": "Sec-WebSocket-Protocol",
+		},
+	}
+
+	transport := TranslateTransport(m)
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
+	}
+	if transport["type"] != "ws" {
+		t.Errorf("type = %v, want ws", transport["type"])
+	}
+	if transport["max_early_data"] != 2560 {
+		t.Errorf("max_early_data = %v, want 2560", transport["max_early_data"])
+	}
+	if transport["early_data_header_name"] != "Sec-WebSocket-Protocol" {
+		t.Errorf("early_data_header_name = %v, want Sec-WebSocket-Protocol", transport["early_data_header_name"])
+	}
+}
+
 func TestTranslateTransportHTTPUpgrade(t *testing.T) {
 	m := map[string]any{
 		"network": "ws",
