@@ -27,6 +27,7 @@
 | `unified-delay: false` | (无对应) | 忽略 |
 | `tcp-concurrent: false` | (无对应) | 忽略 |
 | `keep-alive-interval: 30` | dial fields `tcp_keep_alive_interval: "30s"` | 需加单位 |
+| `hosts: {domain: ip}` | `dns.servers[].{type:"hosts", predefined:{domain:ip}}` | mihomo hosts 值支持字符串或 IP 数组，均映射到 sing-box hosts DNS server（见节 N.4） |
 | `find-process-mode: strict` | `route.find_process: true/false` | always/strict→true, off→false |
 | `geodata-mode: true` | (sing-box 使用 rule_set binary) | 影响规则格式选择 |
 | `sniffer.*` | route rules `action: "sniff"` + `action: "hijack-dns"` | **独立实现**：忽略 mihomo sniffer 配置，无条件启用嗅探和 DNS 劫持（见节 T.1） |
@@ -844,8 +845,9 @@ https://8.8.8.8/dns-query#proxy&ecs=1.1.1.1/24&ecs-override=true
 | `listen: 0.0.0.0:1053` | (无直接对应) | sing-box 通过 route 处理 DNS |
 | `ipv6: false` | `strategy: "prefer_ipv4"` | 策略映射 |
 | `prefer-h3: false` | 用 `type:"h3"` 替代 `type:"https"` | 需生成不同类型 |
-| `use-hosts: true` | (无对应) | sing-box 无 hosts 文件支持 |
-| `use-system-hosts: true` | (无对应) | 同上 |
+| `use-hosts: true` | 控制 hosts DNS server 是否生成 | `false` 时不生成 hosts DNS server 和对应规则 |
+| `use-system-hosts: true` | (无对应) | sing-box 不读取系统 hosts 文件 |
+| `hosts: {domain: ip}` | `dns.servers[].{type:"hosts", predefined:{domain:ip}}` + DNS rules | mihomo hosts 值支持**字符串**（单个 IP）或**数组**（多个 IP，如 `[223.5.5.5, 2400:3200::1]`），均透传到 sing-box hosts DNS server 的 `predefined` 字段（sing-box 原生支持多 IP） |
 | `respect-rules: false` | (通过 DNS rules 实现) | 需显式规则 |
 | `enhanced-mode: fake-ip` | 添加 `type:"fakeip"` server | FakeIP 是服务器类型 |
 | `enhanced-mode: redir-host` | 不添加 fakeip server | 标准 DNS 模式 |

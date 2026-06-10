@@ -347,7 +347,7 @@ func TestTranslateDNSUseHostsFalse(t *testing.T) {
 	tr.groupTagOrder = []string{"PROXY"}
 
 	cfg := &RawConfig{
-		Hosts: map[string]string{
+		Hosts: map[string]any{
 			"local.test": "127.0.0.1",
 		},
 		DNS: RawDNS{
@@ -364,6 +364,65 @@ func TestTranslateDNSUseHostsFalse(t *testing.T) {
 		if srv["type"] == "hosts" {
 			t.Error("hosts DNS server should not be created when use-hosts is false")
 		}
+	}
+}
+
+func TestTranslateDNSHostsArray(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+
+	cfg := &RawConfig{
+		Hosts: map[string]any{
+			"local.test":   "127.0.0.1",
+			"array.test":   []any{"10.0.0.1", "10.0.0.2"},
+			"v6.test":      []any{"::1"},
+			"empty.test":   []any{},
+		},
+		DNS: RawDNS{
+			Enable:            true,
+			NameServer:        []string{"8.8.8.8"},
+			DefaultNameserver: []string{"223.5.5.5"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	// Find the hosts server
+	var hostsSrv map[string]any
+	for _, srv := range tr.config.DNS.Servers {
+		if srv["type"] == "hosts" {
+			hostsSrv = srv
+			break
+		}
+	}
+	if hostsSrv == nil {
+		t.Fatal("hosts DNS server not created")
+	}
+
+	predefined, ok := hostsSrv["predefined"].(map[string]any)
+	if !ok {
+		t.Fatalf("predefined type = %T, want map[string]any", hostsSrv["predefined"])
+	}
+
+	// Single string value
+	if predefined["local.test"] != "127.0.0.1" {
+		t.Errorf("local.test = %v, want 127.0.0.1", predefined["local.test"])
+	}
+	// Array value: all IPs passed through
+	arrVal, ok := predefined["array.test"].([]string)
+	if !ok {
+		t.Fatalf("array.test type = %T, want []string", predefined["array.test"])
+	}
+	if len(arrVal) != 2 || arrVal[0] != "10.0.0.1" || arrVal[1] != "10.0.0.2" {
+		t.Errorf("array.test = %v, want [10.0.0.1 10.0.0.2]", arrVal)
+	}
+	// Single-element array: flattened to string
+	if predefined["v6.test"] != "::1" {
+		t.Errorf("v6.test = %v, want ::1", predefined["v6.test"])
+	}
+	// Empty array: no entry (or empty string)
+	if ip, exists := predefined["empty.test"]; exists && ip != "" {
+		t.Errorf("empty.test = %v, want empty or absent", ip)
 	}
 }
 

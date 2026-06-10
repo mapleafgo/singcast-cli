@@ -28,7 +28,7 @@ type RawConfig struct {
 	Rule               []string                  `yaml:"rules" json:"rules"`
 	ProxyProvider      map[string]map[string]any `yaml:"proxy-providers" json:"proxy-providers"`
 	RuleProvider       map[string]map[string]any `yaml:"rule-providers" json:"rule-providers"`
-	Hosts              map[string]string         `yaml:"hosts" json:"hosts"`
+	Hosts              map[string]any            `yaml:"hosts" json:"hosts"`
 	KeepAliveInterval  int                       `yaml:"keep-alive-interval" json:"keep-alive-interval"`
 	FindProcessMode    string                    `yaml:"find-process-mode" json:"find-process-mode"`
 	GlobalFingerprint  string                    `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`

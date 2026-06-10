@@ -203,8 +203,24 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		hostsTag := "hosts"
 		predefined := make(map[string]any)
 		var domains []string
-		for domain, ip := range cfg.Hosts {
-			predefined[domain] = ip
+		for domain, val := range cfg.Hosts {
+			switch v := val.(type) {
+			case string:
+				predefined[domain] = v
+			case []any:
+				// Mihomo allows arrays of IPs; sing-box predefined also supports multiple IPs
+				var ips []string
+				for _, item := range v {
+					if s, ok := item.(string); ok {
+						ips = append(ips, s)
+					}
+				}
+				if len(ips) == 1 {
+					predefined[domain] = ips[0]
+				} else if len(ips) > 1 {
+					predefined[domain] = ips
+				}
+			}
 			domains = append(domains, domain)
 		}
 		result.Servers = append(result.Servers, map[string]any{
