@@ -172,6 +172,16 @@ tasks:
     cmds:
       - go test -tags '{{.BUILDTAGS}}' ./translator/... ./core/...
 
+  lint:
+    desc: Run golangci-lint (build tags & linters configured in .golangci.yml)
+    cmds:
+      - golangci-lint run ./...
+
+  lint-fix:
+    desc: Auto-format Go source via golangci-lint (goimports)
+    cmds:
+      - golangci-lint fmt ./...
+
   tidy:
     desc: Update all direct dependencies to latest and tidy
     cmds:

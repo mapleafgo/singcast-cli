@@ -1,0 +1,65 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.26"
+  build-tags:
+    - with_clash_api
+    - with_utls
+    - with_quic
+    - with_gvisor
+
+linters:
+  # 标准 5 件套（errcheck/govet/ineffassign/staticcheck/unused）之上，
+  # 增补一批低噪音、契合 Go 1.26 + slog 项目风格的高价值 linter。
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - fatcontext
+    - gocritic
+    - intrange
+    - misspell
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - noctx
+    - predeclared
+    - reassign
+    - rowserrcheck
+    - sloglint
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # 测试文件放宽：复杂度、错误检查、重复等对测试意义不大。
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - dupl
+          - goconst
+          - gocyclo
+          - funlen
+          - lll
+          - revive
+          - unparam
+
+formatters:
+  enable:
+    - goimports
+
+issues:
+  # 0 = 不截断，所有问题都报出，便于 CI 阻断。
+  max-issues-per-linter: 0
+  max-same-issues: 0
