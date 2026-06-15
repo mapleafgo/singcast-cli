@@ -13,7 +13,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-tun"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 	"github.com/sagernet/sing/common/logger"
 	"github.com/sagernet/sing/common/x/list"
@@ -27,9 +27,9 @@ var _ adapter.PlatformInterface = (*PlatformIO)(nil)
 type PlatformIO struct {
 	isMobile bool
 
-	tunFd      atomic.Int32
-	protectFn  atomic.Pointer[func(int32) bool]
-	includeAll atomic.Bool
+	tunFd           atomic.Int32
+	protectFn       atomic.Pointer[func(int32) bool]
+	includeAll      atomic.Bool
 	getInterfacesFn atomic.Pointer[func() string]
 	getWiFiStateFn  atomic.Pointer[func() string]
 

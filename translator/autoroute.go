@@ -123,15 +123,15 @@ func generateDNSRules(cc string, t *translation) {
 		"server":     directTag,
 	})
 
-		// Domestic geosite + geoip → direct DNS
-		geositeTag := "geosite-" + cc
-		geoipTag := "geoip-" + cc
-		ensureRuleSetDef(geositeTag, "geosite", cc, t)
-		ensureRuleSetDef(geoipTag, "geoip", cc, t)
-		rules = append(rules, map[string]any{
-			"rule_set": []string{geositeTag, geoipTag},
-			"server":   directTag,
-		})
+	// Domestic geosite + geoip → direct DNS
+	geositeTag := "geosite-" + cc
+	geoipTag := "geoip-" + cc
+	ensureRuleSetDef(geositeTag, "geosite", cc, t)
+	ensureRuleSetDef(geoipTag, "geoip", cc, t)
+	rules = append(rules, map[string]any{
+		"rule_set": []string{geositeTag, geoipTag},
+		"server":   directTag,
+	})
 
 	// FakeIP for A/AAAA queries
 	if fakeipTag != "" {

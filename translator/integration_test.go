@@ -4,7 +4,6 @@ import (
 	"testing"
 )
 
-
 func TestIntegrationNoDuplicateTags(t *testing.T) {
 	yaml := `mixed-port: 7890
 proxies:

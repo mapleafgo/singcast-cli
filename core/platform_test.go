@@ -21,7 +21,6 @@ func TestSetTunFd_ZeroDoesNotPanic(t *testing.T) {
 	p.SetTunFd(0)
 }
 
-
 // --- UsePlatformInterface ---
 
 func TestUsePlatformInterface_DefaultFalse(t *testing.T) {
@@ -247,7 +246,7 @@ func TestTunState_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(3)
-		go func(n int) { defer wg.Done(); p.SetTunFd(int32(n % 2) * 10) }(i)
+		go func(n int) { defer wg.Done(); p.SetTunFd(int32(n%2) * 10) }(i)
 		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
 		go func() { defer wg.Done(); p.SetTunFd(0) }()
 	}

@@ -32,9 +32,9 @@ func InstallService(homeDir string) error {
 		// Service already exists — update config and DACL to latest.
 		defer s.Close()
 		if err := s.UpdateConfig(mgr.Config{
-			DisplayName: "Singcast Service",
-			Description: "Singcast proxy core service",
-			StartType:   mgr.StartManual,
+			DisplayName:    "Singcast Service",
+			Description:    "Singcast proxy core service",
+			StartType:      mgr.StartManual,
 			BinaryPathName: fmt.Sprintf(`"%s" ipc --home "%s"`, exe, homeDir),
 		}); err != nil {
 			return fmt.Errorf("update service config: %w", err)

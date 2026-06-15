@@ -61,9 +61,9 @@ func convertCommand() *cli.Command {
 			outputPath := cmd.String("output")
 			if outputPath == "" {
 				if _, err := os.Stdout.Write([]byte(result)); err != nil {
-						return fmt.Errorf("write output: %w", err)
-					}
-					_, _ = os.Stdout.Write([]byte("\n"))
+					return fmt.Errorf("write output: %w", err)
+				}
+				_, _ = os.Stdout.Write([]byte("\n"))
 			} else {
 				if err := os.WriteFile(outputPath, []byte(result), 0o644); err != nil {
 					return fmt.Errorf("write output: %w", err)

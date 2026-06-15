@@ -184,7 +184,6 @@ func TestParseDNSServerFragment(t *testing.T) {
 	}
 }
 
-
 func TestIsIPAddress(t *testing.T) {
 	tests := []struct {
 		input string
@@ -373,10 +372,10 @@ func TestTranslateDNSHostsArray(t *testing.T) {
 
 	cfg := &RawConfig{
 		Hosts: map[string]any{
-			"local.test":   "127.0.0.1",
-			"array.test":   []any{"10.0.0.1", "10.0.0.2"},
-			"v6.test":      []any{"::1"},
-			"empty.test":   []any{},
+			"local.test": "127.0.0.1",
+			"array.test": []any{"10.0.0.1", "10.0.0.2"},
+			"v6.test":    []any{"::1"},
+			"empty.test": []any{},
 		},
 		DNS: RawDNS{
 			Enable:            true,
