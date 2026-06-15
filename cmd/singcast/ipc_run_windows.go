@@ -28,7 +28,7 @@ func (w *windowsServiceHandler) Execute(args []string, r <-chan svc.ChangeReques
 		return true, 1
 	}
 
-	srv := ipc.NewServer(svcInst)
+	srv := ipc.NewServer(svcInst, ipc.IpcPath())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
