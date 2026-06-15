@@ -28,12 +28,11 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 
 	// Step 1: Strategy mapping
-	if dns.IPv6 != nil {
-		if *dns.IPv6 {
-			result.Strategy = "prefer_ipv6"
-		} else {
-			result.Strategy = "prefer_ipv4"
-		}
+	// Use top-level ipv6 to control DNS strategy.
+	if cfg.IPv6 {
+		result.Strategy = "prefer_ipv6"
+	} else {
+		result.Strategy = "prefer_ipv4"
 	}
 
 	// Determine first proxy group tag for detour fields.
@@ -153,11 +152,12 @@ func translateDNS(cfg *RawConfig, t *translation) {
 			var domains []string
 
 			for _, f := range dns.FakeIPFilter {
-				if strings.HasPrefix(f, "*.") {
+				switch {
+				case strings.HasPrefix(f, "*."):
 					suffixes = append(suffixes, f[1:]) // "*.lan" -> ".lan"
-				} else if strings.Contains(f, "*") {
+				case strings.Contains(f, "*"):
 					suffixes = append(suffixes, "."+strings.TrimPrefix(f, "*"))
-				} else {
+				default:
 					domains = append(domains, f)
 				}
 			}
@@ -399,19 +399,20 @@ func extractHostPort(rawURL string) (host string, port int, path string, scheme 
 
 	// Determine scheme
 	scheme = ""
-	if strings.HasPrefix(s, "https://") {
+	switch {
+	case strings.HasPrefix(s, "https://"):
 		scheme = "https"
 		s = s[len("https://"):]
-	} else if strings.HasPrefix(s, "http://") {
+	case strings.HasPrefix(s, "http://"):
 		scheme = "http"
 		s = s[len("http://"):]
-	} else if strings.HasPrefix(s, "tls://") {
+	case strings.HasPrefix(s, "tls://"):
 		scheme = "tls"
 		s = s[len("tls://"):]
-	} else if strings.HasPrefix(s, "quic://") {
+	case strings.HasPrefix(s, "quic://"):
 		scheme = "quic"
 		s = s[len("quic://"):]
-	} else if strings.HasPrefix(s, "h3://") {
+	case strings.HasPrefix(s, "h3://"):
 		scheme = "h3"
 		s = s[len("h3://"):]
 	}
