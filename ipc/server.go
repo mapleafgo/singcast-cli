@@ -28,11 +28,12 @@ type Server struct {
 	writer *bufio.Writer
 }
 
-// NewServer creates a new IPC server.
-// It uses the current working directory (set by svc.Init) to determine the IPC path.
-func NewServer(svc *core.Service) *Server {
+// NewServer creates a new IPC server listening at ipcPath.
+// On desktop pass ipc.IpcPath(); on mobile pass an App Group shared path
+// so a second process (the app) can drive the same kernel over JSON-RPC.
+func NewServer(svc *core.Service, ipcPath string) *Server {
 	return &Server{
-		ipcPath: IpcPath(),
+		ipcPath: ipcPath,
 		handler: NewHandler(svc),
 	}
 }

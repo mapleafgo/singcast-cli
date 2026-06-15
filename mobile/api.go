@@ -2,9 +2,13 @@
 package mobile
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	runtimeDebug "runtime/debug"
 
 	"github.com/mapleafgo/singcast/core"
+	"github.com/mapleafgo/singcast/ipc"
 	_ "golang.org/x/mobile/bind" // retained for gomobile bind
 )
 
@@ -23,7 +27,9 @@ type SocketProtector interface {
 //	   └── Stop ←────────────────────────────────────────────────────────────┘
 //	Destroy is terminal; call it when the OS reclaims the VPN service.
 type Singcast struct {
-	svc *core.Service
+	svc       *core.Service
+	ipcServer *ipc.Server
+	ipcCancel context.CancelFunc
 }
 
 // Create creates a new Singcast instance.
@@ -113,6 +119,44 @@ func (s *Singcast) UpdateDefaultInterface(name string, index int64, expensive bo
 // SetIncludeAllNetworks sets whether the VPN uses includeAllNetworks (iOS).
 func (s *Singcast) SetIncludeAllNetworks(v bool) {
 	s.svc.PlatformIO().SetIncludeAllNetworks(v)
+}
+
+// --- IPC ---
+
+// StartIpcServer starts a JSON-RPC server at socketPath (Unix socket or
+// Windows named pipe), letting a second process control this kernel.
+//
+// It bridges core events to JSON-RPC notifications, so StartIpcServer and
+// SetOnEvent are mutually exclusive: starting the server installs its own
+// event handler. On iOS the Extension calls this right after SetTunFd, and
+// the main app connects over the App Group socket as an RPC client.
+//
+// The server runs until StopIpcServer is called, or — when no GUI is
+// connected — until the service stops. If the GUI disconnects while the
+// kernel keeps running (e.g. the app was killed), the server stays alive.
+func (s *Singcast) StartIpcServer(socketPath string) error {
+	if s.ipcServer != nil {
+		return fmt.Errorf("ipc server already running")
+	}
+	srv := ipc.NewServer(s.svc, socketPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.ipcServer = srv
+	s.ipcCancel = cancel
+	go func() {
+		if err := srv.Run(ctx); err != nil {
+			slog.Error("ipc server run", "error", err)
+		}
+	}()
+	return nil
+}
+
+// StopIpcServer stops the IPC server if one is running.
+func (s *Singcast) StopIpcServer() {
+	if s.ipcCancel != nil {
+		s.ipcCancel()
+		s.ipcCancel = nil
+	}
+	s.ipcServer = nil
 }
 
 // --- Logging ---

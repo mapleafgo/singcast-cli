@@ -18,7 +18,7 @@ func runIpcForeground(homeDir string) error {
 		return fmt.Errorf("init: %w", err)
 	}
 
-	srv := ipc.NewServer(svc)
+	srv := ipc.NewServer(svc, ipc.IpcPath())
 
 	sigCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
