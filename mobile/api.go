@@ -54,7 +54,10 @@ func (s *Singcast) StartWithContent(content, ruleSetProxy string) error {
 func (s *Singcast) Stop() error { return s.svc.Stop() }
 
 // Destroy releases all resources. The instance cannot be reused.
-func (s *Singcast) Destroy() { s.svc.Destroy() }
+func (s *Singcast) Destroy() {
+	s.StopIpcServer()
+	s.svc.Destroy()
+}
 
 // State returns the current service lifecycle state as a string.
 // "created", "initialized", "starting", "running", "destroyed".
