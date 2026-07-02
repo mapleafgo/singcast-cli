@@ -267,12 +267,13 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		hasProtect := s.platform.protectFn.Load() != nil
 		fd := s.platform.tunFd.Load()
 		monitor := s.platform.ifaceMonitor
-		var defaultIface, myIface string
+		var defaultIface string
+		var myIface []string
 		if monitor != nil {
 			if di := monitor.DefaultInterface(); di != nil {
 				defaultIface = di.Name
 			}
-			myIface = monitor.MyInterface()
+			myIface = monitor.MyInterfaces()
 		}
 		slog.Debug("mobile startup", "hasProtect", hasProtect, "tunFd", fd, "defaultIface", defaultIface, "myIface", myIface)
 	}

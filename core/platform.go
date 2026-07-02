@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os/exec"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -87,7 +88,7 @@ func (p *PlatformIO) SetWiFiStateProvider(fn func() string) {
 // UpdateDefaultInterface updates the mobile interface monitor with new data.
 func (p *PlatformIO) UpdateDefaultInterface(name string, index int64, expensive bool) {
 	m := p.ifaceMonitor
-	if m != nil && m.MyInterface() == name {
+	if m != nil && slices.Contains(m.MyInterfaces(), name) {
 		slog.Debug("platform: skip default interface update for TUN", "name", name)
 		return
 	}
@@ -254,7 +255,7 @@ type callbackInterfaceMonitor struct {
 	mu          sync.Mutex
 	iface       *control.Interface
 	callbacks   list.List[tun.DefaultInterfaceUpdateCallback]
-	myInterface string
+	myInterfaces []string
 	networkMgr  adapter.NetworkManager
 	router      adapter.Router
 }
@@ -287,13 +288,13 @@ func (m *callbackInterfaceMonitor) UnregisterCallback(el *list.Element[tun.Defau
 func (m *callbackInterfaceMonitor) RegisterMyInterface(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.myInterface = name
+	m.myInterfaces = append(m.myInterfaces, name)
 	slog.Info("platform: register my interface", "name", name)
 }
-func (m *callbackInterfaceMonitor) MyInterface() string {
+func (m *callbackInterfaceMonitor) MyInterfaces() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.myInterface
+	return m.myInterfaces
 }
 
 func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool) {
