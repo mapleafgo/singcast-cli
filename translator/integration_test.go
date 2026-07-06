@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,170 @@ proxy-groups:
 		if !rsTags[tag] {
 			t.Errorf("missing rule_set: %s", tag)
 		}
+	}
+}
+
+// TestIntegrationUnsupportedProxyStub verifies that unsupported protocol proxies
+// (e.g. ssr) are converted to a socks stub outbound instead of being dropped.
+// The stub keeps the node visible in the Clash API UI but fails on use.
+func TestIntegrationUnsupportedProxyStub(t *testing.T) {
+	yaml := `mixed-port: 7890
+proxies:
+  - name: ssr-node
+    type: ssr
+    server: 1.2.3.4
+    port: 1080
+  - name: good-node
+    type: socks5
+    server: 5.6.7.8
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [ssr-node, good-node, DIRECT]
+`
+	out, warnings, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	if err != nil {
+		t.Fatalf("translation failed: %v", err)
+	}
+
+	m := parseJSON(t, out)
+	outbounds := m["outbounds"].([]any)
+
+	// ssr-node should appear as a socks stub
+	var ssrStub map[string]any
+	for _, ob := range outbounds {
+		obMap := ob.(map[string]any)
+		if obMap["tag"] == "ssr-node" {
+			ssrStub = obMap
+			break
+		}
+	}
+	if ssrStub == nil {
+		t.Fatal("ssr-node stub outbound not found")
+	}
+	if ssrStub["type"] != "socks" {
+		t.Errorf("ssr-node type = %v, want socks (stub)", ssrStub["type"])
+	}
+	if ssrStub["server"] != "127.0.0.1" {
+		t.Errorf("ssr-node server = %v, want 127.0.0.1", ssrStub["server"])
+	}
+	if ssrStub["server_port"] != float64(1) {
+		t.Errorf("ssr-node server_port = %v, want 1", ssrStub["server_port"])
+	}
+
+	// PROXY group should include ssr-node in its outbounds
+	var proxyGroup map[string]any
+	for _, ob := range outbounds {
+		obMap := ob.(map[string]any)
+		if obMap["tag"] == "PROXY" {
+			proxyGroup = obMap
+			break
+		}
+	}
+	if proxyGroup == nil {
+		t.Fatal("PROXY group not found")
+	}
+	groupObs, _ := proxyGroup["outbounds"].([]any)
+	foundSSR := false
+	for _, o := range groupObs {
+		if o == "ssr-node" {
+			foundSSR = true
+		}
+	}
+	if !foundSSR {
+		t.Error("PROXY group should include ssr-node in outbounds")
+	}
+
+	// Should have a warning about ssr being unsupported
+	foundWarn := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ssr") {
+			foundWarn = true
+		}
+	}
+	if !foundWarn {
+		t.Error("expected warning mentioning ssr")
+	}
+}
+
+// TestIntegrationUnsupportedCipherStub verifies that proxies with unsupported
+// ciphers (within a supported protocol) also get stub outbounds.
+func TestIntegrationUnsupportedCipherStub(t *testing.T) {
+	yaml := `mixed-port: 7890
+proxies:
+  - name: bad-ss
+    type: ss
+    server: 1.2.3.4
+    port: 8388
+    cipher: rc4-md5
+    password: pass
+  - name: good-node
+    type: socks5
+    server: 5.6.7.8
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [bad-ss, good-node]
+`
+	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	if err != nil {
+		t.Fatalf("translation failed: %v", err)
+	}
+
+	m := parseJSON(t, out)
+	outbounds := m["outbounds"].([]any)
+
+	// bad-ss should appear as a socks stub
+	for _, ob := range outbounds {
+		obMap := ob.(map[string]any)
+		if obMap["tag"] == "bad-ss" {
+			if obMap["type"] != "socks" {
+				t.Errorf("bad-ss type = %v, want socks (stub)", obMap["type"])
+			}
+			return
+		}
+	}
+	t.Fatal("bad-ss stub outbound not found")
+}
+
+// TestIntegrationStubTagsMeta verifies that TranslateWithMeta returns correct
+// stubTags mapping for proxies with unsupported protocols.
+func TestIntegrationStubTagsMeta(t *testing.T) {
+	yaml := `mixed-port: 7890
+proxies:
+  - name: ssr-node
+    type: ssr
+    server: 1.2.3.4
+    port: 1080
+  - name: good-node
+    type: socks5
+    server: 5.6.7.8
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [ssr-node, good-node, DIRECT]
+`
+	_, _, meta, err := TranslateWithMeta([]byte(yaml), &Options{Country: "CN"})
+	if err != nil {
+		t.Fatalf("translation failed: %v", err)
+	}
+
+	if len(meta.StubTags) != 1 {
+		t.Fatalf("expected 1 stub tag, got %d: %v", len(meta.StubTags), meta.StubTags)
+	}
+	origType, ok := meta.StubTags["ssr-node"]
+	if !ok {
+		t.Fatal("ssr-node not found in stubTags")
+	}
+	if origType != "ssr" {
+		t.Errorf("ssr-node original type = %v, want ssr", origType)
+	}
+
+	// good-node should NOT be in stubTags
+	if _, ok := meta.StubTags["good-node"]; ok {
+		t.Error("good-node should not be in stubTags")
 	}
 }

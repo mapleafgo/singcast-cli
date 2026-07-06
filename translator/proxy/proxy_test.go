@@ -651,3 +651,246 @@ func TestParseBandwidth(t *testing.T) {
 		}
 	}
 }
+
+func TestTranslateAnyTLS(t *testing.T) {
+	warn, warnings := captureWarn()
+	m := map[string]any{
+		"name":             "anytls-test",
+		"server":           "at.example.com",
+		"port":             443,
+		"password":         "at-pass",
+		"sni":              "at.example.com",
+		"skip-cert-verify": true,
+	}
+
+	out := TranslateAnyTLS(m, warn)
+	if out == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if out["type"] != "anytls" {
+		t.Errorf("type = %v, want anytls", out["type"])
+	}
+	if out["tag"] != "anytls-test" {
+		t.Errorf("tag = %v, want anytls-test", out["tag"])
+	}
+	if out["server"] != "at.example.com" {
+		t.Errorf("server = %v, want at.example.com", out["server"])
+	}
+	if out["server_port"] != 443 {
+		t.Errorf("server_port = %v, want 443", out["server_port"])
+	}
+	if out["password"] != "at-pass" {
+		t.Errorf("password = %v, want at-pass", out["password"])
+	}
+	tls, ok := out["tls"].(map[string]any)
+	if !ok {
+		t.Fatal("expected tls to be map[string]any")
+	}
+	if tls["enabled"] != true {
+		t.Errorf("tls.enabled = %v, want true", tls["enabled"])
+	}
+	if tls["insecure"] != true {
+		t.Errorf("tls.insecure = %v, want true", tls["insecure"])
+	}
+	if tls["server_name"] != "at.example.com" {
+		t.Errorf("tls.server_name = %v, want at.example.com", tls["server_name"])
+	}
+	if len(*warnings) > 0 {
+		t.Errorf("unexpected warnings: %v", *warnings)
+	}
+}
+
+func TestTranslateAnyTLS_MissingPassword(t *testing.T) {
+	warn, warnings := captureWarn()
+	m := map[string]any{
+		"name":   "anytls-nopass",
+		"server": "at.example.com",
+		"port":   443,
+	}
+
+	out := TranslateAnyTLS(m, warn)
+	if out != nil {
+		t.Errorf("expected nil result for missing password, got %v", out)
+	}
+	if len(*warnings) == 0 {
+		t.Error("expected warning for missing password")
+	}
+	found := false
+	for _, w := range *warnings {
+		if strings.Contains(w, "missing password") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning mentioning 'missing password', got %v", *warnings)
+	}
+}
+
+func TestTranslateHysteria(t *testing.T) {
+	warn, warnings := captureWarn()
+	m := map[string]any{
+		"name":     "hysteria-test",
+		"server":   "hy.example.com",
+		"port":     443,
+		"auth-str": "hy-auth",
+		"up":       "50 Mbps",
+		"down":     "100 Mbps",
+		"obfs":     "salamander",
+		"ports":    "1000-2000",
+		"protocol": "udp",
+	}
+
+	out := TranslateHysteria(m, warn)
+	if out == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if out["type"] != "hysteria" {
+		t.Errorf("type = %v, want hysteria", out["type"])
+	}
+	if out["auth_str"] != "hy-auth" {
+		t.Errorf("auth_str = %v, want hy-auth", out["auth_str"])
+	}
+	if out["up_mbps"] != 50 {
+		t.Errorf("up_mbps = %v, want 50", out["up_mbps"])
+	}
+	if out["down_mbps"] != 100 {
+		t.Errorf("down_mbps = %v, want 100", out["down_mbps"])
+	}
+	if out["obfs"] != "salamander" {
+		t.Errorf("obfs = %v, want salamander", out["obfs"])
+	}
+	serverPorts, ok := out["server_ports"].([]string)
+	if !ok {
+		t.Fatal("expected server_ports to be []string")
+	}
+	if len(serverPorts) != 1 || serverPorts[0] != "1000:2000" {
+		t.Errorf("server_ports = %v, want [1000:2000]", serverPorts)
+	}
+	if out["network"] != "udp" {
+		t.Errorf("network = %v, want udp", out["network"])
+	}
+	tls, ok := out["tls"].(map[string]any)
+	if !ok {
+		t.Fatal("expected tls")
+	}
+	if tls["enabled"] != true {
+		t.Errorf("tls.enabled = %v, want true", tls["enabled"])
+	}
+	if len(*warnings) > 0 {
+		t.Errorf("unexpected warnings: %v", *warnings)
+	}
+}
+
+func TestTranslateHysteria_Auth(t *testing.T) {
+	warn, warnings := captureWarn()
+	m := map[string]any{
+		"name":   "hy-auth-test",
+		"server": "hy.example.com",
+		"port":   443,
+		"auth":   "my-auth-token",
+	}
+
+	out := TranslateHysteria(m, warn)
+	if out == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if out["auth_str"] != "my-auth-token" {
+		t.Errorf("auth_str = %v, want my-auth-token", out["auth_str"])
+	}
+	if len(*warnings) > 0 {
+		t.Errorf("unexpected warnings: %v", *warnings)
+	}
+}
+
+func TestTranslateUnsupported(t *testing.T) {
+	warn, warnings := captureWarn()
+	m := map[string]any{
+		"name": "test-ssr",
+	}
+
+	out := TranslateUnsupported("ssr", m, warn)
+	if out != nil {
+		t.Errorf("expected nil result, got %v", out)
+	}
+	if len(*warnings) == 0 {
+		t.Error("expected warning")
+	}
+	foundSSR, foundNotSupported := false, false
+	for _, w := range *warnings {
+		if strings.Contains(w, "ssr") {
+			foundSSR = true
+		}
+		if strings.Contains(w, "not supported") {
+			foundNotSupported = true
+		}
+	}
+	if !foundSSR {
+		t.Errorf("expected warning mentioning 'ssr', got %v", *warnings)
+	}
+	if !foundNotSupported {
+		t.Errorf("expected warning mentioning 'not supported', got %v", *warnings)
+	}
+}
+
+func TestTranslateHTTP_Transport(t *testing.T) {
+	m := map[string]any{
+		"network": "http",
+		"http-opts": map[string]any{
+			"method": "POST",
+			"path":   "/test",
+			"headers": map[string]any{
+				"Host": "example.com",
+			},
+		},
+	}
+
+	transport := TranslateTransport(m)
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
+	}
+	if transport["type"] != "http" {
+		t.Errorf("type = %v, want http", transport["type"])
+	}
+	if transport["method"] != "POST" {
+		t.Errorf("method = %v, want POST", transport["method"])
+	}
+	if transport["path"] != "/test" {
+		t.Errorf("path = %v, want /test", transport["path"])
+	}
+	headers, ok := transport["headers"].(map[string]any)
+	if !ok {
+		t.Fatal("expected headers to be map[string]any")
+	}
+	if headers["Host"] != "example.com" {
+		t.Errorf("headers[Host] = %v, want example.com", headers["Host"])
+	}
+}
+
+func TestTranslateH2_Transport(t *testing.T) {
+	m := map[string]any{
+		"network": "h2",
+		"h2-opts": map[string]any{
+			"host": "example.com",
+			"path": "/h2",
+		},
+	}
+
+	transport := TranslateTransport(m)
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
+	}
+	if transport["type"] != "http" {
+		t.Errorf("type = %v, want http", transport["type"])
+	}
+	host, ok := transport["host"].([]string)
+	if !ok {
+		t.Fatal("expected host to be []string")
+	}
+	if len(host) != 1 || host[0] != "example.com" {
+		t.Errorf("host = %v, want [example.com]", host)
+	}
+	if transport["path"] != "/h2" {
+		t.Errorf("path = %v, want /h2", transport["path"])
+	}
+}
