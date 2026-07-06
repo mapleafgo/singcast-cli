@@ -19,18 +19,36 @@ func Translate(data []byte) (string, []string, error) {
 	return TranslateWithOptions(data, nil)
 }
 
+// Meta holds post-translation metadata that callers (e.g. core.Service) may need.
+type Meta struct {
+	// StubTags maps outbound tag → original protocol for proxies that were
+	// converted to socks stubs because the protocol is unsupported by sing-box.
+	StubTags map[string]string
+}
+
+// TranslateWithMeta is like TranslateWithOptions but also returns translation metadata.
+func TranslateWithMeta(data []byte, opts *Options) (string, []string, Meta, error) {
+	jsonStr, warnings, meta, err := translateInternal(data, opts)
+	return jsonStr, warnings, meta, err
+}
+
 // TranslateWithOptions translates with additional configuration options.
 func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) {
+	jsonStr, warnings, _, err := translateInternal(data, opts)
+	return jsonStr, warnings, err
+}
+
+func translateInternal(data []byte, opts *Options) (string, []string, Meta, error) {
 	// Detect format
 	if DetectFormat(data) == FormatJSON {
 		// Already sing-box JSON, pass through
-		return string(data), nil, nil
+		return string(data), nil, Meta{}, nil
 	}
 
 	// Parse YAML
 	cfg := &RawConfig{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return "", nil, fmt.Errorf("parse YAML: %w", err)
+		return "", nil, Meta{}, fmt.Errorf("parse YAML: %w", err)
 	}
 
 	t := &translation{
@@ -41,6 +59,7 @@ func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) 
 		},
 		proxyTags:   make(map[string]bool),
 		groupTags:   make(map[string]bool),
+		stubTags:    make(map[string]string),
 		ruleSetDefs: make(map[string]map[string]any),
 		opts:        opts,
 	}
@@ -81,14 +100,14 @@ func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) 
 
 	// Step 10: Validate (after assemble so REJECT is already converted to action)
 	if err := validate(t); err != nil {
-		return "", t.warnings, err
+		return "", t.warnings, Meta{StubTags: t.stubTags}, err
 	}
 
 	// Serialize to JSON
 	jsonBytes, err := json.MarshalIndent(t.config, "", "  ")
 	if err != nil {
-		return "", t.warnings, fmt.Errorf("marshal JSON: %w", err)
+		return "", t.warnings, Meta{StubTags: t.stubTags}, fmt.Errorf("marshal JSON: %w", err)
 	}
 
-	return string(jsonBytes), t.warnings, nil
+	return string(jsonBytes), t.warnings, Meta{StubTags: t.stubTags}, nil
 }

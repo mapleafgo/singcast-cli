@@ -32,6 +32,9 @@ type translation struct {
 	warnings []string
 	// translated proxy tags for reference validation
 	proxyTags map[string]bool
+	// stubTags records proxy tags that were converted to socks stubs
+	// because the original protocol is unsupported. Maps tag → original type.
+	stubTags map[string]string
 	// translated group tags (insertion-ordered via slice + set)
 	groupTagOrder []string
 	groupTags     map[string]bool

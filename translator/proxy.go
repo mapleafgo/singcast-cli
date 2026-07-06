@@ -8,9 +8,18 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 	var outbounds []map[string]any
 
 	for _, p := range cfg.Proxy {
+		proxyType, _ := p["type"].(string)
 		outbound := translateOneProxy(p, t.warn, cfg.GlobalFingerprint)
 		if outbound == nil {
-			continue
+			// Create a socks stub so unsupported nodes stay visible in the UI.
+			// The stub points to 127.0.0.1:1 — a dead endpoint that fails on
+			// any connection attempt, making it clear the node is non-functional.
+			name, _ := p["name"].(string)
+			if name == "" {
+				continue
+			}
+			outbound = makeStubOutbound(name)
+			t.stubTags[name] = proxyType
 		}
 		tag, _ := outbound["tag"].(string)
 		if tag == "" {
@@ -21,6 +30,18 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 	}
 
 	return outbounds
+}
+
+// makeStubOutbound creates a non-functional socks outbound for unsupported proxies.
+// The node appears in the Clash API UI but fails on use or health check.
+func makeStubOutbound(name string) map[string]any {
+	return map[string]any{
+		"type":        "socks",
+		"tag":         name,
+		"version":     "5",
+		"server":      "127.0.0.1",
+		"server_port": 1,
+	}
 }
 
 func cloneMap(m map[string]any) map[string]any {

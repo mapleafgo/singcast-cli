@@ -18,11 +18,15 @@ const (
 func translateGroups(cfg *RawConfig, t *translation) []map[string]any {
 	var groups []map[string]any
 
-	// Pre-populate group tags so cross-group references work regardless of order
+	translated := make(map[string]bool)
+
+	// Pre-populate groupTags so cross-group references work regardless of order.
+	// groupTagOrder is intentionally NOT pre-populated: only groups that are actually
+	// translated successfully are added later, so firstGroupTag() never returns a
+	// tag for a group that was skipped (e.g. all proxies unsupported).
 	for _, g := range cfg.ProxyGroup {
 		if name, _ := g["name"].(string); name != "" {
 			t.groupTags[name] = true
-			t.groupTagOrder = append(t.groupTagOrder, name)
 		}
 	}
 
@@ -63,7 +67,30 @@ func translateGroups(cfg *RawConfig, t *translation) []map[string]any {
 
 		if outbound != nil {
 			groups = append(groups, outbound)
+			translated[name] = true
 		}
+	}
+
+	// Clean up dangling references to skipped groups in all group outbound lists.
+	// A group might reference another group that was skipped (filterGroupProxies
+	// accepted it because groupTags was pre-populated). Remove those references,
+	// and drop any group that becomes empty as a result.
+	groups = cleanupGroupOutbounds(groups, translated, t)
+
+	// Build groupTagOrder from translated groups only (preserving config order)
+	for _, g := range cfg.ProxyGroup {
+		name, _ := g["name"].(string)
+		if name != "" && translated[name] {
+			t.groupTagOrder = append(t.groupTagOrder, name)
+		} else if name != "" {
+			// Remove skipped groups from groupTags so no downstream code
+			// treats them as valid outbound references.
+			delete(t.groupTags, name)
+		}
+	}
+
+	if len(t.groupTagOrder) == 0 && len(cfg.ProxyGroup) > 0 {
+		t.warn("no proxy groups were translated successfully; route.final will fall back to DIRECT")
 	}
 
 	return groups
@@ -88,6 +115,53 @@ func filterGroupProxies(g map[string]any, t *translation) []string {
 	}
 
 	return filtered
+}
+
+// cleanupGroupOutbounds removes references to skipped groups from every translated
+// group's outbound list. If a group's outbound list becomes empty after cleanup,
+// the group is dropped entirely (and removed from translated so groupTagOrder won't
+// include it). Returns the filtered group list.
+func cleanupGroupOutbounds(groups []map[string]any, translated map[string]bool, t *translation) []map[string]any {
+	// Valid outbound tags: real proxies + successfully translated groups + DIRECT
+	validTags := make(map[string]bool, len(t.proxyTags)+len(translated)+1)
+	for tag := range t.proxyTags {
+		validTags[tag] = true
+	}
+	for tag := range translated {
+		validTags[tag] = true
+	}
+	validTags["DIRECT"] = true
+
+	var result []map[string]any
+	for _, ob := range groups {
+		tag, _ := ob["tag"].(string)
+		oldList, _ := ob["outbounds"].([]string)
+
+		var clean []string
+		for _, name := range oldList {
+			if validTags[name] {
+				clean = append(clean, name)
+			}
+		}
+
+		if len(clean) == 0 {
+			t.warn("proxy-group \"" + tag + "\" has no valid outbounds after cleanup, dropping")
+			delete(translated, tag)
+			delete(t.groupTags, tag)
+			continue
+		}
+
+		ob["outbounds"] = clean
+
+		// Fix default selection if it was removed
+		if def, ok := ob["default"].(string); ok && !validTags[def] {
+			ob["default"] = clean[0]
+		}
+
+		result = append(result, ob)
+	}
+
+	return result
 }
 
 func translateSelectGroup(name string, proxies []string) map[string]any {

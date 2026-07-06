@@ -117,6 +117,10 @@ type runningState struct {
 	boxCtx        context.Context
 	currentConfig string
 	startedAt     int64
+	// stubTags maps outbound tag → original protocol for proxies converted to
+	// socks stubs (unsupported protocols). Used by QueryProxies to report the
+	// original type so the UI can distinguish unsupported nodes.
+	stubTags map[string]string
 }
 
 type Service struct {
@@ -182,7 +186,7 @@ func (s *Service) Init(optionsJSON string) error {
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 	// Translate config outside the lock — pure computation, no shared state.
 	data := []byte(content)
-	jsonContent, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
+	jsonContent, stubTags, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
 	if err != nil {
 		return err
 	}
@@ -206,26 +210,27 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 		return fmt.Errorf("start: invalid state %s", s.State())
 	}
 
-	if err := s.startWithJSON(jsonContent); err != nil {
+	if err := s.startWithJSON(jsonContent, stubTags); err != nil {
 		s.casState(StateStarting, StateInitialized)
 		return err
 	}
 	return nil
 }
 
-func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, error) {
+func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, map[string]string, error) {
 	if format == translator.FormatYAML {
 		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-		result, _, err := translator.TranslateWithOptions(data, opts)
+		result, _, meta, err := translator.TranslateWithMeta(data, opts)
 		if err != nil {
-			return "", fmt.Errorf("translate config: %w", err)
+			return "", nil, fmt.Errorf("translate config: %w", err)
 		}
-		return result, nil
+		return result, meta.StubTags, nil
 	}
 	if ruleSetProxy != "" {
-		return applyRuleSetProxy(data, ruleSetProxy)
+		applied, err := applyRuleSetProxy(data, ruleSetProxy)
+		return applied, nil, err
 	}
-	return string(data), nil
+	return string(data), nil, nil
 }
 
 // applyRuleSetProxy prepends the proxy prefix to raw.githubusercontent.com URLs
@@ -259,7 +264,7 @@ func applyRuleSetProxy(data []byte, proxy string) (string, error) {
 	return string(out), nil
 }
 
-func (s *Service) startWithJSON(jsonContent string) error {
+func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) error {
 	syncLogLevelFromConfig(jsonContent)
 	s.platform.protectCount.Store(0)
 
@@ -333,6 +338,7 @@ func (s *Service) startWithJSON(jsonContent string) error {
 		boxCtx:        ctx,
 		currentConfig: jsonContent,
 		startedAt:     time.Now().UnixMilli(),
+		stubTags:      stubTags,
 	})
 	if !s.casState(StateStarting, StateRunning) {
 		s.running.Swap(nil)
@@ -442,6 +448,11 @@ func (s *Service) QueryProxies() string {
 			item := ProxyGroupItem{Tag: tag}
 			if ob, ok := inst.Outbound().Outbound(tag); ok {
 				item.Type = ob.Type()
+			}
+			// Override type for stub nodes (unsupported protocols) so the UI
+			// can distinguish them from real socks nodes.
+			if origType, isStub := rs.stubTags[tag]; isStub {
+				item.Type = "unsupported:" + origType
 			}
 			if history != nil {
 				if h := history.LoadURLTestHistory(tag); h != nil {
