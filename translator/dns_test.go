@@ -436,3 +436,53 @@ func TestPreferUDPServerEmpty(t *testing.T) {
 		t.Errorf("expected empty string for empty candidates, got %q", tag)
 	}
 }
+
+func TestFindFirstDirectDNSTagPrefersUDP(t *testing.T) {
+	// sing-box 的 DNS 规则路由到单个服务器，无法自动故障转移，
+	// 因此国内域名应优先选明文 UDP（最抗封锁），而非列表第一个。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "def-0", "type": "quic", "server": "223.5.5.5"},
+			{"tag": "def-1", "type": "h3", "server": "223.5.5.5"},
+			{"tag": "def-2", "type": "udp", "server": "114.114.114.114"},
+		},
+	}
+
+	got := findFirstDirectDNSTag(tr)
+	if got != "def-2" {
+		t.Errorf("findFirstDirectDNSTag = %q, want def-2 (UDP preferred over quic/h3)", got)
+	}
+}
+
+func TestFindFirstDirectDNSTagFallbackToFirst(t *testing.T) {
+	// 无 UDP 服务器时，退回取第一个直连服务器，保持原行为。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "def-0", "type": "quic", "server": "223.5.5.5"},
+			{"tag": "def-1", "type": "h3", "server": "223.5.5.5"},
+		},
+	}
+
+	got := findFirstDirectDNSTag(tr)
+	if got != "def-0" {
+		t.Errorf("findFirstDirectDNSTag = %q, want def-0 (fallback to first)", got)
+	}
+}
+
+func TestFindFirstDirectDNSTagSkipsDetour(t *testing.T) {
+	// 带 detour 的（走代理的）DNS 不应被选为国内直连 DNS。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "ns-0", "type": "udp", "server": "8.8.8.8", "detour": "PROXY"},
+			{"tag": "def-0", "type": "udp", "server": "114.114.114.114"},
+		},
+	}
+
+	got := findFirstDirectDNSTag(tr)
+	if got != "def-0" {
+		t.Errorf("findFirstDirectDNSTag = %q, want def-0 (skip detour servers)", got)
+	}
+}

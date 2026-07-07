@@ -500,10 +500,17 @@ func firstGroupTag(t *translation) string {
 
 // findFirstDirectDNSTag returns the tag of the first DNS server without a detour
 // and not of type fakeip/hosts. Used as the "domestic DNS" target.
+//
+// Prefers UDP-type servers (plain DNS on port 53): they are the most resilient
+// because they need no TLS/QUIC handshake and are least likely to be blocked by
+// the local network. This matters because sing-box's DNS rules route to a SINGLE
+// server — there is no automatic failover between servers if the chosen one times
+// out, so we must pick the most reliable one rather than blindly the first.
 func findFirstDirectDNSTag(t *translation) string {
 	if t.config.DNS == nil {
 		return ""
 	}
+	var fallback string
 	for _, srv := range t.config.DNS.Servers {
 		tp, _ := srv["type"].(string)
 		if tp == "fakeip" || tp == "hosts" {
@@ -512,11 +519,19 @@ func findFirstDirectDNSTag(t *translation) string {
 		if _, hasDetour := srv["detour"]; hasDetour {
 			continue
 		}
-		if tag, _ := srv["tag"].(string); tag != "" {
+		tag, _ := srv["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		// 优先选 UDP（明文 53），最抗封锁；其余作为兜底候选
+		if tp == "udp" {
 			return tag
 		}
+		if fallback == "" {
+			fallback = tag
+		}
 	}
-	return ""
+	return fallback
 }
 
 // findFakeIPTag returns the tag of the fakeip DNS server, or empty if not present.
