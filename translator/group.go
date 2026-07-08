@@ -2,14 +2,18 @@ package translator
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/mapleafgo/singcast/translator/proxy"
 )
 
 const (
-	maxGroupInterval    = 86400 // 24 hours
+	maxGroupInterval    = 1800 // 30 minutes; 超过此值的 interval 会被截断
 	maxGroupIdleTimeout = 1800  // 30 minutes
 	maxTolerance        = math.MaxUint16
+	// fallbackTolerance 让 fallback 组模拟 Clash 行为：当前节点延迟比其他节点
+	// 高超过 10 秒（通常意味着不可用）时才切换，避免频繁跳节点。
+	fallbackTolerance = 10000
 )
 
 // translateGroups translates mihomo proxy-groups to sing-box outbounds.
@@ -52,9 +56,9 @@ func translateGroups(cfg *RawConfig, t *translation) []map[string]any {
 		case "select":
 			outbound = translateSelectGroup(name, filtered)
 		case "url-test":
-			outbound = translateURLTestGroup(name, filtered, g)
+			outbound = translateURLTestGroup(name, filtered, g, t)
 		case "fallback":
-			outbound = translateFallbackGroup(name, filtered, g)
+			outbound = translateFallbackGroup(name, filtered, g, t)
 		case "load-balance":
 			outbound = translateLoadBalanceGroup(name, filtered, t)
 		case "relay":
@@ -174,8 +178,8 @@ func translateSelectGroup(name string, proxies []string) map[string]any {
 	}
 }
 
-func translateURLTestGroup(name string, proxies []string, g map[string]any) map[string]any {
-	url, interval := groupURLDefaults(g)
+func translateURLTestGroup(name string, proxies []string, g map[string]any, t *translation) map[string]any {
+	url, interval := groupURLDefaults(g, name, t)
 
 	result := map[string]any{
 		"type":                        "urltest",
@@ -183,7 +187,7 @@ func translateURLTestGroup(name string, proxies []string, g map[string]any) map[
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval, maxGroupIdleTimeout)),
+		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, maxGroupIdleTimeout)),
 		"interrupt_exist_connections": true,
 	}
 
@@ -194,8 +198,8 @@ func translateURLTestGroup(name string, proxies []string, g map[string]any) map[
 	return result
 }
 
-func translateFallbackGroup(name string, proxies []string, g map[string]any) map[string]any {
-	url, interval := groupURLDefaults(g)
+func translateFallbackGroup(name string, proxies []string, g map[string]any, t *translation) map[string]any {
+	url, interval := groupURLDefaults(g, name, t)
 
 	return map[string]any{
 		"type":                        "urltest",
@@ -203,20 +207,26 @@ func translateFallbackGroup(name string, proxies []string, g map[string]any) map
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval, maxGroupIdleTimeout)),
-		"tolerance":                   maxTolerance,
+		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, maxGroupIdleTimeout)),
+		"tolerance":                   fallbackTolerance,
 		"interrupt_exist_connections": true,
 	}
 }
 
-func groupURLDefaults(g map[string]any) (string, int) {
+func groupURLDefaults(g map[string]any, name string, t *translation) (string, int) {
 	url := "http://www.gstatic.com/generate_204"
 	if u, ok := g["url"].(string); ok && u != "" {
 		url = u
 	}
 	interval := 180
 	if iv, ok := toInt(g["interval"]); ok && iv > 0 {
-		interval = min(iv, maxGroupInterval)
+		if iv > maxGroupInterval {
+			t.warn("proxy-group \"" + name + "\": interval " + strconv.Itoa(iv) +
+				"s exceeds " + strconv.Itoa(maxGroupInterval) + "s, clamped to " + strconv.Itoa(maxGroupInterval) + "s")
+			interval = maxGroupInterval
+		} else {
+			interval = iv
+		}
 	}
 	return url, interval
 }

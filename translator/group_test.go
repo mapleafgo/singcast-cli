@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mapleafgo/singcast/translator/proxy"
@@ -97,6 +98,53 @@ func TestTranslateURLTestGroup(t *testing.T) {
 	}
 }
 
+// TestTranslateURLTestGroupIntervalClamp 验证过大的 interval 被截断并产生警告
+func TestTranslateURLTestGroupIntervalClamp(t *testing.T) {
+	tr := newTestTranslation()
+	tr.proxyTags["p1"] = true
+	tr.proxyTags["p2"] = true
+
+	cfg := &RawConfig{
+		ProxyGroup: []map[string]any{
+			{
+				"name":     "Auto",
+				"type":     "url-test",
+				"proxies":  []any{"p1", "p2"},
+				"interval": 86400, // 24 hours, should be clamped to 1800
+			},
+		},
+	}
+
+	groups := translateGroups(cfg, tr)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	g := groups[0]
+	interval := g["interval"]
+	if interval != proxy.SecondsToDuration(1800) {
+		t.Errorf("interval = %v, want %v (clamped)", interval, proxy.SecondsToDuration(1800))
+	}
+	if interval != "30m" {
+		t.Errorf("interval = %v, want 30m", interval)
+	}
+	// idle_timeout = max(1800*2, 1800) = 3600
+	idleTimeout := g["idle_timeout"]
+	if idleTimeout != proxy.SecondsToDuration(3600) {
+		t.Errorf("idle_timeout = %v, want %v", idleTimeout, proxy.SecondsToDuration(3600))
+	}
+	// 应该有警告
+	foundWarn := false
+	for _, w := range tr.warnings {
+		if strings.Contains(w, "clamped") {
+			foundWarn = true
+			break
+		}
+	}
+	if !foundWarn {
+		t.Error("expected a warning about interval being clamped")
+	}
+}
+
 func TestTranslateFallbackGroup(t *testing.T) {
 	tr := newTestTranslation()
 	tr.proxyTags["p1"] = true
@@ -121,8 +169,8 @@ func TestTranslateFallbackGroup(t *testing.T) {
 	if g["type"] != "urltest" {
 		t.Errorf("type = %v, want urltest", g["type"])
 	}
-	if g["tolerance"] != 65535 {
-		t.Errorf("tolerance = %v, want 65535", g["tolerance"])
+	if g["tolerance"] != 10000 {
+		t.Errorf("tolerance = %v, want 10000", g["tolerance"])
 	}
 }
 
