@@ -395,7 +395,7 @@ func waitForListen(t *testing.T, addr string, timeout time.Duration) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(t.Context(), "tcp", addr)
 		if err == nil {
 			conn.Close()
 			return true

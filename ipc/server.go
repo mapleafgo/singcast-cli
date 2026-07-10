@@ -119,7 +119,7 @@ func (s *Server) serveConnection(ctx context.Context, conn net.Conn) {
 			slog.Warn("decode error", "error", err)
 			return
 		}
-		s.handleRequest(&req)
+		s.handleRequest(&req) //nolint:contextcheck // IPC 请求没有外部 context 来源
 	}
 }
 

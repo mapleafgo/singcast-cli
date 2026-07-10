@@ -96,14 +96,15 @@ func runCommand() *cli.Command {
 			if daemon {
 				return startDaemon(homeDir, outPath, proxyPrefix, apiAddr)
 			}
-			return runForeground(homeDir, outPath, jsonContent)
+			return runForeground(ctx, homeDir, outPath, jsonContent)
 		},
 	}
 }
 
-func runForeground(homeDir, configPath, jsonContent string) error {
+func runForeground(_ context.Context, homeDir, configPath, jsonContent string) error {
 	svc := core.NewService()
-	if err := svc.Init(`{"home_dir":"` + homeDir + `"}`); err != nil {
+	opts, _ := json.Marshal(core.InitOptions{HomeDir: homeDir})
+	if err := svc.Init(string(opts)); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
 	defer svc.Destroy()
@@ -112,7 +113,7 @@ func runForeground(homeDir, configPath, jsonContent string) error {
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
 	}
-	if err := svc.StartWithContent(string(data), ""); err != nil {
+	if err := svc.StartWithContent(string(data), ""); err != nil { //nolint:contextcheck // 内部创建 context
 		return fmt.Errorf("start service: %w", err)
 	}
 
@@ -128,7 +129,7 @@ func runForeground(homeDir, configPath, jsonContent string) error {
 			rd, rerr := os.ReadFile(configPath)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "reload: read config failed: %v\n", rerr)
-			} else if err := svc.StartWithContent(string(rd), ""); err != nil {
+			} else if err := svc.StartWithContent(string(rd), ""); err != nil { //nolint:contextcheck
 				fmt.Fprintf(os.Stderr, "reload failed: %v\n", err)
 			} else {
 				fmt.Println("config reloaded")
@@ -139,7 +140,9 @@ func runForeground(homeDir, configPath, jsonContent string) error {
 		break
 	}
 
-	svc.Stop()
+	if err := svc.Stop(); err != nil {
+		fmt.Fprintf(os.Stderr, "stop service: %v\n", err)
+	}
 	return nil
 }
 

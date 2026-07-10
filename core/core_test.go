@@ -86,7 +86,7 @@ func parseJSONMap(t *testing.T, s string) map[string]any {
 // TestCheckConfig_MinimalYAML verifies the minimal config passes sing-box validation.
 func TestCheckConfig_MinimalYAML(t *testing.T) {
 	jsonStr := mustTranslateYAML(t, minimalYAML)
-	if err := CheckConfig(jsonStr); err != nil {
+	if err := CheckConfig(t.Context(), jsonStr); err != nil {
 		if strings.Contains(err.Error(), "clash api is not included in this build") {
 			t.Skip("requires -tags with_clash_api")
 		}
@@ -97,7 +97,7 @@ func TestCheckConfig_MinimalYAML(t *testing.T) {
 // TestCheckConfig_FakeipYAML verifies a realistic fakeip config passes validation.
 func TestCheckConfig_FakeipYAML(t *testing.T) {
 	jsonStr := mustTranslateYAML(t, fakeipYAML)
-	if err := CheckConfig(jsonStr); err != nil {
+	if err := CheckConfig(t.Context(), jsonStr); err != nil {
 		if strings.Contains(err.Error(), "clash api is not included in this build") {
 			t.Skip("requires -tags with_clash_api")
 		}
@@ -113,7 +113,7 @@ func TestCheckConfig_PassThroughJSON(t *testing.T) {
 			"outbounds": [{"type": "direct", "tag": "DIRECT"}],
 			"route": {"final": "DIRECT"}
 		}`
-	if err := CheckConfig(singboxJSON); err != nil {
+	if err := CheckConfig(t.Context(), singboxJSON); err != nil {
 		t.Fatalf("CheckConfig for raw JSON failed: %v", err)
 	}
 }

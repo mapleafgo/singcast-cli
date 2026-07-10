@@ -9,6 +9,7 @@ static void invokeEventCB(EventCallback cb, int t, const char* s) { cb(t, s); }
 import "C"
 
 import (
+	"context"
 	runtimeDebug "runtime/debug"
 	"unsafe"
 
@@ -66,7 +67,7 @@ func CoreQueryState() *C.char { return cString(svc.State().String()) }
 
 //export CoreCheckConfig
 func CoreCheckConfig(content *C.char) *C.char {
-	return errorString(core.CheckConfig(goString(content)))
+	return errorString(core.CheckConfig(context.Background(), goString(content)))
 }
 
 // --- Logging ---

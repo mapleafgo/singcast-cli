@@ -2,6 +2,8 @@
 
 package main
 
-func runIpc(homeDir string) error {
-	return runIpcForeground(homeDir)
+import "context"
+
+func runIpc(ctx context.Context, homeDir string) error {
+	return runIpcForeground(ctx, homeDir)
 }

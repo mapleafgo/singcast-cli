@@ -47,7 +47,7 @@ func checkCommand() *cli.Command {
 				jsonContent = translated
 			}
 
-			if err := core.CheckConfig(jsonContent); err != nil {
+			if err := core.CheckConfig(ctx, jsonContent); err != nil {
 				return fmt.Errorf("config validation failed: %w", err)
 			}
 

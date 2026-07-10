@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,15 +13,16 @@ import (
 	"github.com/mapleafgo/singcast/ipc"
 )
 
-func runIpcForeground(homeDir string) error {
+func runIpcForeground(ctx context.Context, homeDir string) error {
 	svc := core.NewService()
-	if err := svc.Init(fmt.Sprintf(`{"home_dir":%q}`, homeDir)); err != nil {
+	opts, _ := json.Marshal(core.InitOptions{HomeDir: homeDir})
+	if err := svc.Init(string(opts)); err != nil {
 		return fmt.Errorf("init: %w", err)
 	}
 
 	srv := ipc.NewServer(svc, ipc.IpcPath())
 
-	sigCtx, cancel := context.WithCancel(context.Background())
+	sigCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	ch := make(chan os.Signal, 1)

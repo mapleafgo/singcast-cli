@@ -53,9 +53,11 @@ func findConnectionOwnerImpl(ipProtocol int32, srcAddr string, srcPort int32, ds
 		return nil, os.ErrInvalid
 	}
 
-	processPath, pathErr := resolveProcessPathByInode(inode, uid)
+	// 进程路径解析失败不视为致命错误：能拿到 uid 就返回部分结果，
+	// 调用方至少可以用 uid 做路由判断。
+	processPath, pathErr := resolveProcessPathByInode(inode, uid) //nolint:nilerr // 降级返回 uid，不传播错误
 	if pathErr != nil {
-		return &adapter.ConnectionOwner{UserId: int32(uid)}, nil
+		return &adapter.ConnectionOwner{UserId: int32(uid)}, nil //nolint:nilerr
 	}
 
 	return &adapter.ConnectionOwner{

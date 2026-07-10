@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -195,7 +196,7 @@ func (p *PlatformIO) NetworkExtensionIncludeAllNetworks() bool {
 	return p.includeAll.Load()
 }
 
-func (p *PlatformIO) ClearDNSCache() { flushSystemDNS() }
+func (p *PlatformIO) ClearDNSCache() { flushSystemDNS(context.Background()) }
 
 func (p *PlatformIO) RequestPermissionForWIFIState() error { return nil }
 
@@ -232,15 +233,15 @@ func (p *PlatformIO) MyInterfaceAddress() []netip.Addr { return nil }
 
 // --- helpers ---
 
-func flushSystemDNS() {
+func flushSystemDNS(ctx context.Context) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "linux":
-		cmd = exec.Command("resolvectl", "flush-caches")
+		cmd = exec.CommandContext(ctx, "resolvectl", "flush-caches")
 	case "darwin":
-		cmd = exec.Command("dscacheutil", "-flushcache")
+		cmd = exec.CommandContext(ctx, "dscacheutil", "-flushcache")
 	case "windows":
-		cmd = exec.Command("ipconfig", "/flushdns")
+		cmd = exec.CommandContext(ctx, "ipconfig", "/flushdns")
 	default:
 		return
 	}
@@ -252,12 +253,12 @@ func flushSystemDNS() {
 // callbackInterfaceMonitor implements tun.DefaultInterfaceMonitor for mobile.
 // Updated via PlatformIO.UpdateDefaultInterface from the mobile platform.
 type callbackInterfaceMonitor struct {
-	mu          sync.Mutex
-	iface       *control.Interface
-	callbacks   list.List[tun.DefaultInterfaceUpdateCallback]
+	mu           sync.Mutex
+	iface        *control.Interface
+	callbacks    list.List[tun.DefaultInterfaceUpdateCallback]
 	myInterfaces []string
-	networkMgr  adapter.NetworkManager
-	router      adapter.Router
+	networkMgr   adapter.NetworkManager
+	router       adapter.Router
 }
 
 func (m *callbackInterfaceMonitor) Start() error             { return nil }
@@ -297,7 +298,7 @@ func (m *callbackInterfaceMonitor) MyInterfaces() []string {
 	return m.myInterfaces
 }
 
-func (m *callbackInterfaceMonitor) update(name string, index int, expensive bool) {
+func (m *callbackInterfaceMonitor) update(name string, index int, _ bool) {
 	mgr := m.networkMgr
 
 	// Refresh interface list so newly appeared interfaces (e.g. wlan0 after WiFi connect)

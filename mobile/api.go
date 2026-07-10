@@ -175,7 +175,9 @@ func (s *Singcast) ResetNetwork() { s.svc.ResetNetwork() }
 // --- Config ---
 
 // CheckConfig validates a config string (Clash YAML or sing-box JSON).
-func (s *Singcast) CheckConfig(content string) error { return core.CheckConfig(content) }
+func (s *Singcast) CheckConfig(content string) error {
+	return core.CheckConfig(context.Background(), content)
+}
 
 // --- Proxy Control ---
 

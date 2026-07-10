@@ -26,7 +26,7 @@ func ipcCommand() *cli.Command {
 				return fmt.Errorf("create home dir: %w", err)
 			}
 
-			return runIpc(homeDir)
+			return runIpc(ctx, homeDir)
 		},
 	}
 }

@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -28,7 +29,7 @@ func (h *Handler) Handle(req *JSONRPCRequest) JSONRPCResponse {
 	case MethodStartWithContent:
 		return h.handleStartWithContent(req, id)
 	case MethodStop:
-		return h.handleVoid(req, id, func() error { return h.svc.Stop() })
+		return h.handleVoid(id, func() error { return h.svc.Stop() })
 	case MethodQueryState:
 		return newResult(id, h.svc.State().String())
 	case MethodQueryStats:
@@ -52,13 +53,13 @@ func (h *Handler) Handle(req *JSONRPCRequest) JSONRPCResponse {
 	case MethodCloseConnection:
 		return h.handleCloseConnection(req, id)
 	case MethodCloseAllConnections:
-		return h.handleVoid(req, id, func() error { return h.svc.CloseConnections() })
+		return h.handleVoid(id, func() error { return h.svc.CloseConnections() })
 	case MethodSetGroupExpand:
 		return h.handleSetGroupExpand(req, id)
 	case MethodFlushFakeIP:
-		return h.handleVoid(req, id, func() error { return h.svc.FlushFakeIP() })
+		return h.handleVoid(id, func() error { return h.svc.FlushFakeIP() })
 	case MethodFlushDNSCache:
-		return h.handleVoid(req, id, func() error { return h.svc.FlushDNSCache() })
+		return h.handleVoid(id, func() error { return h.svc.FlushDNSCache() })
 	case MethodFlushSystemDNS:
 		h.svc.FlushSystemDNS()
 		return newEmptyResult(id)
@@ -157,7 +158,7 @@ func (h *Handler) handleCheckConfig(req *JSONRPCRequest, id int64) JSONRPCRespon
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return newError(id, -32602, "invalid params: "+err.Error())
 	}
-	if err := core.CheckConfig(params.Content); err != nil {
+	if err := core.CheckConfig(context.Background(), params.Content); err != nil {
 		return newResult(id, map[string]string{"error": err.Error()})
 	}
 	return newResult(id, map[string]string{"error": ""})
@@ -172,7 +173,7 @@ func (h *Handler) handleSetLogLevel(req *JSONRPCRequest, id int64) JSONRPCRespon
 	return newEmptyResult(id)
 }
 
-func (h *Handler) handleVoid(req *JSONRPCRequest, id int64, fn func() error) JSONRPCResponse {
+func (h *Handler) handleVoid(id int64, fn func() error) JSONRPCResponse {
 	if err := fn(); err != nil {
 		return newError(id, 1, err.Error())
 	}

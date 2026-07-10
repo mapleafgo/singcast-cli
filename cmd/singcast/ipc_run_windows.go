@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -22,7 +23,8 @@ func (w *windowsServiceHandler) Execute(args []string, r <-chan svc.ChangeReques
 	s <- svc.Status{State: svc.StartPending}
 
 	svcInst := core.NewService()
-	if err := svcInst.Init(fmt.Sprintf(`{"home_dir":%q}`, w.homeDir)); err != nil {
+	opts, _ := json.Marshal(core.InitOptions{HomeDir: w.homeDir})
+	if err := svcInst.Init(string(opts)); err != nil {
 		slog.Error("init service", "error", err)
 		s <- svc.Status{State: svc.Stopped}
 		return true, 1
@@ -60,7 +62,7 @@ func (w *windowsServiceHandler) Execute(args []string, r <-chan svc.ChangeReques
 	}
 }
 
-func runIpc(homeDir string) error {
+func runIpc(ctx context.Context, homeDir string) error {
 	inService, err := svc.IsWindowsService()
 	if err != nil {
 		return fmt.Errorf("check windows service: %w", err)
@@ -71,5 +73,5 @@ func runIpc(homeDir string) error {
 		return svc.Run(ipc.ServiceName, &windowsServiceHandler{homeDir: homeDir})
 	}
 
-	return runIpcForeground(homeDir)
+	return runIpcForeground(ctx, homeDir)
 }

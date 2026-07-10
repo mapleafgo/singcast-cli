@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"runtime"
 	"sync"
@@ -244,7 +245,7 @@ func TestUpdateDefaultInterface_UpdatesMonitor(t *testing.T) {
 func TestTunState_ConcurrentAccess(t *testing.T) {
 	p := newPlatform()
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(3)
 		go func(n int) { defer wg.Done(); p.SetTunFd(int32(n%2) * 10) }(i)
 		go func() { defer wg.Done(); p.UnderNetworkExtension() }()
@@ -320,7 +321,7 @@ func TestMobileInterfaceJSON(t *testing.T) {
 func TestFlushSystemDNS_NoPanic(t *testing.T) {
 	p := newPlatform()
 	p.ClearDNSCache()
-	flushSystemDNS()
+	flushSystemDNS(context.Background())
 }
 
 // --- Stub methods ---
