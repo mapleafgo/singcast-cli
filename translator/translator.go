@@ -70,6 +70,11 @@ func translateInternal(data []byte, opts *Options) (string, []string, Meta, erro
 	// Step 3: Translate proxies → outbounds
 	proxyOutbounds := translateProxies(cfg, t)
 
+	// Step 3b: Collect ECH query-server-name domains from translated outbounds.
+	// These need direct DNS routing to avoid circular dependency:
+	// proxy → ECH config fetch → DNS (via proxy) → proxy loop.
+	collectECHQueryServers(proxyOutbounds, t)
+
 	// Step 4: Translate proxy groups → outbounds
 	groupOutbounds := translateGroups(cfg, t)
 

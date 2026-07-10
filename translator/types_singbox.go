@@ -42,6 +42,10 @@ type translation struct {
 	ruleSetDefs map[string]map[string]any
 	// options from caller
 	opts *Options
+	// echQueryServers collects ECH query-server-name values from proxy configs.
+	// These domains need direct DNS routing to avoid circular dependency:
+	// proxy → ECH → DNS → proxy loop.
+	echQueryServers []string
 }
 
 func (t *translation) warn(msg string) {

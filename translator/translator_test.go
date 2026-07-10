@@ -564,3 +564,197 @@ proxies:
 		t.Errorf("p2 utls fingerprint = %v, want firefox (per-proxy override)", p2utls["fingerprint"])
 	}
 }
+
+// dnsRuleDomains extracts the "domain" field from a DNS rule as a string set.
+func dnsRuleDomains(rule map[string]any) map[string]bool {
+	set := make(map[string]bool)
+	domains, ok := rule["domain"].([]any)
+	if !ok {
+		return set
+	}
+	for _, d := range domains {
+		if s, ok := d.(string); ok {
+			set[s] = true
+		}
+	}
+	return set
+}
+
+func TestECHDNSRuleGeneration(t *testing.T) {
+	yaml := `mixed-port: 7890
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+  default-nameserver:
+    - 223.5.5.5
+    - 114.114.114.114
+proxies:
+  - name: hk-node
+    type: vless
+    server: example.com
+    port: 443
+    uuid: test-uuid
+    tls: true
+    servername: hksa.example.com
+    ech-opts:
+      enable: true
+      query-server-name: cloudflare-ech.com
+    client-fingerprint: chrome
+    network: ws
+    ws-opts:
+      path: /ws
+      headers:
+        Host: hksa.example.com
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - hk-node
+rules:
+  - MATCH,PROXY
+`
+	m, _ := mustTranslate(t, yaml)
+
+	dns, _ := m["dns"].(map[string]any)
+	if dns == nil {
+		t.Fatal("dns section is nil")
+	}
+
+	rules := dns["rules"].([]any)
+
+	// ECH DNS rule should appear before fakeip A/AAAA rule to avoid
+	// circular dependency (ECH config fetch → DNS → proxy → ECH).
+	foundECH := false
+	fakeipIdx := -1
+	echIdx := -1
+	for i, r := range rules {
+		rule := r.(map[string]any)
+		if dnsRuleDomains(rule)["cloudflare-ech.com"] {
+			foundECH = true
+			echIdx = i
+			if rule["server"] == nil {
+				t.Error("ECH DNS rule has no server field")
+			}
+		}
+		qt, _ := rule["query_type"].([]any)
+		if len(qt) > 0 {
+			if s, ok := qt[0].(string); ok && s == "A" {
+				fakeipIdx = i
+			}
+		}
+	}
+	if !foundECH {
+		t.Fatal("missing DNS rule for ECH query-server-name domain cloudflare-ech.com")
+	}
+	if fakeipIdx >= 0 && echIdx > fakeipIdx {
+		t.Errorf("ECH DNS rule (index %d) should come before fakeip A/AAAA rule (index %d)", echIdx, fakeipIdx)
+	}
+}
+
+func TestECHDNSRuleNotGeneratedWithoutECH(t *testing.T) {
+	yaml := `mixed-port: 7890
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  nameserver:
+    - 1.1.1.1
+  default-nameserver:
+    - 223.5.5.5
+proxies:
+  - name: plain-node
+    type: vless
+    server: example.com
+    port: 443
+    uuid: test-uuid
+    tls: true
+    servername: example.com
+    network: ws
+    ws-opts:
+      path: /ws
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - plain-node
+rules:
+  - MATCH,PROXY
+`
+	m, _ := mustTranslate(t, yaml)
+
+	dns, _ := m["dns"].(map[string]any)
+	if dns == nil {
+		t.Fatal("dns section is nil")
+	}
+
+	rules := dns["rules"].([]any)
+	for _, r := range rules {
+		rule := r.(map[string]any)
+		if dnsRuleDomains(rule)["cloudflare-ech.com"] {
+			t.Fatal("ECH DNS rule should not be generated when no proxy has ECH")
+		}
+	}
+}
+
+func TestECHDNSRuleDeduplication(t *testing.T) {
+	yaml := `mixed-port: 7890
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  nameserver:
+    - 1.1.1.1
+  default-nameserver:
+    - 223.5.5.5
+proxies:
+  - name: node1
+    type: vless
+    server: a.example.com
+    port: 443
+    uuid: u1
+    tls: true
+    servername: s1.example.com
+    ech-opts:
+      enable: true
+      query-server-name: cloudflare-ech.com
+    network: ws
+    ws-opts:
+      path: /w
+  - name: node2
+    type: vless
+    server: b.example.com
+    port: 443
+    uuid: u2
+    tls: true
+    servername: s2.example.com
+    ech-opts:
+      enable: true
+      query-server-name: cloudflare-ech.com
+    network: ws
+    ws-opts:
+      path: /w
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - node1
+      - node2
+rules:
+  - MATCH,PROXY
+`
+	m, _ := mustTranslate(t, yaml)
+	dns := m["dns"].(map[string]any)
+	rules := dns["rules"].([]any)
+
+	count := 0
+	for _, r := range rules {
+		rule := r.(map[string]any)
+		if dnsRuleDomains(rule)["cloudflare-ech.com"] {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 ECH DNS rule entry for cloudflare-ech.com, got %d (should deduplicate)", count)
+	}
+}

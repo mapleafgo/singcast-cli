@@ -36,7 +36,11 @@ func TestDetectCountryByIP_ParseResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := srv.Client().Get(srv.URL)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

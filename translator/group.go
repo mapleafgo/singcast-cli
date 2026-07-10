@@ -9,7 +9,7 @@ import (
 
 const (
 	maxGroupInterval    = 1800 // 30 minutes; 超过此值的 interval 会被截断
-	maxGroupIdleTimeout = 1800  // 30 minutes
+	maxGroupIdleTimeout = 1800 // 30 minutes
 	maxTolerance        = math.MaxUint16
 	// fallbackTolerance 让 fallback 组模拟 Clash 行为：当前节点延迟比其他节点
 	// 高超过 10 秒（通常意味着不可用）时才切换，避免频繁跳节点。

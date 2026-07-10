@@ -68,7 +68,7 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 	tr := testTranslation(t)
 	tr.groupTagOrder = []string{"PROXY"}
 
-	generateCountryRoutes("us", "PROXY", tr)
+	generateCountryRoutes("us", tr)
 
 	rules := tr.config.Route.Rules
 	// geosite-us + geoip-us + .us = 3

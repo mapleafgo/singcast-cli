@@ -2,6 +2,7 @@ package translator
 
 import (
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -257,6 +258,29 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 
 	t.config.DNS = result
+}
+
+// collectECHQueryServers extracts ECH query-server-name domains from translated outbounds.
+// These domains need direct DNS routing (no proxy detour) to avoid circular dependency:
+// proxy → ECH config fetch → DNS (via proxy) → proxy loop.
+func collectECHQueryServers(outbounds []map[string]any, t *translation) {
+	for _, ob := range outbounds {
+		tls, ok := ob["tls"].(map[string]any)
+		if !ok {
+			continue
+		}
+		ech, ok := tls["ech"].(map[string]any)
+		if !ok {
+			continue
+		}
+		qsn, _ := ech["query_server_name"].(string)
+		if qsn == "" {
+			continue
+		}
+		if !slices.Contains(t.echQueryServers, qsn) {
+			t.echQueryServers = append(t.echQueryServers, qsn)
+		}
+	}
 }
 
 // parseDNSServer parses a mihomo DNS URL string into a sing-box DNS server object.

@@ -26,7 +26,7 @@ func translateRules(_ *RawConfig, t *translation) {
 	if cc == "cn" {
 		generateCNRoutes(proxyTag, t)
 	} else {
-		generateCountryRoutes(cc, proxyTag, t)
+		generateCountryRoutes(cc, t)
 	}
 
 	// DNS rule generated after translateDNS (Step 6) when t.config.DNS is available.
@@ -72,7 +72,7 @@ func generateCNRoutes(proxyTag string, t *translation) {
 }
 
 // generateCountryRoutes builds non-CN routing rules: local traffic → direct, rest → proxy.
-func generateCountryRoutes(cc string, proxyTag string, t *translation) {
+func generateCountryRoutes(cc string, t *translation) {
 	// geosite-{cc} → direct
 	ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
@@ -122,6 +122,18 @@ func generateDNSRules(cc string, t *translation) {
 		"clash_mode": "Direct",
 		"server":     directTag,
 	})
+
+	// ECH query-server-name → domestic DNS (no detour).
+	// sing-box fetches ECH config via DNS HTTPS query to this domain.
+	// Without a direct DNS rule, the query falls through to the final DNS
+	// server which may detour through a proxy — creating a circular
+	// dependency (proxy → ECH → DNS → proxy) that causes 3-minute timeouts.
+	if len(t.echQueryServers) > 0 {
+		rules = append(rules, map[string]any{
+			"domain": t.echQueryServers,
+			"server": directTag,
+		})
+	}
 
 	// Domestic geosite + geoip → direct DNS
 	geositeTag := "geosite-" + cc
