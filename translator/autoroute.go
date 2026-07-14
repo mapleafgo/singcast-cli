@@ -123,15 +123,24 @@ func generateDNSRules(cc string, t *translation) {
 		"server":     directTag,
 	})
 
-	// ECH query-server-name → domestic DNS (no detour).
-	// sing-box fetches ECH config via DNS HTTPS query to this domain.
-	// Without a direct DNS rule, the query falls through to the final DNS
-	// server which may detour through a proxy — creating a circular
-	// dependency (proxy → ECH → DNS → proxy) that causes 3-minute timeouts.
+	// ECH query-server-name → direct DNS (no detour).
+	// sing-box fetches ECH config via a DNS HTTPS (type 65) query to this domain.
+	// Without a direct DNS rule the query falls through to the final DNS server,
+	// which may detour through a proxy — creating a circular dependency
+	// (proxy → ECH → DNS → proxy) that causes multi-minute timeouts.
+	//
+	// Prefer an encrypted server (DoH/DoQ/DoH3) over plain UDP: type 65 records are
+	// more reliable over encrypted transports, and plain UDP is the most prone to the
+	// intermittent interference that — because sing-box routes to a single server with
+	// no failover — can stall every ECH outbound at once. See findFirstECHCapableDNSTag.
 	if len(t.echQueryServers) > 0 {
+		echTag := findFirstECHCapableDNSTag(t)
+		if echTag == "" {
+			echTag = directTag
+		}
 		rules = append(rules, map[string]any{
 			"domain": t.echQueryServers,
-			"server": directTag,
+			"server": echTag,
 		})
 	}
 

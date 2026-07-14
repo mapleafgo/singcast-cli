@@ -558,6 +558,45 @@ func findFirstDirectDNSTag(t *translation) string {
 	return fallback
 }
 
+// findFirstECHCapableDNSTag returns the tag of the first encrypted direct DNS server
+// (https/tls/quic/h3), falling back to the first direct server when none is encrypted.
+//
+// ECH config retrieval queries DNS HTTPS (type 65) records — a newer record type that
+// travels most reliably over encrypted transports (DoH/DoQ/DoH3). Plain UDP DNS is more
+// prone to interference and intermittent timeouts for these records, and since sing-box
+// routes a DNS rule to a SINGLE server with no failover, a flaky plain-UDP ECH query can
+// stall every ECH-enabled outbound for minutes. This is the opposite trade-off from
+// findFirstDirectDNSTag, which prefers plain UDP for resolving proxy server domains
+// (where anti-blocking matters most). Like findFirstDirectDNSTag it skips servers with
+// a detour to keep the query off the proxy and avoid the proxy→ECH→DNS→proxy loop.
+func findFirstECHCapableDNSTag(t *translation) string {
+	if t.config.DNS == nil {
+		return ""
+	}
+	var fallback string
+	for _, srv := range t.config.DNS.Servers {
+		tp, _ := srv["type"].(string)
+		if tp == "fakeip" || tp == "hosts" {
+			continue
+		}
+		if _, hasDetour := srv["detour"]; hasDetour {
+			continue
+		}
+		tag, _ := srv["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		switch tp {
+		case "https", "tls", "quic", "h3":
+			return tag
+		}
+		if fallback == "" {
+			fallback = tag
+		}
+	}
+	return fallback
+}
+
 // findFakeIPTag returns the tag of the fakeip DNS server, or empty if not present.
 func findFakeIPTag(t *translation) string {
 	if t.config.DNS == nil {

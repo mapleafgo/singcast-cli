@@ -486,3 +486,53 @@ func TestFindFirstDirectDNSTagSkipsDetour(t *testing.T) {
 		t.Errorf("findFirstDirectDNSTag = %q, want def-0 (skip detour servers)", got)
 	}
 }
+
+func TestFindFirstECHCapableDNSTagPrefersEncrypted(t *testing.T) {
+	// ECH 查询 type65 记录应优先加密传输（DoH/DoQ/DoH3），避免明文 UDP
+	// 因偶发干扰/超时导致所有 ECH 节点同时不可用（sing-box 单 server 无故障转移）。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "def-0", "type": "quic", "server": "223.5.5.5"},
+			{"tag": "def-1", "type": "h3", "server": "223.5.5.5"},
+			{"tag": "def-2", "type": "udp", "server": "114.114.114.114"},
+		},
+	}
+
+	got := findFirstECHCapableDNSTag(tr)
+	if got != "def-0" {
+		t.Errorf("findFirstECHCapableDNSTag = %q, want def-0 (encrypted preferred over udp)", got)
+	}
+}
+
+func TestFindFirstECHCapableDNSTagFallbackToAnyDirect(t *testing.T) {
+	// 无加密直连服务器时，退回取第一个直连（可能为 udp），保证不返回空。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "def-0", "type": "udp", "server": "114.114.114.114"},
+			{"tag": "def-1", "type": "udp", "server": "223.5.5.5"},
+		},
+	}
+
+	got := findFirstECHCapableDNSTag(tr)
+	if got != "def-0" {
+		t.Errorf("findFirstECHCapableDNSTag = %q, want def-0 (fallback to first direct)", got)
+	}
+}
+
+func TestFindFirstECHCapableDNSTagSkipsDetour(t *testing.T) {
+	// 带 detour（走代理）的加密 DNS 不能用于 ECH：会重新引入 proxy→ECH→DNS→proxy 循环。
+	tr := newTestTranslation()
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "ns-0", "type": "https", "server": "1.1.1.1", "detour": "PROXY"},
+			{"tag": "def-0", "type": "quic", "server": "223.5.5.5"},
+		},
+	}
+
+	got := findFirstECHCapableDNSTag(tr)
+	if got != "def-0" {
+		t.Errorf("findFirstECHCapableDNSTag = %q, want def-0 (skip detour servers)", got)
+	}
+}
