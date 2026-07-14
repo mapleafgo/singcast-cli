@@ -104,6 +104,24 @@ func TestParseDNSServerHTTPS(t *testing.T) {
 	}
 }
 
+func TestParseDNSServerPlainHTTPIsSkipped(t *testing.T) {
+	var warnings []string
+	warn := func(msg string) {
+		warnings = append(warnings, msg)
+	}
+
+	srv := parseDNSServer("http://dns.example/dns-query", "test-http", "", warn)
+	if srv != nil {
+		t.Fatalf("expected plain HTTP DNS server to be skipped, got %v", srv)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if warnings[0] != `DNS server "dns.example": plain HTTP DNS is not supported by sing-box, skipping` {
+		t.Errorf("warning = %q", warnings[0])
+	}
+}
+
 func TestParseDNSServerTLS(t *testing.T) {
 	srv := parseDNSServer("tls://dns.google:853", "test-tls", "", nil)
 	if srv == nil {

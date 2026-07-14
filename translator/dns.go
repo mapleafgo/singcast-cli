@@ -328,11 +328,12 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string, warn func(s
 	}
 
 	// Determine server type
-	dnsType, degraded := schemeToDNSType(scheme, params)
-	srv["type"] = dnsType
-	if degraded {
-		warn("DNS server \"" + host + "\": sing-box has no plain HTTP DNS type, \"http://\" degraded to \"https\"")
+	dnsType := schemeToDNSType(scheme, params)
+	if dnsType == "" {
+		warn("DNS server \"" + host + "\": plain HTTP DNS is not supported by sing-box, skipping")
+		return nil
 	}
+	srv["type"] = dnsType
 
 	// Set server address
 	srv["server"] = host
@@ -373,28 +374,27 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string, warn func(s
 }
 
 // schemeToDNSType maps URL scheme to sing-box DNS server type.
-// Returns the type and true if the mapping was a degradation.
-func schemeToDNSType(scheme string, params map[string]string) (string, bool) {
+// Returns an empty string when the scheme has no sing-box equivalent.
+func schemeToDNSType(scheme string, params map[string]string) string {
 	// Check for h3 override parameter (#h3 or #h3=true enables, #h3=false disables)
 	if h3Val, ok := params["h3"]; ok && h3Val != "false" {
-		return "h3", false
+		return "h3"
 	}
 
 	switch strings.ToLower(scheme) {
 	case "https":
-		return "https", false
+		return "https"
 	case "http":
-		// sing-box has no plain HTTP DNS type; degrade to https
-		return "https", true
+		return ""
 	case "tls":
-		return "tls", false
+		return "tls"
 	case "quic":
-		return "quic", false
+		return "quic"
 	case "h3":
-		return "h3", false
+		return "h3"
 	default:
 		// Plain IP or host:port → UDP
-		return "udp", false
+		return "udp"
 	}
 }
 
