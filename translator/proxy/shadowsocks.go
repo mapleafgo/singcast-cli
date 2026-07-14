@@ -35,12 +35,6 @@ var unsupportedSSCiphers = map[string]bool{
 	"aes-256-ofb":   true,
 }
 
-// ssCipherAliases 将 mihomo 常见别名映射为 sing-box 接受的规范名称。
-var ssCipherAliases = map[string]string{
-	"chacha20-poly1305":  "chacha20-ietf-poly1305",
-	"xchacha20-poly1305": "xchacha20-ietf-poly1305",
-}
-
 // TranslateShadowsocks translates a mihomo Shadowsocks proxy config to a sing-box outbound.
 // Returns nil if the cipher is unsupported.
 // See mapping doc section B.8.
@@ -49,10 +43,6 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 	if cipher == "" {
 		warn("shadowsocks: missing cipher")
 		return nil
-	}
-
-	if canonical, ok := ssCipherAliases[cipher]; ok {
-		cipher = canonical
 	}
 
 	if !supportedSSCiphers[cipher] {
