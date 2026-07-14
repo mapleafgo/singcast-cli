@@ -1,5 +1,20 @@
 package proxy
 
+var supportedVMessSecurities = map[string]bool{
+	"auto":              true,
+	"none":              true,
+	"zero":              true,
+	"aes-128-cfb":       true,
+	"aes-128-gcm":       true,
+	"chacha20-poly1305": true,
+}
+
+var supportedVMessPacketEncodings = map[string]bool{
+	"":           true,
+	"packetaddr": true,
+	"xudp":       true,
+}
+
 // TranslateVMess translates a mihomo VMess proxy config to a sing-box outbound.
 // See mapping doc section B.6.
 func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
@@ -31,6 +46,10 @@ func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
 	if cipher == "" {
 		cipher = "auto"
 	}
+	if !supportedVMessSecurities[cipher] {
+		warn("vmess: cipher '" + cipher + "' is not supported by sing-box, skipping")
+		return nil
+	}
 	outbound["security"] = cipher
 
 	// Global padding
@@ -45,6 +64,10 @@ func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
 
 	// Packet encoding
 	if packetEnc := GetStr(m, "packet-encoding"); packetEnc != "" {
+		if !supportedVMessPacketEncodings[packetEnc] {
+			warn("vmess: packet-encoding '" + packetEnc + "' is not supported by sing-box, skipping")
+			return nil
+		}
 		outbound["packet_encoding"] = packetEnc
 	}
 

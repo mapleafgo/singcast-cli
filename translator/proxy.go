@@ -9,15 +9,22 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 
 	for _, p := range cfg.Proxy {
 		proxyType, _ := p["type"].(string)
+		name, _ := p["name"].(string)
+		if name == "" {
+			continue
+		}
+		if !hasProxyEndpoint(p) {
+			t.warn("proxy \"" + name + "\": missing server or port, degraded to stub")
+			outbounds = append(outbounds, makeStubOutbound(name))
+			t.stubTags[name] = proxyType
+			t.proxyTags[name] = true
+			continue
+		}
 		outbound := translateOneProxy(p, t.warn, cfg.GlobalFingerprint)
 		if outbound == nil {
 			// Create a socks stub so unsupported nodes stay visible in the UI.
 			// The stub points to 127.0.0.1:1 — a dead endpoint that fails on
 			// any connection attempt, making it clear the node is non-functional.
-			name, _ := p["name"].(string)
-			if name == "" {
-				continue
-			}
 			outbound = makeStubOutbound(name)
 			t.stubTags[name] = proxyType
 		}
@@ -30,6 +37,13 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 	}
 
 	return outbounds
+}
+
+func hasProxyEndpoint(p map[string]any) bool {
+	if proxy.GetStr(p, "server") == "" {
+		return false
+	}
+	return proxy.GetInt(p, "port") != 0 || proxy.GetStr(p, "ports") != ""
 }
 
 // makeStubOutbound creates a non-functional socks outbound for unsupported proxies.

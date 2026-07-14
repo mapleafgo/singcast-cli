@@ -1,5 +1,16 @@
 package proxy
 
+var supportedVLESSFlows = map[string]bool{
+	"":                 true,
+	"xtls-rprx-vision": true,
+}
+
+var supportedVLESSPacketEncodings = map[string]bool{
+	"":           true,
+	"packetaddr": true,
+	"xudp":       true,
+}
+
 // TranslateVLESS translates a mihomo VLESS proxy config to a sing-box outbound.
 // See mapping doc section B.5.
 func TranslateVLESS(m map[string]any, warn func(string)) map[string]any {
@@ -17,14 +28,20 @@ func TranslateVLESS(m map[string]any, warn func(string)) map[string]any {
 		return nil
 	}
 
-	// Pass flow as-is; sing-box validates at runtime.
-	// https://github.com/mapleafgo/clash-for-flutter/issues/66
 	if flow := GetStr(m, "flow"); flow != "" {
+		if !supportedVLESSFlows[flow] {
+			warn("vless: flow '" + flow + "' is not supported by sing-box, skipping")
+			return nil
+		}
 		outbound["flow"] = flow
 	}
 
 	// Packet encoding
 	if packetEnc := GetStr(m, "packet-encoding"); packetEnc != "" {
+		if !supportedVLESSPacketEncodings[packetEnc] {
+			warn("vless: packet-encoding '" + packetEnc + "' is not supported by sing-box, skipping")
+			return nil
+		}
 		outbound["packet_encoding"] = packetEnc
 	}
 

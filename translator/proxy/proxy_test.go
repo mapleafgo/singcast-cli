@@ -262,6 +262,33 @@ func TestTranslateShadowsocksUnsupported(t *testing.T) {
 	}
 }
 
+func TestTranslateShadowsocksCipherAlias(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"chacha20-poly1305", "chacha20-ietf-poly1305"},
+		{"xchacha20-poly1305", "xchacha20-ietf-poly1305"},
+	}
+	for _, c := range cases {
+		warn, warnings := captureWarn()
+		m := map[string]any{
+			"name":     "ss-alias",
+			"server":   "ss.example.com",
+			"port":     8388,
+			"cipher":   c.in,
+			"password": "ss-pass",
+		}
+		out := TranslateShadowsocks(m, warn)
+		if out == nil {
+			t.Fatalf("cipher %s: expected non-nil result", c.in)
+		}
+		if out["method"] != c.want {
+			t.Errorf("cipher %s: method = %v, want %v", c.in, out["method"], c.want)
+		}
+		if len(*warnings) > 0 {
+			t.Errorf("cipher %s: unexpected warnings: %v", c.in, *warnings)
+		}
+	}
+}
+
 func TestTranslateHysteria2(t *testing.T) {
 	warn, warnings := captureWarn()
 	m := map[string]any{
@@ -340,7 +367,7 @@ func TestTranslateTUIC(t *testing.T) {
 		"name":                  "tuic-test",
 		"server":                "tuic.example.com",
 		"port":                  443,
-		"uuid":                  "tuic-uuid",
+		"uuid":                  "00000000-0000-0000-0000-000000000010",
 		"password":              "tuic-pass",
 		"congestion-controller": "cubic",
 		"sni":                   "tuic.example.com",

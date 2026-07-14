@@ -6,6 +6,8 @@ import (
 
 const maxHopInterval = 3600 // 1 hour
 
+const hysteria2ObfsSalamander = "salamander"
+
 // TranslateHysteria2 translates a mihomo Hysteria2 proxy config to a sing-box outbound.
 // TLS is always enabled for Hysteria2.
 // See mapping doc section B.9.
@@ -38,14 +40,19 @@ func TranslateHysteria2(m map[string]any, warn func(string)) map[string]any {
 	// Obfuscation: obfs -> {type: "salamander", password: "..."}
 	obfs := GetStr(m, "obfs")
 	if obfs != "" {
+		if obfs != hysteria2ObfsSalamander {
+			warn("hysteria2: obfs '" + obfs + "' is not supported by sing-box, skipping")
+			return nil
+		}
 		obfsPassword := GetStr(m, "obfs-password")
-		obfsObj := map[string]any{
-			"type": obfs,
+		if obfsPassword == "" {
+			warn("hysteria2: obfs-password is required by sing-box when obfs is enabled, skipping")
+			return nil
 		}
-		if obfsPassword != "" {
-			obfsObj["password"] = obfsPassword
+		outbound["obfs"] = map[string]any{
+			"type":     obfs,
+			"password": obfsPassword,
 		}
-		outbound["obfs"] = obfsObj
 	}
 
 	// Port hopping: ports -> server_ports (convert "-" to ":")

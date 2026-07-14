@@ -83,6 +83,20 @@ func parseJSONMap(t *testing.T, s string) map[string]any {
 	return m
 }
 
+func outboundByTag(t *testing.T, jsonStr, tag string) map[string]any {
+	t.Helper()
+	m := parseJSONMap(t, jsonStr)
+	outbounds := m["outbounds"].([]any)
+	for _, outbound := range outbounds {
+		outboundMap := outbound.(map[string]any)
+		if outboundMap["tag"] == tag {
+			return outboundMap
+		}
+	}
+	t.Fatalf("outbound %q not found", tag)
+	return nil
+}
+
 // TestCheckConfig_MinimalYAML verifies the minimal config passes sing-box validation.
 func TestCheckConfig_MinimalYAML(t *testing.T) {
 	jsonStr := mustTranslateYAML(t, minimalYAML)
@@ -102,6 +116,183 @@ func TestCheckConfig_FakeipYAML(t *testing.T) {
 			t.Skip("requires -tags with_clash_api")
 		}
 		t.Fatalf("CheckConfig failed: %v\nJSON:\n%s", err, jsonStr)
+	}
+}
+
+func TestCheckConfig_MissingProxyEndpointDoesNotFailConfig(t *testing.T) {
+	yaml := `mixed-port: 1080
+mode: rule
+dns:
+  enable: true
+  enhanced-mode: redir-host
+  nameserver: [8.8.8.8]
+proxies:
+  - name: missing-server
+    type: ss
+    port: 8388
+    cipher: aes-256-gcm
+    password: pass
+  - name: missing-port
+    type: vmess
+    server: 127.0.0.1
+    uuid: 00000000-0000-0000-0000-000000000005
+  - name: good-node
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [missing-server, missing-port, good-node, DIRECT]
+rules:
+  - MATCH,PROXY
+`
+	jsonStr := mustTranslateYAML(t, yaml)
+	for _, tag := range []string{"missing-server", "missing-port"} {
+		outbound := outboundByTag(t, jsonStr, tag)
+		if outbound["type"] != "socks" {
+			t.Fatalf("outbound %q type = %v, want socks stub\nJSON:\n%s", tag, outbound["type"], jsonStr)
+		}
+		if outbound["server"] != "127.0.0.1" || outbound["server_port"] != float64(1) {
+			t.Fatalf("outbound %q is not a dead-end stub: %v", tag, outbound)
+		}
+	}
+	if err := CheckConfig(t.Context(), jsonStr); err != nil {
+		if strings.Contains(err.Error(), "clash api is not included in this build") {
+			t.Skip("requires -tags with_clash_api")
+		}
+		t.Fatalf("CheckConfig failed for missing proxy endpoint fallback: %v\nJSON:\n%s", err, jsonStr)
+	}
+}
+
+func TestCheckConfig_UnsupportedShadowsocksCipherDoesNotFailConfig(t *testing.T) {
+	yaml := `mixed-port: 1080
+mode: rule
+dns:
+  enable: true
+  enhanced-mode: redir-host
+  nameserver: [8.8.8.8]
+proxies:
+  - name: bad-ss
+    type: ss
+    server: 127.0.0.1
+    port: 8388
+    cipher: aes-128-gcm-siv
+    password: pass
+  - name: good-node
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [bad-ss, good-node, DIRECT]
+rules:
+  - MATCH,PROXY
+`
+	jsonStr := mustTranslateYAML(t, yaml)
+	if strings.Contains(jsonStr, `"method": "aes-128-gcm-siv"`) {
+		t.Fatalf("unsupported cipher leaked into sing-box config:\n%s", jsonStr)
+	}
+	if err := CheckConfig(t.Context(), jsonStr); err != nil {
+		if strings.Contains(err.Error(), "clash api is not included in this build") {
+			t.Skip("requires -tags with_clash_api")
+		}
+		t.Fatalf("CheckConfig failed for unsupported Shadowsocks cipher fallback: %v\nJSON:\n%s", err, jsonStr)
+	}
+}
+
+func TestCheckConfig_NonStandardProxyValuesDoNotFailConfig(t *testing.T) {
+	yaml := `mixed-port: 1080
+mode: rule
+dns:
+  enable: true
+  enhanced-mode: redir-host
+  nameserver: [8.8.8.8]
+proxies:
+  - name: bad-vless-flow
+    type: vless
+    server: 127.0.0.1
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000001
+    flow: xtls-rprx-direct
+  - name: bad-vmess-security
+    type: vmess
+    server: 127.0.0.1
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000002
+    cipher: rc4-md5
+  - name: bad-vmess-packet
+    type: vmess
+    server: 127.0.0.1
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000003
+    cipher: auto
+    packet-encoding: packetaddr2
+  - name: bad-hy2-obfs
+    type: hysteria2
+    server: 127.0.0.1
+    port: 443
+    password: pass
+    obfs: salamander2
+    obfs-password: obfs-pass
+  - name: bad-hy2-obfs-password
+    type: hysteria2
+    server: 127.0.0.1
+    port: 443
+    password: pass
+    obfs: salamander
+  - name: bad-tuic-uuid
+    type: tuic
+    server: 127.0.0.1
+    port: 443
+    uuid: not-a-uuid
+    password: pass
+  - name: bad-tuic-relay
+    type: tuic
+    server: 127.0.0.1
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000004
+    password: pass
+    udp-relay-mode: udp
+  - name: good-node
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - bad-vless-flow
+      - bad-vmess-security
+      - bad-vmess-packet
+      - bad-hy2-obfs
+      - bad-hy2-obfs-password
+      - bad-tuic-uuid
+      - bad-tuic-relay
+      - good-node
+      - DIRECT
+rules:
+  - MATCH,PROXY
+`
+	jsonStr := mustTranslateYAML(t, yaml)
+	for _, leaked := range []string{
+		`"flow": "xtls-rprx-direct"`,
+		`"security": "rc4-md5"`,
+		`"packet_encoding": "packetaddr2"`,
+		`"type": "salamander2"`,
+		`"uuid": "not-a-uuid"`,
+		`"udp_relay_mode": "udp"`,
+	} {
+		if strings.Contains(jsonStr, leaked) {
+			t.Fatalf("non-standard proxy value leaked into sing-box config (%s):\n%s", leaked, jsonStr)
+		}
+	}
+	if err := CheckConfig(t.Context(), jsonStr); err != nil {
+		if strings.Contains(err.Error(), "clash api is not included in this build") {
+			t.Skip("requires -tags with_clash_api")
+		}
+		t.Fatalf("CheckConfig failed for non-standard proxy fallback: %v\nJSON:\n%s", err, jsonStr)
 	}
 }
 
