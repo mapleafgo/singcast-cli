@@ -56,8 +56,18 @@ func translateGroups(cfg *RawConfig, t *translation) []map[string]any {
 		case "select":
 			outbound = translateSelectGroup(name, filtered)
 		case "url-test":
+			filtered = filterHealthCheckProxies(filtered, t)
+			if len(filtered) == 0 {
+				t.warn("proxy-group \"" + name + "\" has no valid health-check proxies after filtering, skipping")
+				continue
+			}
 			outbound = translateURLTestGroup(name, filtered, g, t)
 		case "fallback":
+			filtered = filterHealthCheckProxies(filtered, t)
+			if len(filtered) == 0 {
+				t.warn("proxy-group \"" + name + "\" has no valid health-check proxies after filtering, skipping")
+				continue
+			}
 			outbound = translateFallbackGroup(name, filtered, g, t)
 		case "load-balance":
 			outbound = translateLoadBalanceGroup(name, filtered, t)
@@ -118,6 +128,20 @@ func filterGroupProxies(g map[string]any, t *translation) []string {
 		}
 	}
 
+	return filtered
+}
+
+func filterHealthCheckProxies(proxies []string, t *translation) []string {
+	if len(t.invalidHealthCheckProxyTags) == 0 {
+		return proxies
+	}
+
+	filtered := make([]string, 0, len(proxies))
+	for _, name := range proxies {
+		if !t.invalidHealthCheckProxyTags[name] {
+			filtered = append(filtered, name)
+		}
+	}
 	return filtered
 }
 

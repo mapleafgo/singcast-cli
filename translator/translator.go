@@ -57,11 +57,12 @@ func translateInternal(data []byte, opts *Options) (string, []string, Meta, erro
 			Outbounds: []map[string]any{},
 			Route:     &singboxRoute{},
 		},
-		proxyTags:   make(map[string]bool),
-		groupTags:   make(map[string]bool),
-		stubTags:    make(map[string]string),
-		ruleSetDefs: make(map[string]map[string]any),
-		opts:        opts,
+		proxyTags:                   make(map[string]bool),
+		groupTags:                   make(map[string]bool),
+		stubTags:                    make(map[string]string),
+		invalidHealthCheckProxyTags: make(map[string]bool),
+		ruleSetDefs:                 make(map[string]map[string]any),
+		opts:                        opts,
 	}
 
 	// Step 1-2: Global config → inbounds + log

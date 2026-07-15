@@ -35,6 +35,8 @@ type translation struct {
 	// stubTags records proxy tags that were converted to socks stubs
 	// because the original protocol is unsupported. Maps tag → original type.
 	stubTags map[string]string
+	// invalidHealthCheckProxyTags 记录不应参与 url-test/fallback 健康检查的伪节点标签。
+	invalidHealthCheckProxyTags map[string]bool
 	// translated group tags (insertion-ordered via slice + set)
 	groupTagOrder []string
 	groupTags     map[string]bool

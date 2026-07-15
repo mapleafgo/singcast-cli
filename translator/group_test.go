@@ -14,9 +14,11 @@ func newTestTranslation() *translation {
 			Outbounds: []map[string]any{},
 			Route:     &singboxRoute{},
 		},
-		proxyTags:   make(map[string]bool),
-		groupTags:   make(map[string]bool),
-		ruleSetDefs: make(map[string]map[string]any),
+		proxyTags:                   make(map[string]bool),
+		groupTags:                   make(map[string]bool),
+		stubTags:                    make(map[string]string),
+		invalidHealthCheckProxyTags: make(map[string]bool),
+		ruleSetDefs:                 make(map[string]map[string]any),
 	}
 }
 
@@ -142,6 +144,272 @@ func TestTranslateURLTestGroupIntervalClamp(t *testing.T) {
 	}
 	if !foundWarn {
 		t.Error("expected a warning about interval being clamped")
+	}
+}
+
+func TestTranslateURLTestGroupFiltersInvalidSubscriptionInfoProxy(t *testing.T) {
+	tr := newTestTranslation()
+	cfg := &RawConfig{
+		Proxy: []map[string]any{
+			{
+				"name":     "剩余流量：172.37 GB",
+				"type":     "hysteria2",
+				"server":   "127.0.0.1",
+				"port":     65535,
+				"password": "test-password",
+			},
+			{
+				"name":     "valid-node",
+				"type":     "hysteria2",
+				"server":   "example.com",
+				"port":     443,
+				"password": "test-password",
+			},
+		},
+		ProxyGroup: []map[string]any{
+			{
+				"name":    "Manual",
+				"type":    "select",
+				"proxies": []any{"剩余流量：172.37 GB", "valid-node"},
+			},
+			{
+				"name":    "Auto",
+				"type":    "url-test",
+				"proxies": []any{"剩余流量：172.37 GB", "valid-node"},
+			},
+		},
+	}
+
+	translateProxies(cfg, tr)
+	groups := translateGroups(cfg, tr)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d: %v", len(groups), groups)
+	}
+
+	selectOutbounds, _ := groups[0]["outbounds"].([]string)
+	if len(selectOutbounds) != 2 {
+		t.Fatalf("select group outbounds = %v, want invalid proxy preserved with valid node", selectOutbounds)
+	}
+
+	urlTestOutbounds, _ := groups[1]["outbounds"].([]string)
+	if len(urlTestOutbounds) != 1 || urlTestOutbounds[0] != "valid-node" {
+		t.Fatalf("url-test group outbounds = %v, want [valid-node]", urlTestOutbounds)
+	}
+}
+
+func TestTranslateFallbackGroupFiltersInvalidSubscriptionInfoProxy(t *testing.T) {
+	tr := newTestTranslation()
+	cfg := &RawConfig{
+		Proxy: []map[string]any{
+			{
+				"name":     "官网：keluosi.top",
+				"type":     "hysteria2",
+				"server":   "127.0.0.1",
+				"port":     65535,
+				"password": "test-password",
+			},
+			{
+				"name":     "valid-node",
+				"type":     "hysteria2",
+				"server":   "example.com",
+				"port":     443,
+				"password": "test-password",
+			},
+		},
+		ProxyGroup: []map[string]any{
+			{
+				"name":    "Fallback",
+				"type":    "fallback",
+				"proxies": []any{"官网：keluosi.top", "valid-node"},
+			},
+		},
+	}
+
+	translateProxies(cfg, tr)
+	groups := translateGroups(cfg, tr)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d: %v", len(groups), groups)
+	}
+
+	outbounds, _ := groups[0]["outbounds"].([]string)
+	if len(outbounds) != 1 || outbounds[0] != "valid-node" {
+		t.Fatalf("fallback group outbounds = %v, want [valid-node]", outbounds)
+	}
+}
+
+func TestHealthCheckGroupsFilterStaticallyInvalidProxyEndpoints(t *testing.T) {
+	tr := newTestTranslation()
+	invalidProxies := []map[string]any{
+		{
+			"name":     "loopback-any-port",
+			"type":     "hysteria2",
+			"server":   "127.0.0.1",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "localhost-hostname",
+			"type":     "hysteria2",
+			"server":   "localhost",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "ipv6-loopback",
+			"type":     "hysteria2",
+			"server":   "::1",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "bracketed-ipv6-loopback",
+			"type":     "hysteria2",
+			"server":   "[::1]",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "unspecified-ipv4",
+			"type":     "hysteria2",
+			"server":   "0.0.0.0",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "unspecified-ipv6",
+			"type":     "hysteria2",
+			"server":   "::",
+			"port":     443,
+			"password": "test-password",
+		},
+		{
+			"name":     "invalid-high-port",
+			"type":     "hysteria2",
+			"server":   "example.net",
+			"port":     70000,
+			"password": "test-password",
+		},
+		{
+			"name":     "invalid-negative-port",
+			"type":     "hysteria2",
+			"server":   "example.org",
+			"port":     -1,
+			"password": "test-password",
+		},
+	}
+	proxies := append([]map[string]any{}, invalidProxies...)
+	proxies = append(proxies, map[string]any{
+		"name":     "valid-node",
+		"type":     "hysteria2",
+		"server":   "example.com",
+		"port":     443,
+		"password": "test-password",
+	})
+
+	groupMembers := []any{
+		"loopback-any-port",
+		"localhost-hostname",
+		"ipv6-loopback",
+		"bracketed-ipv6-loopback",
+		"unspecified-ipv4",
+		"unspecified-ipv6",
+		"invalid-high-port",
+		"invalid-negative-port",
+		"valid-node",
+	}
+	cfg := &RawConfig{
+		Proxy: proxies,
+		ProxyGroup: []map[string]any{
+			{
+				"name":    "Manual",
+				"type":    "select",
+				"proxies": groupMembers,
+			},
+			{
+				"name":    "Auto",
+				"type":    "url-test",
+				"proxies": groupMembers,
+			},
+			{
+				"name":    "Fallback",
+				"type":    "fallback",
+				"proxies": groupMembers,
+			},
+		},
+	}
+
+	translateProxies(cfg, tr)
+	groups := translateGroups(cfg, tr)
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d: %v", len(groups), groups)
+	}
+
+	selectOutbounds, _ := groups[0]["outbounds"].([]string)
+	if len(selectOutbounds) != len(groupMembers) {
+		t.Fatalf("select group outbounds = %v, want all members preserved", selectOutbounds)
+	}
+
+	for _, index := range []int{1, 2} {
+		outbounds, _ := groups[index]["outbounds"].([]string)
+		if len(outbounds) != 1 || outbounds[0] != "valid-node" {
+			t.Fatalf("%s outbounds = %v, want [valid-node]", groups[index]["tag"], outbounds)
+		}
+	}
+}
+
+func TestHealthCheckGroupsFilterDegradedStubProxies(t *testing.T) {
+	tr := newTestTranslation()
+	cfg := &RawConfig{
+		Proxy: []map[string]any{
+			{
+				"name":   "unsupported-node",
+				"type":   "ssr",
+				"server": "example.net",
+				"port":   443,
+			},
+			{
+				"name":     "valid-node",
+				"type":     "hysteria2",
+				"server":   "example.com",
+				"port":     443,
+				"password": "test-password",
+			},
+		},
+		ProxyGroup: []map[string]any{
+			{
+				"name":    "Auto",
+				"type":    "url-test",
+				"proxies": []any{"unsupported-node", "valid-node"},
+			},
+			{
+				"name":    "Fallback",
+				"type":    "fallback",
+				"proxies": []any{"unsupported-node", "valid-node"},
+			},
+			{
+				"name":    "Manual",
+				"type":    "select",
+				"proxies": []any{"unsupported-node", "valid-node"},
+			},
+		},
+	}
+
+	translateProxies(cfg, tr)
+	groups := translateGroups(cfg, tr)
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d: %v", len(groups), groups)
+	}
+
+	for _, index := range []int{0, 1} {
+		outbounds, _ := groups[index]["outbounds"].([]string)
+		if len(outbounds) != 1 || outbounds[0] != "valid-node" {
+			t.Fatalf("%s outbounds = %v, want [valid-node]", groups[index]["tag"], outbounds)
+		}
+	}
+
+	selectOutbounds, _ := groups[2]["outbounds"].([]string)
+	if len(selectOutbounds) != 2 {
+		t.Fatalf("select group outbounds = %v, want unsupported stub preserved with valid node", selectOutbounds)
 	}
 }
 

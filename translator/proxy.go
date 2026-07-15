@@ -1,6 +1,9 @@
 package translator
 
 import (
+	"net/netip"
+	"strings"
+
 	"github.com/mapleafgo/singcast/translator/proxy"
 )
 
@@ -13,11 +16,15 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 		if name == "" {
 			continue
 		}
+		if isInvalidHealthCheckEndpoint(p) {
+			markInvalidHealthCheckProxy(t, name)
+		}
 		if !hasProxyEndpoint(p) {
 			t.warn("proxy \"" + name + "\": missing server or port, degraded to stub")
 			outbounds = append(outbounds, makeStubOutbound(name))
 			t.stubTags[name] = proxyType
 			t.proxyTags[name] = true
+			markInvalidHealthCheckProxy(t, name)
 			continue
 		}
 		outbound := translateOneProxy(p, t.warn, cfg.GlobalFingerprint)
@@ -27,6 +34,7 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 			// any connection attempt, making it clear the node is non-functional.
 			outbound = makeStubOutbound(name)
 			t.stubTags[name] = proxyType
+			markInvalidHealthCheckProxy(t, name)
 		}
 		tag, _ := outbound["tag"].(string)
 		if tag == "" {
@@ -37,6 +45,37 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 	}
 
 	return outbounds
+}
+
+func isInvalidHealthCheckEndpoint(p map[string]any) bool {
+	server := strings.TrimSpace(proxy.GetStr(p, "server"))
+	if server == "" {
+		return false
+	}
+	if strings.HasPrefix(server, "[") && strings.HasSuffix(server, "]") {
+		server = strings.TrimPrefix(strings.TrimSuffix(server, "]"), "[")
+	}
+	if strings.EqualFold(server, "localhost") {
+		return true
+	}
+	if addr, err := netip.ParseAddr(server); err == nil {
+		if addr.IsLoopback() || addr.IsUnspecified() {
+			return true
+		}
+	}
+
+	port := proxy.GetInt(p, "port")
+	if port != 0 && (port < 1 || port > 65535) {
+		return true
+	}
+	return false
+}
+
+func markInvalidHealthCheckProxy(t *translation, name string) {
+	if t.invalidHealthCheckProxyTags == nil {
+		t.invalidHealthCheckProxyTags = make(map[string]bool)
+	}
+	t.invalidHealthCheckProxyTags[name] = true
 }
 
 func hasProxyEndpoint(p map[string]any) bool {
