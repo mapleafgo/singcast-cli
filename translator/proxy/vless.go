@@ -14,6 +14,10 @@ var supportedVLESSPacketEncodings = map[string]bool{
 // TranslateVLESS translates a mihomo VLESS proxy config to a sing-box outbound.
 // See mapping doc section B.5.
 func TranslateVLESS(m map[string]any, warn func(string)) map[string]any {
+	if SkipUnsupportedNetwork(m, warn) {
+		return nil
+	}
+
 	outbound := map[string]any{
 		"type": "vless",
 		"tag":  GetStr(m, "name"),

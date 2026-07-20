@@ -614,7 +614,7 @@ func TestTranslateTransportHTTPUpgrade(t *testing.T) {
 	}
 }
 
-func TestTranslateTransportXHTTP(t *testing.T) {
+func TestSkipUnsupportedNetworkXHTTP(t *testing.T) {
 	m := map[string]any{
 		"network": "xhttp",
 		"xhttp-opts": map[string]any{
@@ -625,9 +625,9 @@ func TestTranslateTransportXHTTP(t *testing.T) {
 	}
 
 	var warnMsg string
-	transport := TranslateTransport(m, func(s string) { warnMsg = s })
-	if transport != nil {
-		t.Errorf("expected nil transport for unsupported xhttp, got %v", transport)
+	skipped := SkipUnsupportedNetwork(m, func(s string) { warnMsg = s })
+	if !skipped {
+		t.Error("expected xhttp to be flagged as unsupported")
 	}
 	if warnMsg == "" {
 		t.Error("expected warning about unsupported xhttp transport")

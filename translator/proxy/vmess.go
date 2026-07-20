@@ -18,6 +18,10 @@ var supportedVMessPacketEncodings = map[string]bool{
 // TranslateVMess translates a mihomo VMess proxy config to a sing-box outbound.
 // See mapping doc section B.6.
 func TranslateVMess(m map[string]any, warn func(string)) map[string]any {
+	if SkipUnsupportedNetwork(m, warn) {
+		return nil
+	}
+
 	outbound := map[string]any{
 		"type": "vmess",
 		"tag":  GetStr(m, "name"),

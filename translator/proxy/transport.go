@@ -2,6 +2,19 @@ package proxy
 
 import "math"
 
+// SkipUnsupportedNetwork returns true if the network type is not supported by sing-box
+// and the proxy should be skipped entirely.
+func SkipUnsupportedNetwork(m map[string]any, warn func(string)) bool {
+	network := GetStr(m, "network")
+	switch network {
+	case "xhttp":
+		warn("xhttp (SplitHTTP) transport is not supported by sing-box, skipping proxy")
+		return true
+	default:
+		return false
+	}
+}
+
 // TranslateTransport translates mihomo transport/underlay configuration to a sing-box
 // transport object. Returns nil if no transport is needed (plain TCP).
 //
@@ -36,9 +49,6 @@ func TranslateTransport(m map[string]any, warn func(string)) map[string]any {
 		return translateH2(m)
 	case "grpc":
 		return translateGRPC(m)
-	case "xhttp":
-		warn("xhttp (SplitHTTP) transport is not supported by sing-box, proxy will not work")
-		return nil
 	default:
 		return nil
 	}
