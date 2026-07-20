@@ -529,7 +529,7 @@ func TestTranslateTransportWS(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
@@ -556,7 +556,7 @@ func TestTranslateTransportGRPC(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
@@ -578,7 +578,7 @@ func TestTranslateTransportWSEarlyData(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
@@ -602,7 +602,7 @@ func TestTranslateTransportHTTPUpgrade(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
@@ -611,6 +611,31 @@ func TestTranslateTransportHTTPUpgrade(t *testing.T) {
 	}
 	if transport["path"] != "/upgrade" {
 		t.Errorf("path = %v, want /upgrade", transport["path"])
+	}
+}
+
+func TestTranslateTransportXHTTP(t *testing.T) {
+	m := map[string]any{
+		"network": "xhttp",
+		"xhttp-opts": map[string]any{
+			"path": "/cwgoodnews",
+			"host": "uscg1.cwgoodnews.com",
+			"mode": "auto",
+		},
+	}
+
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
+	}
+	if transport["type"] != "httpupgrade" {
+		t.Errorf("type = %v, want httpupgrade", transport["type"])
+	}
+	if transport["path"] != "/cwgoodnews" {
+		t.Errorf("path = %v, want /cwgoodnews", transport["path"])
+	}
+	if transport["host"] != "uscg1.cwgoodnews.com" {
+		t.Errorf("host = %v, want uscg1.cwgoodnews.com", transport["host"])
 	}
 }
 
@@ -845,7 +870,7 @@ func TestTranslateHTTP_Transport(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
@@ -876,7 +901,7 @@ func TestTranslateH2_Transport(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m)
+	transport := TranslateTransport(m, func(s string) { t.Log(s) })
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}

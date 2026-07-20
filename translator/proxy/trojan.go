@@ -25,7 +25,7 @@ func TranslateTrojan(m map[string]any, warn func(string)) map[string]any {
 	outbound["tls"] = tls
 
 	// Transport
-	if transport := TranslateTransport(m); transport != nil {
+	if transport := TranslateTransport(m, warn); transport != nil {
 		outbound["transport"] = transport
 	}
 
