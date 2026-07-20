@@ -1,9 +1,6 @@
 package proxy
 
-import (
-	"math"
-	"strings"
-)
+import "math"
 
 // TranslateTransport translates mihomo transport/underlay configuration to a sing-box
 // transport object. Returns nil if no transport is needed (plain TCP).
@@ -40,9 +37,8 @@ func TranslateTransport(m map[string]any, warn func(string)) map[string]any {
 	case "grpc":
 		return translateGRPC(m)
 	case "xhttp":
-		xhttpOpts := GetMap(m, "xhttp-opts")
-		warnXHTTPUnsupportedFields(xhttpOpts, warn)
-		return translateHTTPUpgrade(xhttpOpts)
+		warn("xhttp (SplitHTTP) transport is not supported by sing-box, proxy will not work")
+		return nil
 	default:
 		return nil
 	}
@@ -207,29 +203,6 @@ func translateGRPC(m map[string]any) map[string]any {
 	}
 
 	return transport
-}
-
-// xhttpSupportedFields lists the xhttp-opts fields that sing-box httpupgrade supports.
-var xhttpSupportedFields = map[string]bool{
-	"host":    true,
-	"path":    true,
-	"headers": true,
-}
-
-// warnXHTTPUnsupportedFields warns about xhttp-opts fields that sing-box cannot handle.
-func warnXHTTPUnsupportedFields(opts map[string]any, warn func(string)) {
-	if opts == nil || warn == nil {
-		return
-	}
-	var unsupported []string
-	for key := range opts {
-		if !xhttpSupportedFields[key] {
-			unsupported = append(unsupported, key)
-		}
-	}
-	if len(unsupported) > 0 {
-		warn("xhttp-opts: fields " + strings.Join(unsupported, ", ") + " are not supported by sing-box and will be ignored")
-	}
 }
 
 // getHeadersMap extracts a headers map from an opts map.

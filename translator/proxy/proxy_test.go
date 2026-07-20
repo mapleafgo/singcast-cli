@@ -624,18 +624,13 @@ func TestTranslateTransportXHTTP(t *testing.T) {
 		},
 	}
 
-	transport := TranslateTransport(m, func(s string) { t.Log(s) })
-	if transport == nil {
-		t.Fatal("expected non-nil transport")
+	var warnMsg string
+	transport := TranslateTransport(m, func(s string) { warnMsg = s })
+	if transport != nil {
+		t.Errorf("expected nil transport for unsupported xhttp, got %v", transport)
 	}
-	if transport["type"] != "httpupgrade" {
-		t.Errorf("type = %v, want httpupgrade", transport["type"])
-	}
-	if transport["path"] != "/cwgoodnews" {
-		t.Errorf("path = %v, want /cwgoodnews", transport["path"])
-	}
-	if transport["host"] != "uscg1.cwgoodnews.com" {
-		t.Errorf("host = %v, want uscg1.cwgoodnews.com", transport["host"])
+	if warnMsg == "" {
+		t.Error("expected warning about unsupported xhttp transport")
 	}
 }
 
