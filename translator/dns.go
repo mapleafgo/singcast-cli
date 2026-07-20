@@ -47,13 +47,17 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	defaultServerTags := buildDNSServerEntries(dns.DefaultNameserver, "def-", "", result, warn)
 	nameserverTags := buildDNSServerEntries(dns.NameServer, "ns-", detour, result, warn)
 	fallbackTags := buildDNSServerEntries(dns.Fallback, "fb-", detour, result, warn)
-	psnTags := buildDNSServerEntries(dns.ProxyServerNameserver, "psn-", "", result, warn)
+	// proxy-server-nameserver 忠实翻译成 psn-* 条目输出到 dns.servers，方便用户日后手动引用；
+	// 但当前 translator 并不把它们接进任何路由/bootstrap（domain_resolver 固定走 def-*），
+	// 所以直接丢弃返回的 tags——见下方 domainResolverTags 注释。
+	buildDNSServerEntries(dns.ProxyServerNameserver, "psn-", "", result, warn)
 
-	// Determine best domain_resolver: prefer proxy-server-nameserver, fallback to default-nameserver
+	// domainResolverTags 用于给"域名地址的 DNS server"设置 domain_resolver 做 bootstrap。
+	// 只能选 server 是 IP 地址的条目——否则 domain_resolver 本身也是域名、又要被解析，
+	// sing-box 会检测到 circular server dependency（例如 psn-0 ↔ psn-1 互指:
+	// "circular server dependency: psn-0 -> psn-1 -> psn-0"）。因此固定使用
+	// default-nameserver（mihomo 语义上就是"用来做 bootstrap 的纯 IP DNS"）。
 	domainResolverTags := defaultServerTags
-	if len(psnTags) > 0 {
-		domainResolverTags = psnTags
-	}
 
 	// Set route.default_domain_resolver: used by sing-box to resolve outbound (proxy) server domains.
 	// This is the official sing-box mechanism for the DNS chicken-and-egg problem.
