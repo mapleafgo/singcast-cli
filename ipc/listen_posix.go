@@ -46,9 +46,14 @@ func (s *Server) listenPlatform() error {
 
 	// 服务模式：允许 GUI 用户 uid 通过 ACL 连接 socket（免加入组、免重登）
 	if guiUID := os.Getenv("SINGCAST_GUI_UID"); guiUID != "" {
-		if out, err := exec.Command("setfacl", "-m", "u:"+guiUID+":rw", s.ipcPath).CombinedOutput(); err != nil {
-			slog.Warn("setfacl for GUI uid", "uid", guiUID, "error", err, "output", string(out))
-		} else {
+		// "0" 是包安装 fallback，对 root 写 ACL 无意义且会误导；跳过。
+		if guiUID != "0" {
+			if out, err := exec.Command("setfacl", "-m", "u:"+guiUID+":rw", s.ipcPath).CombinedOutput(); err != nil {
+				// 服务模式下 ACL 失败 = GUI 必连不上，显式失败而不是 silent warn
+				_ = s.listener.Close()
+				os.Remove(s.ipcPath)
+				return fmt.Errorf("setfacl for GUI uid %s: %w (%s)", guiUID, err, string(out))
+			}
 			slog.Info("socket ACL granted", "uid", guiUID)
 		}
 	}

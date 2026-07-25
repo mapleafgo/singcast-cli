@@ -15,11 +15,17 @@ func TestSystemdUnit_ContainsKeyFields(t *testing.T) {
 	require.Contains(t, unit, "User=singcast")
 	require.Contains(t, unit, "Group=singcast")
 	require.Contains(t, unit, "AmbientCapabilities=CAP_NET_ADMIN")
-	require.Contains(t, unit, "ExecStart=/opt/Singcast/singcast-core ipc --home /var/lib/singcast")
+	// ExecStart 路径必须带引号，避免空格路径拆词
+	require.Contains(t, unit, `ExecStart="/opt/Singcast/singcast-core" ipc --home "/var/lib/singcast"`)
 	require.Contains(t, unit, "RuntimeDirectory=singcast")
 	require.Contains(t, unit, "StateDirectory=singcast")
 	require.Contains(t, unit, "SINGCAST_IPC_PATH=/run/singcast/command.sock")
 	require.Contains(t, unit, "SINGCAST_GUI_UID=1000")
+}
+
+func TestSystemdUnit_SkipsRootGuiUID(t *testing.T) {
+	unit := systemdUnit("/opt/Singcast/singcast-core", "/var/lib/singcast", "0")
+	require.NotContains(t, unit, "SINGCAST_GUI_UID=")
 }
 
 func TestPolkitRules_ContainsResolvedActions(t *testing.T) {
