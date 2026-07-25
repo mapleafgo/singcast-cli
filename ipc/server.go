@@ -203,6 +203,10 @@ func (s *Server) onCoreEvent(eventType int32, payload string) {
 
 // IpcPath returns the IPC socket/pipe path based on the current working directory.
 func IpcPath() string {
+	// 服务模式（systemd）通过环境变量指定固定 socket 路径
+	if p := os.Getenv("SINGCAST_IPC_PATH"); p != "" {
+		return p
+	}
 	if runtime.GOOS == "windows" {
 		return `\\.\pipe\singcast`
 	}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -41,6 +42,15 @@ func (s *Server) listenPlatform() error {
 	// Set restrictive permissions: only the owner can connect.
 	if err := os.Chmod(s.ipcPath, 0o600); err != nil {
 		slog.Warn("chmod socket", "error", err)
+	}
+
+	// 服务模式：允许 GUI 用户 uid 通过 ACL 连接 socket（免加入组、免重登）
+	if guiUID := os.Getenv("SINGCAST_GUI_UID"); guiUID != "" {
+		if out, err := exec.Command("setfacl", "-m", "u:"+guiUID+":rw", s.ipcPath).CombinedOutput(); err != nil {
+			slog.Warn("setfacl for GUI uid", "uid", guiUID, "error", err, "output", string(out))
+		} else {
+			slog.Info("socket ACL granted", "uid", guiUID)
+		}
 	}
 
 	dirInfo, err := os.Stat(filepath.Dir(s.ipcPath))
