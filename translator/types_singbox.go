@@ -48,6 +48,10 @@ type translation struct {
 	// These domains need direct DNS routing to avoid circular dependency:
 	// proxy → ECH → DNS → proxy loop.
 	echQueryServers []string
+	// dnsTerminalRules 是必须排在全部 DNS 规则最后的兜底规则（无匹配条件、
+	// 命中一切）。单独收集而不直接进 config.DNS.Rules，是因为 sing-box DNS 规则
+	// 首匹配：兜底规则若留在中间，会遮蔽其后所有更精确的规则。
+	dnsTerminalRules []map[string]any
 }
 
 func (t *translation) warn(msg string) {

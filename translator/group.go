@@ -8,9 +8,14 @@ import (
 )
 
 const (
-	maxGroupInterval    = 1800 // 30 minutes; 超过此值的 interval 会被截断
-	maxGroupIdleTimeout = 1800 // 30 minutes
-	maxTolerance        = math.MaxUint16
+	maxGroupInterval = 1800 // 30 minutes; 超过此值的 interval 会被截断
+	// minGroupIdleTimeout 是 idle_timeout 的下限（用 max 取值，不是上限）：
+	// sing-box 要求 idle_timeout 大于 interval，取 max(interval*2, 30min)
+	// 既满足该约束，又与 sing-box 自身的 30 分钟默认值一致。
+	minGroupIdleTimeout = 1800
+	// maxTolerance 封顶到 uint16 上限：sing-box option.Group.Tolerance 是
+	// uint16，超出会在解析阶段溢出报错。
+	maxTolerance = math.MaxUint16
 	// fallbackTolerance 让 fallback 组模拟 Clash 行为：当前节点延迟比其他节点
 	// 高超过 10 秒（通常意味着不可用）时才切换，避免频繁跳节点。
 	fallbackTolerance = 10000
@@ -149,7 +154,22 @@ func filterHealthCheckProxies(proxies []string, t *translation) []string {
 // group's outbound list. If a group's outbound list becomes empty after cleanup,
 // the group is dropped entirely (and removed from translated so groupTagOrder won't
 // include it). Returns the filtered group list.
+//
+// 迭代至不动点：丢弃一个组会让引用它的组也可能变空，而单趟扫描中"先处理、
+// 后失效"的组不会被回补清理——组 A 引用组 B、B 在 A 之后被丢弃时，
+// A 就会留下悬空引用，sing-box 启动报 outbound not found。
 func cleanupGroupOutbounds(groups []map[string]any, translated map[string]bool, t *translation) []map[string]any {
+	for {
+		result, dropped := cleanupGroupOutboundsOnce(groups, translated, t)
+		groups = result
+		if dropped == 0 {
+			return groups
+		}
+	}
+}
+
+// cleanupGroupOutboundsOnce 执行一趟清理，返回过滤后的组列表和本趟丢弃的组数。
+func cleanupGroupOutboundsOnce(groups []map[string]any, translated map[string]bool, t *translation) ([]map[string]any, int) {
 	// Valid outbound tags: real proxies + successfully translated groups + DIRECT
 	validTags := make(map[string]bool, len(t.proxyTags)+len(translated)+1)
 	for tag := range t.proxyTags {
@@ -161,6 +181,7 @@ func cleanupGroupOutbounds(groups []map[string]any, translated map[string]bool, 
 	validTags["DIRECT"] = true
 
 	var result []map[string]any
+	dropped := 0
 	for _, ob := range groups {
 		tag, _ := ob["tag"].(string)
 		oldList, _ := ob["outbounds"].([]string)
@@ -176,6 +197,7 @@ func cleanupGroupOutbounds(groups []map[string]any, translated map[string]bool, 
 			t.warn("proxy-group \"" + tag + "\" has no valid outbounds after cleanup, dropping")
 			delete(translated, tag)
 			delete(t.groupTags, tag)
+			dropped++
 			continue
 		}
 
@@ -189,7 +211,7 @@ func cleanupGroupOutbounds(groups []map[string]any, translated map[string]bool, 
 		result = append(result, ob)
 	}
 
-	return result
+	return result, dropped
 }
 
 func translateSelectGroup(name string, proxies []string) map[string]any {
@@ -211,7 +233,7 @@ func translateURLTestGroup(name string, proxies []string, g map[string]any, t *t
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, maxGroupIdleTimeout)),
+		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, minGroupIdleTimeout)),
 		"interrupt_exist_connections": true,
 	}
 
@@ -231,7 +253,7 @@ func translateFallbackGroup(name string, proxies []string, g map[string]any, t *
 		"outbounds":                   proxies,
 		"url":                         url,
 		"interval":                    proxy.SecondsToDuration(interval),
-		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, maxGroupIdleTimeout)),
+		"idle_timeout":                proxy.SecondsToDuration(max(interval*2, minGroupIdleTimeout)),
 		"tolerance":                   fallbackTolerance,
 		"interrupt_exist_connections": true,
 	}
