@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
@@ -233,7 +234,17 @@ func (p *PlatformIO) MyInterfaceAddress() []netip.Addr { return nil }
 
 // --- helpers ---
 
+// flushDNSTimeout 限制刷新系统 DNS 缓存的外部命令耗时。
+// 该函数在网络切换路径上被调用，resolvectl 等命令挂起会拖住整条切网处理。
+const flushDNSTimeout = 3 * time.Second
+
+// flushSystemDNS 调用平台命令刷新系统 DNS 缓存，失败只记 Debug 日志——
+// 刷新失败不影响代理功能，且无命令的精简系统上属预期情况。
+// 无论传入的 ctx 有无 deadline，内部都会套 flushDNSTimeout 上限。
 func flushSystemDNS(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, flushDNSTimeout)
+	defer cancel()
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "linux":

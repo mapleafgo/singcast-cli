@@ -40,7 +40,7 @@ func TestHealthWatchdog_HealthyNeverRestarts(t *testing.T) {
 		interval:  3 * time.Millisecond,
 		threshold: 2,
 		cooldown:  time.Second,
-		probe:     func() bool { return true },
+		probe:     func(context.Context) bool { return true },
 		restart:   func() { restarts.Add(1) },
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -59,7 +59,7 @@ func TestHealthWatchdog_RestartsOnSustainedFailure(t *testing.T) {
 		interval:  3 * time.Millisecond,
 		threshold: 3,
 		cooldown:  time.Second,
-		probe:     func() bool { return false },
+		probe:     func(context.Context) bool { return false },
 		restart:   func() { restarts.Add(1) },
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,7 +79,7 @@ func TestHealthWatchdog_ResetOnRecovery(t *testing.T) {
 		interval:  5 * time.Millisecond,
 		threshold: 20,
 		cooldown:  time.Second,
-		probe: func() bool {
+		probe: func(context.Context) bool {
 			mu.Lock()
 			defer mu.Unlock()
 			return !failing
@@ -110,7 +110,7 @@ func TestHealthWatchdog_CooldownDelaysNextRestart(t *testing.T) {
 		interval:  3 * time.Millisecond,
 		threshold: 2,
 		cooldown:  60 * time.Millisecond,
-		probe:     func() bool { return false },
+		probe:     func(context.Context) bool { return false },
 		restart: func() {
 			mu.Lock()
 			times = append(times, time.Now())

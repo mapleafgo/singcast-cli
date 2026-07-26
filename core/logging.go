@@ -24,14 +24,20 @@ var (
 	// Error=2, Warn=3, Info=4, Debug=5, Trace=6.
 	coreLogLevel atomic.Int32
 
-	// Global log event callback. Set once before StartWithContent, read-only thereafter.
-	onLogEvent func(int32, string)
+	// 全局日志回调。用原子指针而非裸变量：Init、看门狗、observeStats 等
+	// goroutine 在宿主注册回调的同时就可能在打日志，裸变量构成数据竞态。
+	onLogEvent atomic.Pointer[func(int32, string)]
 )
 
-// SetOnLogEvent registers a callback invoked for each new log entry.
-// Must be called before StartWithContent.
+// SetOnLogEvent 注册每条日志的回调，传 nil 取消注册。可在任意时刻调用。
+// 回调会在产生日志的那个 goroutine 上同步执行，实现方需保证线程安全且不可阻塞，
+// 也不可在回调内再打日志（会无限递归）。
 func SetOnLogEvent(fn func(int32, string)) {
-	onLogEvent = fn
+	if fn == nil {
+		onLogEvent.Store(nil)
+		return
+	}
+	onLogEvent.Store(&fn)
 }
 
 func init() {
@@ -70,13 +76,13 @@ func (h *coreLogHandler) Handle(_ context.Context, r slog.Record) error {
 	// Always mirror to stderr for debugging (gomobile forwards to Android logcat).
 	fmt.Fprintln(os.Stderr, b.String())
 
-	if onLogEvent != nil {
+	if fnPtr := onLogEvent.Load(); fnPtr != nil {
 		data, _ := json.Marshal(LogEntry{
 			Level:     slogToCoreLevel(r.Level),
 			Message:   b.String(),
 			Timestamp: r.Time.UnixMilli(),
 		})
-		onLogEvent(EventLog, string(data))
+		(*fnPtr)(EventLog, string(data))
 	}
 
 	return nil

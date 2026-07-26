@@ -7,6 +7,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
+	C "github.com/sagernet/sing-box/constant"
 )
 
 // 健康看门狗默认参数。选型理由：
@@ -63,8 +64,8 @@ type healthWatchdog struct {
 	interval  time.Duration
 	threshold int
 	cooldown  time.Duration
-	probe     func() bool // false 表示本次探测不健康
-	restart   func()      // 触发恢复（如重启 core）
+	probe     func(context.Context) bool // false 表示本次探测不健康
+	restart   func()                     // 触发恢复（如重启 core）
 	onFail    func(fails int)
 }
 
@@ -85,7 +86,7 @@ func (w *healthWatchdog) run(ctx context.Context) {
 			if now.Before(cooldownUntil) {
 				continue
 			}
-			if w.probe() {
+			if w.probe(ctx) {
 				fails = 0
 				continue
 			}
@@ -111,7 +112,7 @@ func (s *Service) newWatchdog() *healthWatchdog {
 		interval:  hc.interval,
 		threshold: hc.failThreshold,
 		cooldown:  hc.cooldown,
-		probe:     func() bool { return s.healthProbe(hc.timeout) },
+		probe:     func(ctx context.Context) bool { return s.healthProbe(ctx, hc.timeout) },
 		restart:   s.restartForHealth,
 		onFail: func(fails int) {
 			slog.Warn("health watchdog: proxy probe failed", "fails", fails, "threshold", hc.failThreshold)
@@ -121,7 +122,8 @@ func (s *Service) newWatchdog() *healthWatchdog {
 
 // healthProbe 通过当前生效的代理节点做一次 URL 探测判断代理是否可用。
 // 服务未运行、或当前处于直连模式（无代理节点）时返回 true，避免误触发自愈。
-func (s *Service) healthProbe(timeout time.Duration) bool {
+// ctx 取消（服务销毁）时探测随之中止。
+func (s *Service) healthProbe(ctx context.Context, timeout time.Duration) bool {
 	if s.State() != StateRunning {
 		return true
 	}
@@ -133,8 +135,8 @@ func (s *Service) healthProbe(timeout time.Duration) bool {
 	if node == nil {
 		return true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	_, err := urltest.URLTest(ctx, "", node)
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	_, err := urltest.URLTest(probeCtx, "", node)
 	cancel()
 	return err == nil
 }
@@ -150,7 +152,7 @@ func (s *Service) currentProxyNode(rs *runningState) adapter.Outbound {
 			return nil
 		}
 		switch out.Type() {
-		case "direct", "block", "dns":
+		case C.TypeDirect, C.TypeBlock, C.TypeDNS:
 			return nil
 		}
 		group, ok := out.(adapter.OutboundGroup)
