@@ -43,10 +43,22 @@ type LogEntry struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
+// HealthCheckConfig configures the self-healing watchdog that restarts the core
+// when proxy connectivity stays down (e.g. after a physical link flap). All
+// fields are optional; zero values fall back to sensible defaults.
+type HealthCheckConfig struct {
+	Enabled       bool  `json:"enabled"`
+	Interval      int64 `json:"interval_ms,omitempty"`    // probe interval in ms (default 60000)
+	Timeout       int64 `json:"timeout_ms,omitempty"`     // per-probe timeout in ms (default 10000)
+	FailThreshold int   `json:"fail_threshold,omitempty"` // consecutive failures before restart (default 3)
+	Cooldown      int64 `json:"cooldown_ms,omitempty"`    // pause after a restart in ms (default 300000)
+}
+
 // InitOptions holds initialization parameters passed as JSON to Service.Init.
 type InitOptions struct {
-	HomeDir string `json:"home_dir"`
-	Debug   bool   `json:"debug,omitempty"`
+	HomeDir     string             `json:"home_dir"`
+	Debug       bool               `json:"debug,omitempty"`
+	HealthCheck *HealthCheckConfig `json:"health_check,omitempty"`
 }
 
 // ModeInfo is the JSON response for QueryMode.

@@ -123,6 +123,10 @@ type Service struct {
 	onEvent   atomic.Pointer[func(int32, string)]
 	subCancel atomic.Pointer[func()]
 
+	// healthCancel 取消自愈看门狗 goroutine（Init 创建，Destroy 取消）。
+	healthCancel atomic.Pointer[func()]
+	healthCfg    healthConfig
+
 	// startMu serializes StartWithContent calls. A concurrent caller waits
 	// for the current startup to finish, then stops and restarts.
 	startMu  sync.Mutex
@@ -169,6 +173,19 @@ func (s *Service) Init(optionsJSON string) error {
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		s.state.Store(StateCreated)
 		return fmt.Errorf("create temp dir: %w", err)
+	}
+
+	// 自愈看门狗：默认开启，可通过 InitOptions.health_check.enabled 关闭。
+	hc := normalizeHealthConfig(opts.HealthCheck)
+	if opts.HealthCheck == nil || opts.HealthCheck.Enabled {
+		s.healthCfg = hc
+		wdCtx, wdCancel := context.WithCancel(context.Background())
+		cancelFn := func() { wdCancel() }
+		s.healthCancel.Store(&cancelFn)
+		go s.newWatchdog().run(wdCtx)
+		slog.Info("health watchdog enabled",
+			"interval", hc.interval.String(), "timeout", hc.timeout.String(),
+			"fail_threshold", hc.failThreshold, "cooldown", hc.cooldown.String())
 	}
 
 	s.emitState(StateInitialized)
@@ -374,6 +391,10 @@ func (s *Service) Destroy() {
 		if s.casState(st, StateDestroyed) {
 			break
 		}
+	}
+
+	if cancelPtr := s.healthCancel.Swap(nil); cancelPtr != nil {
+		(*cancelPtr)()
 	}
 
 	s.unsubscribeHooks()
