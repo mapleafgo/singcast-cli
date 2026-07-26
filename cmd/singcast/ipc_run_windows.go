@@ -22,18 +22,20 @@ func (w *windowsServiceHandler) Execute(args []string, r <-chan svc.ChangeReques
 	const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown
 	s <- svc.Status{State: svc.StartPending}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	svcInst := core.NewService()
 	opts, _ := json.Marshal(core.InitOptions{HomeDir: w.homeDir})
-	if err := svcInst.Init(string(opts)); err != nil {
+	if err := svcInst.InitContext(ctx, string(opts)); err != nil {
 		slog.Error("init service", "error", err)
 		s <- svc.Status{State: svc.Stopped}
 		return true, 1
 	}
+	// 优雅关闭：见 runIpcForeground 的同一处说明。
+	defer svcInst.Destroy()
 
-	srv := ipc.NewServer(svcInst, ipc.IpcPath())
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := ipc.NewServer(svcInst, ipc.IpcPath(w.homeDir))
 
 	done := make(chan error, 1)
 	go func() {
@@ -51,12 +53,20 @@ func (w *windowsServiceHandler) Execute(args []string, r <-chan svc.ChangeReques
 			case svc.Stop, svc.Shutdown:
 				s <- svc.Status{State: svc.StopPending}
 				cancel()
-				<-done
+				if err := <-done; err != nil {
+					slog.Warn("ipc server exited during stop", "error", err)
+				}
 				s <- svc.Status{State: svc.Stopped}
 				return false, 0
 			}
-		case <-done:
+		case err := <-done:
+			// 未收到停止指令却退出（如命名管道创建失败）。必须记日志并给非零
+			// 退出码，否则表现为"启动成功后安静消失"，事件日志里没有任何线索。
 			s <- svc.Status{State: svc.Stopped}
+			if err != nil {
+				slog.Error("ipc server exited unexpectedly", "error", err)
+				return false, 1
+			}
 			return false, 0
 		}
 	}

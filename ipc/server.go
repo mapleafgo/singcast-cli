@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/mapleafgo/singcast/core"
 )
@@ -22,14 +25,40 @@ type Server struct {
 	ipcPath  string
 	listener net.Listener
 
-	mu     sync.Mutex
+	// active 指向当前 GUI 连接，供通知广播与 ctx 取消时中断阻塞的 Decode。
+	active atomic.Pointer[clientConn]
+}
+
+// clientConn 是一次 GUI 连接的写端。每次连接新建一个实例，请求的响应写回
+// 发起它的那个实例——共用一个 writer 字段会让旧连接的慢请求（如
+// startWithContent）在 GUI 重连后把响应写进新连接，撕裂 JSON 流。
+type clientConn struct {
 	conn   net.Conn
-	encMu  sync.Mutex
+	mu     sync.Mutex
 	writer *bufio.Writer
 }
 
+// send 序列化 v 并写入本连接，一行一条消息。多 goroutine 可并发调用。
+// kind 用于日志定位是哪类消息写失败（响应还是某种通知），不影响传输内容。
+func (c *clientConn) send(kind string, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		slog.Error("marshal ipc message", "kind", kind, "error", err)
+		return
+	}
+	data = append(data, '\n')
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, err := c.writer.Write(data); err != nil {
+		slog.Warn("write ipc message", "kind", kind, "bytes", len(data), "error", err)
+		return
+	}
+	_ = c.writer.Flush()
+}
+
 // NewServer creates a new IPC server listening at ipcPath.
-// On desktop pass ipc.IpcPath(); on mobile pass an App Group shared path
+// On desktop pass ipc.IpcPath(homeDir); on mobile pass an App Group shared path
 // so a second process (the app) can drive the same kernel over JSON-RPC.
 func NewServer(svc *core.Service, ipcPath string) *Server {
 	return &Server{
@@ -59,6 +88,11 @@ func (s *Server) Run(ctx context.Context) error {
 		<-ctx.Done()
 		if s.listener != nil {
 			s.listener.Close()
+		}
+		// 同时关掉在用连接：serveConnection 阻塞在 Decode 上，只关 listener
+		// 无法让它返回，systemd stop 会一直等到 TimeoutStopSec 后 SIGKILL。
+		if cc := s.active.Load(); cc != nil {
+			cc.conn.Close()
 		}
 	}()
 
@@ -90,16 +124,11 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) serveConnection(ctx context.Context, conn net.Conn) {
-	s.mu.Lock()
-	s.conn = conn
-	s.writer = bufio.NewWriter(conn)
-	s.mu.Unlock()
+	cc := &clientConn{conn: conn, writer: bufio.NewWriter(conn)}
+	s.active.Store(cc)
 
 	defer func() {
-		s.mu.Lock()
-		s.conn = nil
-		s.writer = nil
-		s.mu.Unlock()
+		s.active.CompareAndSwap(cc, nil)
 		conn.Close()
 	}()
 
@@ -113,74 +142,49 @@ func (s *Server) serveConnection(ctx context.Context, conn net.Conn) {
 
 		var req JSONRPCRequest
 		if err := dec.Decode(&req); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
 			}
 			slog.Warn("decode error", "error", err)
 			return
 		}
-		s.handleRequest(&req) //nolint:contextcheck // IPC 请求没有外部 context 来源
+		s.handleRequest(cc, &req) //nolint:contextcheck // IPC 请求没有外部 context 来源
 	}
 }
 
-func (s *Server) handleRequest(req *JSONRPCRequest) {
+// handleRequest 分发一条请求。带 id 的请求异步处理，避免慢请求
+// （startWithContent 可耗时数秒）阻塞同连接上后续请求的读取；
+// 通知无需响应，同步处理以保持相对顺序。
+//
+// 入口/出口各打一条 Debug 并带耗时：startWithContent、testGroupDelay 这类
+// 操作是秒级的，只有入口日志时无法区分"仍在处理"和"已卡死"。
+func (s *Server) handleRequest(cc *clientConn, req *JSONRPCRequest) {
 	if req.IsNotification() {
+		slog.Debug("ipc notification", "method", req.Method)
 		s.handler.Handle(req)
-	} else {
-		go func() {
-			resp := s.handler.Handle(req)
-			s.sendResponse(resp)
-		}()
-	}
-}
-
-func (s *Server) sendResponse(resp JSONRPCResponse) {
-	s.encMu.Lock()
-	defer s.encMu.Unlock()
-
-	if s.writer == nil {
 		return
 	}
 
-	data, err := json.Marshal(resp)
-	if err != nil {
-		slog.Error("marshal response", "error", err)
-		return
-	}
-	data = append(data, '\n')
-
-	if _, err := s.writer.Write(data); err != nil {
-		slog.Warn("write response", "error", err)
-		return
-	}
-	_ = s.writer.Flush()
+	slog.Debug("ipc request", "method", req.Method, "id", req.ID)
+	go func() {
+		start := time.Now()
+		resp := s.handler.Handle(req)
+		cc.send("response", resp)
+		slog.Debug("ipc request done", "method", req.Method, "id", req.ID,
+			"elapsed_ms", time.Since(start).Milliseconds(), "error", resp.Error != nil)
+	}()
 }
 
 func (s *Server) sendNotification(method string, params any) {
-	s.encMu.Lock()
-	defer s.encMu.Unlock()
-
-	if s.writer == nil {
+	cc := s.active.Load()
+	if cc == nil {
 		return
 	}
-
-	notif := Notification{
+	cc.send(method, Notification{
 		JSONRPC: JSONRPCVersion,
 		Method:  method,
 		Params:  params,
-	}
-	data, err := json.Marshal(notif)
-	if err != nil {
-		slog.Error("marshal notification", "error", err)
-		return
-	}
-	data = append(data, '\n')
-
-	if _, err := s.writer.Write(data); err != nil {
-		slog.Warn("write notification", "error", err)
-		return
-	}
-	_ = s.writer.Flush()
+	})
 }
 
 // onCoreEvent bridges core.Service events to JSON-RPC notifications.
@@ -201,18 +205,22 @@ func (s *Server) onCoreEvent(eventType int32, payload string) {
 	}
 }
 
-// IpcPath returns the IPC socket/pipe path based on the current working directory.
-func IpcPath() string {
-	// 服务模式（systemd）通过环境变量指定固定 socket 路径
+// IpcPath 返回 homeDir 下的 IPC socket 路径（Windows 为固定命名管道）。
+// 优先级：SINGCAST_IPC_PATH 环境变量（systemd 服务模式用它指定 /run 下的固定路径）
+// > homeDir/command.sock。homeDir 为空时回退到当前工作目录。
+func IpcPath(homeDir string) string {
 	if p := os.Getenv("SINGCAST_IPC_PATH"); p != "" {
 		return p
 	}
 	if runtime.GOOS == "windows" {
 		return `\\.\pipe\singcast`
 	}
-	homeDir, err := os.Getwd()
-	if err != nil {
-		homeDir = "."
+	if homeDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = "."
+		}
+		homeDir = cwd
 	}
 	return filepath.Join(homeDir, "command.sock")
 }

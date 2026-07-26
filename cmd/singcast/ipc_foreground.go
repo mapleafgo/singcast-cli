@@ -16,11 +16,15 @@ import (
 func runIpcForeground(ctx context.Context, homeDir string) error {
 	svc := core.NewService()
 	opts, _ := json.Marshal(core.InitOptions{HomeDir: homeDir})
-	if err := svc.Init(string(opts)); err != nil {
+	if err := svc.InitContext(ctx, string(opts)); err != nil {
 		return fmt.Errorf("init: %w", err)
 	}
 
-	srv := ipc.NewServer(svc, ipc.IpcPath())
+	// 优雅关闭：sing-box 需要 Close 才会落盘 cache.db 并执行 resolvectl revert，
+	// 被硬杀会让系统 DNS 继续指向已消失的代理，停服后整机断网。
+	defer svc.Destroy()
+
+	srv := ipc.NewServer(svc, ipc.IpcPath(homeDir))
 
 	sigCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
