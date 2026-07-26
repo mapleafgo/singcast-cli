@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 
 	"github.com/urfave/cli/v3"
-
-	"github.com/mapleafgo/singcast/translator"
 )
 
 func convertCommand() *cli.Command {
@@ -34,28 +31,10 @@ func convertCommand() *cli.Command {
 				Sources: cli.EnvVars("SINGCAST_RULE_SET_PROXY"),
 			},
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			data, err := os.ReadFile(cmd.String("config"))
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			result, err := loadConfigJSON(cmd.String("config"), cmd.String("rule-set-proxy"))
 			if err != nil {
-				return fmt.Errorf("read config: %w", err)
-			}
-			if len(bytes.TrimSpace(data)) == 0 {
-				return fmt.Errorf("config file is empty")
-			}
-
-			var result string
-			if translator.DetectFormat(data) == translator.FormatJSON {
-				result = string(data)
-			} else {
-				opts := &translator.Options{RuleSetURLPrefix: cmd.String("rule-set-proxy")}
-				translated, warnings, err := translator.TranslateWithOptions(data, opts)
-				if err != nil {
-					return fmt.Errorf("translate: %w", err)
-				}
-				for _, w := range warnings {
-					fmt.Fprintln(os.Stderr, "warning:", w)
-				}
-				result = translated
+				return err
 			}
 
 			outputPath := cmd.String("output")

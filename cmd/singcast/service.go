@@ -18,7 +18,7 @@ func serviceCommand() *cli.Command {
 				Name:  "install",
 				Usage: "Install the system service",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					if err := ipc.InstallService(); err != nil {
+					if err := ipc.InstallService(ctx); err != nil {
 						return fmt.Errorf("install service: %w", err)
 					}
 					fmt.Println("service installed")
@@ -29,7 +29,7 @@ func serviceCommand() *cli.Command {
 				Name:  "uninstall",
 				Usage: "Uninstall the system service",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					if err := ipc.UninstallService(); err != nil {
+					if err := ipc.UninstallService(ctx); err != nil {
 						return fmt.Errorf("uninstall service: %w", err)
 					}
 					fmt.Println("service uninstalled")

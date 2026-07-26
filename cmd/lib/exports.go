@@ -11,23 +11,34 @@ import "C"
 import (
 	"context"
 	runtimeDebug "runtime/debug"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/mapleafgo/singcast/core"
 )
 
+// 本文件所有 //export 函数遵循统一的内存所有权约定：
+//   - 返回的 *C.char 由 native 侧分配，调用方复制内容后必须调用 CoreFreeString 释放；
+//   - 返回 nil 表示成功（错误型返回值）或无数据；对 nil 调用 CoreFreeString 是安全的；
+//   - 传入的 *C.char 由调用方持有，native 侧只读不释放。
 var svc = core.NewService()
 
-var cEventCB unsafe.Pointer
+// cEventCB 保存 Dart 侧注册的事件回调。用原子指针而非裸 unsafe.Pointer：
+// 注册发生在 Dart 线程，读取发生在 core 的事件 goroutine，裸指针的
+// "判空后使用"两段式读取可能在热重载时对已失效的函数指针发起 C 调用，
+// 而 FFI 层崩溃会带走整个宿主 App。
+var cEventCB atomic.Pointer[C.EventCallback]
 
 func init() {
 	emit := func(eventType int32, json string) {
-		if cEventCB != nil {
-			// Ownership transfer: Dart side must call CoreFreeString after copying.
-			// Do NOT free here — NativeCallable.listener is async (dart-lang/sdk#54554).
-			cs := C.CString(json)
-			C.invokeEventCB(C.EventCallback(cEventCB), C.int(eventType), cs)
+		cb := cEventCB.Load()
+		if cb == nil {
+			return
 		}
+		// 所有权转移：native 分配，Dart 侧复制后调 CoreFreeString。
+		// 不能在此处释放——NativeCallable.listener 是异步的（dart-lang/sdk#54554）。
+		cs := C.CString(json)
+		C.invokeEventCB(*cb, C.int(eventType), cs)
 	}
 	svc.SetOnEvent(emit)
 	core.SetOnLogEvent(emit)
@@ -160,5 +171,18 @@ func CoreGetVersion() *C.char { return cString(core.VersionJSON()) }
 
 // --- Event Callback ---
 
+// CoreSetEventCallback 注册事件回调，传 NULL 取消注册。可在任意时刻调用。
+//
+// 回调签名为 void(int eventType, const char *json)。json 参数的所有权转移给
+// 调用方：消费完后必须调用 CoreFreeString 释放，否则每条事件泄漏一次。
+// 回调会在 core 内部 goroutine 上被调用，实现方需自行保证线程安全。
+//
 //export CoreSetEventCallback
-func CoreSetEventCallback(cb unsafe.Pointer) { cEventCB = cb }
+func CoreSetEventCallback(cb unsafe.Pointer) {
+	if cb == nil {
+		cEventCB.Store(nil)
+		return
+	}
+	fn := C.EventCallback(cb)
+	cEventCB.Store(&fn)
+}

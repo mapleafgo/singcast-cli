@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/mapleafgo/singcast/core"
-	"github.com/mapleafgo/singcast/translator"
 )
 
 func checkCommand() *cli.Command {
@@ -23,28 +20,19 @@ func checkCommand() *cli.Command {
 				Usage:    "config file path",
 				Required: true,
 			},
+			// 与 run/convert 保持一致：缺了这个 flag，带 rule-set-proxy 的配置
+			// check 通过而 run 的实际产物不同，校验就失去了意义。
+			&cli.StringFlag{
+				Name:    "rule-set-proxy",
+				Aliases: []string{"p"},
+				Usage:   "URL prefix for rule-set downloads (e.g. https://gh-proxy.org)",
+				Sources: cli.EnvVars("SINGCAST_RULE_SET_PROXY"),
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			data, err := os.ReadFile(cmd.String("config"))
+			jsonContent, err := loadConfigJSON(cmd.String("config"), cmd.String("rule-set-proxy"))
 			if err != nil {
-				return fmt.Errorf("read config: %w", err)
-			}
-			if len(bytes.TrimSpace(data)) == 0 {
-				return fmt.Errorf("config file is empty")
-			}
-
-			var jsonContent string
-			if translator.DetectFormat(data) == translator.FormatJSON {
-				jsonContent = string(data)
-			} else {
-				translated, warnings, err := translator.Translate(data)
-				if err != nil {
-					return fmt.Errorf("translate: %w", err)
-				}
-				for _, w := range warnings {
-					fmt.Fprintln(os.Stderr, "warning:", w)
-				}
-				jsonContent = translated
+				return err
 			}
 
 			if err := core.CheckConfig(ctx, jsonContent); err != nil {

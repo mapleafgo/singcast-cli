@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mapleafgo/singcast/core"
-	"github.com/mapleafgo/singcast/translator"
 )
 
 func runCommand() *cli.Command {
@@ -58,30 +56,12 @@ func runCommand() *cli.Command {
 				return fmt.Errorf("create home dir: %w", err)
 			}
 
-			data, err := os.ReadFile(configPath)
+			jsonContent, err := loadConfigJSON(configPath, proxyPrefix)
 			if err != nil {
-				return fmt.Errorf("read config: %w", err)
-			}
-			if len(bytes.TrimSpace(data)) == 0 {
-				return fmt.Errorf("config file is empty")
+				return err
 			}
 
 			outPath := filepath.Join(homeDir, "config.json")
-
-			var jsonContent string
-			if translator.DetectFormat(data) == translator.FormatYAML {
-				opts := &translator.Options{RuleSetURLPrefix: proxyPrefix}
-				result, warns, err := translator.TranslateWithOptions(data, opts)
-				if err != nil {
-					return fmt.Errorf("translate config: %w", err)
-				}
-				for _, w := range warns {
-					fmt.Fprintf(os.Stderr, "WARN: %s\n", w)
-				}
-				jsonContent = result
-			} else {
-				jsonContent = string(data)
-			}
 
 			if err := os.WriteFile(outPath, []byte(jsonContent), 0o600); err != nil {
 				return fmt.Errorf("write config: %w", err)
@@ -101,10 +81,10 @@ func runCommand() *cli.Command {
 	}
 }
 
-func runForeground(_ context.Context, homeDir, configPath, jsonContent string) error {
+func runForeground(ctx context.Context, homeDir, configPath, jsonContent string) error {
 	svc := core.NewService()
 	opts, _ := json.Marshal(core.InitOptions{HomeDir: homeDir})
-	if err := svc.Init(string(opts)); err != nil {
+	if err := svc.InitContext(ctx, string(opts)); err != nil {
 		return fmt.Errorf("init core: %w", err)
 	}
 	defer svc.Destroy()

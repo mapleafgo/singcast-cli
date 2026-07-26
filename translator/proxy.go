@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"maps"
 	"net/netip"
 	"strings"
 
@@ -97,19 +98,11 @@ func makeStubOutbound(name string) map[string]any {
 	}
 }
 
-func cloneMap(m map[string]any) map[string]any {
-	c := make(map[string]any, len(m))
-	for k, v := range m {
-		c[k] = v
-	}
-	return c
-}
-
 func translateOneProxy(m map[string]any, warn func(string), globalFingerprint string) map[string]any {
 	// Apply global-client-fingerprint as fallback when proxy has no per-proxy fingerprint
 	if globalFingerprint != "" {
 		if _, ok := m["client-fingerprint"]; !ok {
-			m = cloneMap(m)
+			m = maps.Clone(m)
 			m["client-fingerprint"] = globalFingerprint
 		}
 	}

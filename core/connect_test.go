@@ -449,6 +449,23 @@ func waitForInterface(t *testing.T, name string, timeout time.Duration) bool {
 	return false
 }
 
+// existingTunDevices 返回系统上已存在的 TUN/TAP 接口名。
+// Linux 上 TUN/TAP 设备在 sysfs 里有 tun_flags 属性，普通网卡没有。
+func existingTunDevices(t *testing.T) []string {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var found []string
+	for _, iface := range ifaces {
+		if _, err := os.Stat("/sys/class/net/" + iface.Name + "/tun_flags"); err == nil {
+			found = append(found, iface.Name)
+		}
+	}
+	return found
+}
+
 // TestConnectivity_TUN verifies TUN mode: injects a tun inbound into the real
 // config, starts the service, checks the TUN interface is created, and confirms
 // google.com is reachable through the mixed proxy (TUN routes system traffic;
@@ -459,6 +476,13 @@ func TestConnectivity_TUN(t *testing.T) {
 	}
 	if os.Getuid() != 0 {
 		t.Skip("TUN test requires root (run with sudo)")
+	}
+	// 安全护栏：本测试注入的 tun inbound 带 auto_route+strict_route，会接管系统
+	// 默认路由。若机器上已有 TUN 代理在跑（如已安装的 singcast-core 服务），
+	// 运行它会掀翻正在使用的网络，且难以自动恢复。宁可跳过也不能误伤实机环境。
+	if tuns := existingTunDevices(t); len(tuns) > 0 {
+		t.Skipf("TUN device(s) already present (%v); refusing to hijack routing on a live system. "+
+			"Stop the running proxy service first, or run this test in a container/VM.", tuns)
 	}
 	cfgPath := testConfigPath()
 	if cfgPath == "" {

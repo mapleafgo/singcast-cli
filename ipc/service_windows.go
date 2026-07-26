@@ -3,6 +3,7 @@
 package ipc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ import (
 
 const ServiceName = "SingcastService"
 
-func InstallService() error {
+func InstallService(_ context.Context) error {
 	// Windows 推导用户数据目录（与 Flutter getApplicationSupportDirectory 一致）
 	configDir, err := os.UserConfigDir() // %APPDATA% on Windows
 	if err != nil {
@@ -62,7 +63,7 @@ func InstallService() error {
 	return setServiceDACL(ServiceName)
 }
 
-func UninstallService() error {
+func UninstallService(_ context.Context) error {
 	// Connect to SCM with minimal access — SC_MANAGER_CONNECT is granted to
 	// Authenticated Users by default, so no elevation is needed.
 	scm, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)

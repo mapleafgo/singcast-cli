@@ -47,8 +47,3 @@ func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 	}
 	registerRuleSet(tag, base, t)
 }
-
-// ensureCustomRuleSetDef creates a rule_set definition with a custom URL if absent.
-func ensureCustomRuleSetDef(tag string, rawURL string, t *translation) {
-	registerRuleSet(tag, rawURL, t)
-}

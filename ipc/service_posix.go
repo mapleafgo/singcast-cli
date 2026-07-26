@@ -2,12 +2,17 @@
 
 package ipc
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
-func InstallService() error {
-	return errors.New("service management is only supported on Windows")
+// InstallService 在 macOS 上未实现系统服务安装（Linux 用 systemd，Windows 用 SCM）。
+func InstallService(_ context.Context) error {
+	return errors.New("service management is not supported on macOS")
 }
 
-func UninstallService() error {
-	return errors.New("service management is only supported on Windows")
+// UninstallService 在 macOS 上未实现，见 InstallService。
+func UninstallService(_ context.Context) error {
+	return errors.New("service management is not supported on macOS")
 }
