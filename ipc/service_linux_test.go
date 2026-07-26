@@ -3,6 +3,7 @@
 package ipc
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -60,7 +61,7 @@ func TestInstallService_RequiresRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("this test verifies non-root rejection")
 	}
-	err := InstallService()
+	err := InstallService(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "root")
 }
@@ -69,7 +70,7 @@ func TestUninstallService_RequiresRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("this test verifies non-root rejection")
 	}
-	err := UninstallService()
+	err := UninstallService(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "root")
 }
@@ -85,11 +86,16 @@ func TestNeedsStableBinaryCopy(t *testing.T) {
 	os.Unsetenv("APPIMAGE")
 	require.False(t, needsStableBinaryCopy("/opt/Singcast/singcast-core"))
 	require.False(t, needsStableBinaryCopy("/usr/bin/singcast-core"))
-	require.False(t, needsStableBinaryCopy("/var/lib/singcast/singcast-core"))
+	// 已在 root 独占目录内的副本无需再拷
+	require.False(t, needsStableBinaryCopy("/usr/local/lib/singcast/singcast-core"))
+	// 历史位置（服务用户可写）必须迁走
+	require.True(t, needsStableBinaryCopy("/var/lib/singcast/singcast-core"))
 }
 
 func TestStableServiceBinaryPath(t *testing.T) {
-	require.Equal(t, "/var/lib/singcast/singcast-core", stableServiceBinaryPath())
+	require.Equal(t, "/usr/local/lib/singcast/singcast-core", stableServiceBinaryPath())
+	// ExecStart 目标不得落在服务用户可写的 state 目录内
+	require.NotEqual(t, legacyServiceBinaryPath(), stableServiceBinaryPath())
 }
 
 func TestEffectiveCallerUID_FromEnv(t *testing.T) {

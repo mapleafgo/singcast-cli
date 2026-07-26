@@ -26,6 +26,10 @@ func systemdUnit(execPath, stateDir, guiUID string) string {
 		envGui = "Environment=SINGCAST_GUI_UID=" + guiUID + "\n"
 	}
 	// Bounding 与 Ambient 对齐到 TUN/DNS 所需网络能力；不做 ptrace/dac 扩大面。
+	// 沙箱指令只收紧确定不影响功能的项：AF_NETLINK 供路由/接口监控，
+	// AF_UNIX 供 IPC socket。刻意不加 ProtectSystem=strict（无 systemd-resolved
+	// 的系统上 sing-tun 会回退写 /etc/resolv.conf）和 ProtectKernelModules
+	// （tun 模块未预加载时需内核代为 autoload）。
 	return `[Unit]
 Description=Singcast core service
 After=network-online.target nss-lookup.target
@@ -43,6 +47,11 @@ Environment=SINGCAST_IPC_PATH=/run/singcast/command.sock
 ` + envGui + `ExecStart=` + quotedExe + ` ipc --home ` + quotedHome + `
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+ProtectHome=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 Restart=on-failure
 RestartSec=2
 LimitNOFILE=infinity
@@ -91,5 +100,6 @@ func linuxUninstallPaths() []string {
 		"/etc/systemd/system/" + LinuxServiceName + ".service",
 		"/usr/share/polkit-1/rules.d/singcast.rules",
 		stableServiceBinaryPath(),
+		legacyServiceBinaryPath(),
 	}
 }
