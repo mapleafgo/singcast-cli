@@ -2,7 +2,8 @@ package proxy
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -18,23 +19,6 @@ var supportedSSCiphers = map[string]bool{
 	"2022-blake3-chacha20-poly1305": true,
 }
 
-// unsupportedSSCiphers lists ciphers that sing-box does not support.
-var unsupportedSSCiphers = map[string]bool{
-	"rc4-md5":       true,
-	"chacha20-ietf": true,
-	"aes-128-cfb":   true,
-	"aes-192-cfb":   true,
-	"aes-256-cfb":   true,
-	"aes-128-ctr":   true,
-	"aes-192-ctr":   true,
-	"aes-256-ctr":   true,
-	"none":          true,
-	"chacha20":      true,
-	"aes-128-ofb":   true,
-	"aes-192-ofb":   true,
-	"aes-256-ofb":   true,
-}
-
 // TranslateShadowsocks translates a mihomo Shadowsocks proxy config to a sing-box outbound.
 // Returns nil if the cipher is unsupported.
 // See mapping doc section B.8.
@@ -45,12 +29,10 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 		return nil
 	}
 
+	// 只按 supportedSSCiphers 白名单判定：此前还维护了一张 unsupported 黑名单，
+	// 但两个分支行为完全相同（warn + 跳过），只是措辞不同，白名单已足够。
 	if !supportedSSCiphers[cipher] {
-		if unsupportedSSCiphers[cipher] {
-			warn("shadowsocks: cipher '" + cipher + "' is not supported by sing-box, skipping")
-			return nil
-		}
-		warn("shadowsocks: cipher '" + cipher + "' is not recognized by sing-box, skipping")
+		warn("shadowsocks: cipher '" + cipher + "' is not supported by sing-box, skipping")
 		return nil
 	}
 
@@ -71,16 +53,22 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 		return nil
 	}
 
-	// Plugin
-	if plugin := GetStr(m, "plugin"); plugin != "" {
-		outbound["plugin"] = plugin
-	}
+	// Plugin：名字必须映射，不能原样透传（见 sip003PluginNames）。
+	plugin := GetStr(m, "plugin")
+	if plugin != "" {
+		mapped, ok := sip003PluginNames[plugin]
+		if !ok {
+			warn("shadowsocks \"" + GetStr(m, "name") + "\": plugin \"" + plugin +
+				"\" is not supported by sing-box, skipping")
+			return nil
+		}
+		outbound["plugin"] = mapped
 
-	// Plugin opts: convert from object to SIP003 string format
-	// e.g., {mode: "tls", host: "bing.com"} -> "obfs=tls;host=bing.com"
-	pluginOpts := GetMap(m, "plugin-opts")
-	if pluginOpts != nil {
-		outbound["plugin_opts"] = buildSIP003Opts(pluginOpts)
+		// Plugin opts: convert from object to SIP003 string format
+		// e.g., {mode: "tls", host: "bing.com"} -> "obfs=tls;obfs-host=bing.com"
+		if pluginOpts := GetMap(m, "plugin-opts"); pluginOpts != nil {
+			outbound["plugin_opts"] = buildSIP003Opts(pluginOpts, mapped)
+		}
 	}
 
 	// UDP over TCP
@@ -94,31 +82,44 @@ func TranslateShadowsocks(m map[string]any, warn func(string)) map[string]any {
 	return outbound
 }
 
-// sip003KeyMap maps mihomo plugin-opts keys to SIP003 standard keys.
-var sip003KeyMap = map[string]string{
+// sip003PluginNames 把 mihomo 的插件名映射到 sing-box 注册的 SIP003 插件名。
+// sing-box 的注册表只有 obfs-local 和 v2ray-plugin 两项
+// （transport/sip003/{obfs,v2ray}.go），传入未注册的名字会在创建 outbound 时
+// 报 "plugin not found"，导致整份配置启动失败——因此不在表内的插件
+// （shadow-tls、restls、gost-plugin 等）必须降级跳过而非透传。
+var sip003PluginNames = map[string]string{
+	"obfs":         "obfs-local",
+	"obfs-local":   "obfs-local",
+	"simple-obfs":  "obfs-local",
+	"v2ray-plugin": "v2ray-plugin",
+}
+
+// obfsKeyMap 把 mihomo obfs 插件的 plugin-opts 键名映射到 SIP003 标准键名。
+// 只对 obfs-local 适用：v2ray-plugin 的 mode 取值是 websocket/quic，
+// 改写成 obfs=websocket 会产生错误的参数串。
+var obfsKeyMap = map[string]string{
 	"mode": "obfs",
 	"host": "obfs-host",
 }
 
 // buildSIP003Opts converts a plugin-opts object to a SIP003 format string.
 // e.g., {mode: "tls", host: "bing.com"} -> "obfs=tls;obfs-host=bing.com"
-func buildSIP003Opts(opts map[string]any) string {
+// plugin 为已映射的 sing-box 插件名，用于决定是否套用 obfs 的键名改写。
+func buildSIP003Opts(opts map[string]any, plugin string) string {
 	if len(opts) == 0 {
 		return ""
 	}
 
 	parts := make([]string, 0, len(opts))
-	keys := make([]string, 0, len(opts))
-	for k := range opts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(opts)) {
 		v := opts[k]
-		if mapped, ok := sip003KeyMap[k]; ok {
-			k = mapped
+		key := k
+		if plugin == "obfs-local" {
+			if mapped, ok := obfsKeyMap[k]; ok {
+				key = mapped
+			}
 		}
-		parts = append(parts, k+"="+fmt.Sprintf("%v", v))
+		parts = append(parts, key+"="+fmt.Sprintf("%v", v))
 	}
 	return strings.Join(parts, ";")
 }

@@ -471,7 +471,7 @@ func TestTranslateTLSEnabled(t *testing.T) {
 		"client-fingerprint": "chrome",
 	}
 
-	tls := TranslateTLS(m)
+	tls := TranslateTLS(m, func(string) {})
 	if tls == nil {
 		t.Fatal("expected non-nil tls")
 	}
@@ -502,7 +502,7 @@ func TestTranslateTLSReality(t *testing.T) {
 		},
 	}
 
-	tls := TranslateTLS(m)
+	tls := TranslateTLS(m, func(string) {})
 	if tls == nil {
 		t.Fatal("expected non-nil tls")
 	}
@@ -663,12 +663,72 @@ func TestParseBandwidth(t *testing.T) {
 		{"200 mbps", 200},
 		{"", 0},
 		{"abc", 0},
+		// 单位换算（对齐 mihomo common/utils.StringToBps）
+		{"1 Gbps", 1000},
+		{"1Gbps", 1000},
+		{"2 Tbps", 2_000_000},
+		{"500 Kbps", 1}, // 0.5 Mbps 向上取整：截断成 0 在 sing-box 里等于不限速
+		{"8 Mbps", 8},
+		// 大写 B 是字节，按 ×8 折算成比特
+		{"100 MBps", 800},
+		{"1 KBps", 1},
+		// 缺 "ps" 后缀不是合法写法，mihomo 同样返回 0
+		{"50 MB", 0},
+		{"50M", 0},
 	}
 	for _, tt := range tests {
 		got := ParseBandwidth(tt.input)
 		if got != tt.want {
 			t.Errorf("ParseBandwidth(%q) = %d, want %d", tt.input, got, tt.want)
 		}
+	}
+}
+
+// GetStr 遇到列表/映射必须返回空串：早前的 fmt.Sprintf 回退会产出 "[/]"
+// 这类非空垃圾串，被当成合法值写进输出配置。
+func TestGetStrRejectsNonScalar(t *testing.T) {
+	m := map[string]any{
+		"list":   []any{"/path"},
+		"strs":   []string{"a", "b"},
+		"nested": map[string]any{"k": "v"},
+		"num":    8080,
+		"float":  1.5,
+		"flag":   true,
+		"text":   "ok",
+	}
+	if got := GetStr(m, "list"); got != "" {
+		t.Errorf("GetStr(list) = %q, want empty", got)
+	}
+	if got := GetStr(m, "strs"); got != "" {
+		t.Errorf("GetStr(strs) = %q, want empty", got)
+	}
+	if got := GetStr(m, "nested"); got != "" {
+		t.Errorf("GetStr(nested) = %q, want empty", got)
+	}
+	// YAML 常把 password: 123456 解析成数字，标量仍需转字符串
+	if got := GetStr(m, "num"); got != "8080" {
+		t.Errorf("GetStr(num) = %q, want 8080", got)
+	}
+	if got := GetStr(m, "float"); got != "1.5" {
+		t.Errorf("GetStr(float) = %q, want 1.5", got)
+	}
+	if got := GetStr(m, "flag"); got != "true" {
+		t.Errorf("GetStr(flag) = %q, want true", got)
+	}
+	if got := GetStr(m, "text"); got != "ok" {
+		t.Errorf("GetStr(text) = %q, want ok", got)
+	}
+}
+
+// http-opts.path 在 mihomo 里惯例是列表；GetStr 修好后列表分支才可达。
+func TestTranslateHTTPTransportListPath(t *testing.T) {
+	transport := translateHTTP(map[string]any{
+		"http-opts": map[string]any{
+			"path": []any{"/video", "/audio"},
+		},
+	})
+	if got := transport["path"]; got != "/video" {
+		t.Errorf("path = %v, want /video", got)
 	}
 }
 
@@ -912,5 +972,156 @@ func TestTranslateH2_Transport(t *testing.T) {
 	}
 	if transport["path"] != "/h2" {
 		t.Errorf("path = %v, want /h2", transport["path"])
+	}
+}
+
+// mihomo 的 ports 支持逗号多段与单端口；sing-box server_ports 要求每段 "start:end"。
+func TestParseServerPorts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"single range", "1000-2000", []string{"1000:2000"}},
+		{"single port expands", "5000", []string{"5000:5000"}},
+		{"multi segment", "1000-2000,3000-4000", []string{"1000:2000", "3000:4000"}},
+		{"mixed range and single", "1000-2000,3000", []string{"1000:2000", "3000:3000"}},
+		{"spaces tolerated", " 1000 - 2000 , 3000 ", []string{"1000:2000", "3000:3000"}},
+		{"invalid segment skipped", "1000-2000,abc", []string{"1000:2000"}},
+		{"out of range skipped", "70000", nil},
+		{"zero skipped", "0-100", nil},
+		{"all invalid", "abc,def", nil},
+		{"empty", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseServerPorts(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("ParseServerPorts(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("ParseServerPorts(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// sing-box 只注册了 obfs-local 和 v2ray-plugin；名字不映射会导致
+// "plugin not found"，整份配置启动失败。
+func TestTranslateShadowsocksPluginNames(t *testing.T) {
+	base := func(plugin string) map[string]any {
+		return map[string]any{
+			"name": "ss", "server": "s.example.com", "port": 8388,
+			"cipher": "aes-256-gcm", "password": "p", "plugin": plugin,
+			"plugin-opts": map[string]any{"mode": "tls", "host": "bing.com"},
+		}
+	}
+
+	t.Run("obfs maps to obfs-local", func(t *testing.T) {
+		warn, warnings := captureWarn()
+		out := TranslateShadowsocks(base("obfs"), warn)
+		if out == nil {
+			t.Fatal("expected non-nil")
+		}
+		if out["plugin"] != "obfs-local" {
+			t.Errorf("plugin = %v, want obfs-local", out["plugin"])
+		}
+		opts, _ := out["plugin_opts"].(string)
+		if !strings.Contains(opts, "obfs=tls") || !strings.Contains(opts, "obfs-host=bing.com") {
+			t.Errorf("plugin_opts = %q, want obfs= and obfs-host=", opts)
+		}
+		if len(*warnings) > 0 {
+			t.Errorf("unexpected warnings: %v", *warnings)
+		}
+	})
+
+	t.Run("unsupported plugin skipped", func(t *testing.T) {
+		warn, warnings := captureWarn()
+		if out := TranslateShadowsocks(base("shadow-tls"), warn); out != nil {
+			t.Errorf("expected nil for unsupported plugin, got %v", out)
+		}
+		if len(*warnings) == 0 {
+			t.Error("expected a warning")
+		}
+	})
+
+	t.Run("v2ray-plugin keeps mode key", func(t *testing.T) {
+		warn, _ := captureWarn()
+		m := base("v2ray-plugin")
+		m["plugin-opts"] = map[string]any{"mode": "websocket"}
+		out := TranslateShadowsocks(m, warn)
+		if out == nil {
+			t.Fatal("expected non-nil")
+		}
+		// mode 只对 obfs 改写成 obfs=；v2ray-plugin 的 mode 必须原样保留
+		if opts, _ := out["plugin_opts"].(string); opts != "mode=websocket" {
+			t.Errorf("plugin_opts = %q, want mode=websocket", opts)
+		}
+	})
+}
+
+// mihomo 的 fingerprint 与 sing-box 的 certificate_public_key_sha256 语义不同
+// （证书 DER 哈希 vs SPKI 哈希，hex vs base64），错配会静默失效并绕过证书校验。
+func TestTranslateTLSDropsFingerprint(t *testing.T) {
+	warn, warnings := captureWarn()
+	tls := TranslateTLS(map[string]any{
+		"name": "n", "tls": true,
+		"fingerprint": "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+	}, warn)
+	if tls == nil {
+		t.Fatal("expected tls config")
+	}
+	if _, has := tls["certificate_public_key_sha256"]; has {
+		t.Error("fingerprint must not be mapped to certificate_public_key_sha256")
+	}
+	if len(*warnings) == 0 {
+		t.Error("expected a warning explaining fingerprint was dropped")
+	}
+}
+
+// sing-box 对 ech.config 做 pem.Decode 并要求 block type 为 "ECH CONFIGS"，
+// 裸 base64 会让实例启动失败。
+func TestTranslateTLSECHWrapsPEM(t *testing.T) {
+	warn, _ := captureWarn()
+	// "hello" 的 base64
+	tls := TranslateTLS(map[string]any{
+		"name": "n", "tls": true,
+		"ech-opts": map[string]any{"enable": true, "config": "aGVsbG8="},
+	}, warn)
+	ech, ok := tls["ech"].(map[string]any)
+	if !ok {
+		t.Fatal("expected ech config")
+	}
+	lines, ok := ech["config"].([]string)
+	if !ok || len(lines) < 3 {
+		t.Fatalf("expected PEM lines, got %v", ech["config"])
+	}
+	if lines[0] != "-----BEGIN ECH CONFIGS-----" {
+		t.Errorf("first line = %q, want PEM header", lines[0])
+	}
+	if lines[len(lines)-1] != "-----END ECH CONFIGS-----" {
+		t.Errorf("last line = %q, want PEM footer", lines[len(lines)-1])
+	}
+}
+
+// hysteria 基于 QUIC，sing-box 的 uTLS 在 QUIC 出站上不可用。
+func TestTranslateHysteriaDropsFingerprintUTLS(t *testing.T) {
+	warn, warnings := captureWarn()
+	out := TranslateHysteria(map[string]any{
+		"name": "hy", "server": "h.example.com", "port": 443,
+		"auth-str": "a", "up": "50 Mbps", "down": "100 Mbps",
+		"fingerprint": "abc123",
+	}, warn)
+	if out == nil {
+		t.Fatal("expected non-nil")
+	}
+	tls, _ := out["tls"].(map[string]any)
+	if _, has := tls["utls"]; has {
+		t.Error("QUIC outbound must not carry utls")
+	}
+	if len(*warnings) == 0 {
+		t.Error("expected a warning about ignored fingerprint")
 	}
 }

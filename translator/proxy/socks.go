@@ -22,7 +22,7 @@ func TranslateSOCKS(m map[string]any, warn func(string)) map[string]any {
 	}
 
 	// TLS if enabled
-	if tls := TranslateTLS(m); tls != nil {
+	if tls := TranslateTLS(m, warn); tls != nil {
 		outbound["tls"] = tls
 	}
 

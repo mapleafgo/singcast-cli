@@ -1,11 +1,5 @@
 package proxy
 
-import (
-	"strings"
-)
-
-const maxHopInterval = 3600 // 1 hour
-
 const hysteria2ObfsSalamander = "salamander"
 
 // TranslateHysteria2 translates a mihomo Hysteria2 proxy config to a sing-box outbound.
@@ -55,15 +49,18 @@ func TranslateHysteria2(m map[string]any, warn func(string)) map[string]any {
 		}
 	}
 
-	// Port hopping: ports -> server_ports (convert "-" to ":")
+	// Port hopping: ports -> server_ports
 	if ports := GetStr(m, "ports"); ports != "" {
-		serverPorts := strings.ReplaceAll(ports, "-", ":")
-		outbound["server_ports"] = []string{serverPorts}
+		if sp := ParseServerPorts(ports); len(sp) > 0 {
+			outbound["server_ports"] = sp
+		} else {
+			warn("hysteria2 \"" + GetStr(m, "name") + "\": unparsable ports \"" + ports + "\", port hopping disabled")
+		}
 	}
 
 	// Hop interval (seconds -> duration string)
 	if hopInterval := GetInt(m, "hop-interval"); hopInterval > 0 {
-		outbound["hop_interval"] = SecondsToDuration(min(hopInterval, maxHopInterval))
+		outbound["hop_interval"] = SecondsToDuration(hopInterval)
 	}
 
 	outbound["tls"] = BuildAlwaysOnTLS(m)

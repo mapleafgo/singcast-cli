@@ -22,7 +22,7 @@ func TranslateTrojan(m map[string]any, warn func(string)) map[string]any {
 	}
 
 	// TLS — Trojan almost always requires TLS; mihomo auto-enables it
-	tls := TranslateTLS(m)
+	tls := TranslateTLS(m, warn)
 	if tls == nil {
 		tls = map[string]any{"enabled": true}
 	}

@@ -1,7 +1,5 @@
 package proxy
 
-import "strings"
-
 // TranslateHysteria translates a mihomo Hysteria (v1) proxy config to a sing-box outbound.
 func TranslateHysteria(m map[string]any, warn func(string)) map[string]any {
 	outbound := map[string]any{
@@ -40,7 +38,11 @@ func TranslateHysteria(m map[string]any, warn func(string)) map[string]any {
 
 	// Server ports (port hopping)
 	if ports := GetStr(m, "ports"); ports != "" {
-		outbound["server_ports"] = []string{strings.ReplaceAll(ports, "-", ":")}
+		if sp := ParseServerPorts(ports); len(sp) > 0 {
+			outbound["server_ports"] = sp
+		} else {
+			warn("hysteria \"" + GetStr(m, "name") + "\": unparsable ports \"" + ports + "\", port hopping disabled")
+		}
 	}
 
 	// Hop interval
@@ -64,12 +66,15 @@ func TranslateHysteria(m map[string]any, warn func(string)) map[string]any {
 		outbound["network"] = proto
 	}
 
-	// TLS
-	tls := BuildAlwaysOnTLS(m)
+	// TLS。刻意不下发 utls：hysteria 基于 QUIC，而 sing-box 的 UTLSClientConfig
+	// 未实现 QUIC 所需接口，STDConfig() 直接返回 "unsupported usage for uTLS"，
+	// 首次建连即失败。此外 mihomo 的 fingerprint 是证书哈希而非浏览器指纹名，
+	// 填进 utls.fingerprint 还会让实例启动时报 unknown uTLS fingerprint。
 	if fingerprint := GetStr(m, "fingerprint"); fingerprint != "" {
-		tls["utls"] = map[string]any{"enabled": true, "fingerprint": fingerprint}
+		warn("hysteria \"" + GetStr(m, "name") + "\": fingerprint has no equivalent in sing-box " +
+			"(QUIC outbounds do not support uTLS) and was ignored")
 	}
-	outbound["tls"] = tls
+	outbound["tls"] = BuildAlwaysOnTLS(m)
 
 	return outbound
 }
