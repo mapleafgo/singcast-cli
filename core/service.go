@@ -3,12 +3,14 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	box "github.com/sagernet/sing-box"
@@ -23,6 +25,21 @@ import (
 )
 
 var Version = "dev"
+
+// TUN busy 重试参数：旧实例 Close 后内核释放同名 TUN 接口存在短暂延迟，
+// 重启窗口内 TUNSETIFF 会返回 EBUSY。退避递增（300ms/600ms/900ms）覆盖该窗口，
+// 若接口被其他进程长期占用则重试耗尽后照常报错。
+const (
+	tunBusyMaxRetries = 3
+	tunBusyRetryDelay = 300 * time.Millisecond
+)
+
+// isTunBusyErr 判断错误是否为 TUN 设备暂时被占用（EBUSY）：快速重启窗口内
+// 旧接口尚未被内核释放时，TUNSETIFF 返回该错误。sing 的错误包装链实现了
+// Unwrap，errno 保留在链上，errors.Is 可精确匹配。
+func isTunBusyErr(err error) bool {
+	return errors.Is(err, syscall.EBUSY)
+}
 
 type platformLogWriter struct {
 	svc *Service
@@ -55,12 +72,18 @@ func VersionJSON() string {
 	return string(data)
 }
 
+// CheckConfig 校验配置内容能否被 sing-box 接受。接受 Clash YAML 与 sing-box JSON，
+// YAML 会先翻译再校验。返回 nil 表示配置可用；翻译过程产生的非致命 warning
+// 通过 slog 输出（进而转为 EventLog），不影响返回值。
 func CheckConfig(ctx context.Context, content string) error {
 	data := []byte(content)
 	if translator.DetectFormat(data) == translator.FormatYAML {
-		result, _, err := translator.TranslateWithOptions(data, nil)
+		result, warnings, err := translator.TranslateWithOptions(data, nil)
 		if err != nil {
 			return fmt.Errorf("translate config: %w", err)
+		}
+		for _, w := range warnings {
+			slog.Warn("check config", "warning", w)
 		}
 		data = []byte(result)
 	}
@@ -110,6 +133,10 @@ type runningState struct {
 	boxCtx        context.Context
 	currentConfig string
 	startedAt     int64
+	// stopCtx 在本实例被关闭前取消，供在途查询（URLTest/TestGroupDelay）及时退出。
+	// 没有它，一次全组测速会在最长 timeoutMs 的窗口里继续使用已 Close 的实例。
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
 	// stubTags maps outbound tag → original protocol for proxies converted to
 	// socks stubs (unsupported protocols). Used by QueryProxies to report the
 	// original type so the UI can distinguish unsupported nodes.
@@ -129,8 +156,19 @@ type Service struct {
 
 	// startMu serializes StartWithContent calls. A concurrent caller waits
 	// for the current startup to finish, then stops and restarts.
+	//
+	// 注意：Stop() 刻意不持有此锁。状态变更经 casState → emitState 同步调用宿主
+	// 回调，而 start 路径是持锁的；若 Stop 也持锁，宿主在状态回调里调 Stop()
+	// 就会因 sync.Mutex 不可重入而自锁（gomobile 的回调是同步调用）。
+	// start/stop 的三份状态一致性改由各自的原子操作保证：
+	// 实例关闭责任由 running.Swap 的返回值决定，在途查询由 runningState.stopCtx
+	// 中止，hooks 订阅由 hooksMu + 代次校验（见 subscribeHooks）收口。
 	startMu  sync.Mutex
 	startSeq atomic.Int64 // coalesce: only the latest caller proceeds
+
+	// hooksMu 保护 subCancel 的读改写。绝不在持有它时调用宿主回调，
+	// 因此不会与 startMu 形成锁序问题。
+	hooksMu sync.Mutex
 }
 
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
@@ -141,7 +179,18 @@ func (s *Service) State() State {
 
 func (s *Service) PlatformIO() *PlatformIO { return s.platform }
 
+// Init 以 context.Background() 初始化服务，等价于 InitContext。
+// 供 FFI/gomobile 宿主使用：那里没有可用的 context，生命周期由 Destroy 控制。
 func (s *Service) Init(optionsJSON string) error {
+	return s.InitContext(context.Background(), optionsJSON)
+}
+
+// InitContext 解析 InitOptions 并把服务从 Created 推进到 Initialized：
+// 建立 home/temp 目录、切换工作目录、按需启动自愈看门狗。
+// ctx 仅用于派生看门狗的生命周期——ctx 取消或 Destroy 调用都会停止看门狗；
+// 初始化本身是同步的，不会因 ctx 取消而中断。
+// 重复调用或状态不为 Created 时返回错误，且状态保持不变。
+func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 	if !s.state.CompareAndSwap(StateCreated, StateInitialized) {
 		return fmt.Errorf("init: invalid state %s", s.State())
 	}
@@ -179,7 +228,7 @@ func (s *Service) Init(optionsJSON string) error {
 	hc := normalizeHealthConfig(opts.HealthCheck)
 	if opts.HealthCheck != nil && opts.HealthCheck.Enabled {
 		s.healthCfg = hc
-		wdCtx, wdCancel := context.WithCancel(context.Background())
+		wdCtx, wdCancel := context.WithCancel(ctx)
 		cancelFn := func() { wdCancel() }
 		s.healthCancel.Store(&cancelFn)
 		go s.newWatchdog().run(wdCtx)
@@ -230,9 +279,14 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, map[string]string, error) {
 	if format == translator.FormatYAML {
 		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-		result, _, meta, err := translator.TranslateWithMeta(data, opts)
+		result, warnings, meta, err := translator.TranslateWithMeta(data, opts)
 		if err != nil {
 			return "", nil, fmt.Errorf("translate config: %w", err)
+		}
+		// warnings 是非致命但用户需要知道的降级项（跳过的节点、未翻译的规则）。
+		// 走 slog 而非丢弃：coreLogHandler 会转成 EventLog 送到前端日志面板。
+		for _, w := range warnings {
+			slog.Warn("translate config", "warning", w)
 		}
 		return result, meta.StubTags, nil
 	}
@@ -310,57 +364,84 @@ func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) 
 	}
 
 	logWriter := &platformLogWriter{svc: s}
-	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
-	if err != nil {
-		return fmt.Errorf("create instance: %w", err)
-	}
 
-	if s.platform.IsMobile() {
-		nm := service.FromContext[adapter.NetworkManager](ctx)
-		if nm != nil {
-			pi := service.FromContext[adapter.PlatformInterface](ctx)
-			protectFn := nm.ProtectFunc()
-			slog.Debug("mobile protect diagnostic",
-				"autoDetect", nm.AutoDetectInterface(),
-				"protectFuncNil", protectFn == nil,
-				"platformNil", pi == nil,
-				"usePlatformCtrl", pi != nil && pi.UsePlatformAutoDetectInterfaceControl(),
-			)
-			if err := nm.UpdateInterfaces(); err != nil {
-				slog.Warn("update interfaces failed", "error", err)
-			} else {
-				slog.Debug("update interfaces", "count", len(nm.NetworkInterfaces()))
-			}
-		} else {
-			slog.Warn("update interfaces: NetworkManager is nil")
+	// 快速重启时，旧实例 Close 后内核可能尚未释放同名 TUN 接口，
+	// 立即 TUNSETIFF 会返回 EBUSY。对这类瞬时错误退避重试（每轮重建实例）。
+	var inst *box.Box
+	for attempt := 0; ; attempt++ {
+		inst, err = box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
+		if err != nil {
+			return fmt.Errorf("create instance: %w", err)
 		}
-	}
-
-	if err := inst.Start(); err != nil {
-		inst.Close()
-		return fmt.Errorf("start instance: %w", err)
+		s.updateMobileInterfaces(ctx)
+		err = inst.Start()
+		if err == nil {
+			break
+		}
+		// Box.Start 失败时内部已自行 Close，实例不可复用，重试须重建。
+		if attempt >= tunBusyMaxRetries || !isTunBusyErr(err) {
+			return fmt.Errorf("start instance: %w", err)
+		}
+		slog.Warn("tun device busy, retrying start", "attempt", attempt+1, "error", err)
+		time.Sleep(tunBusyRetryDelay * time.Duration(attempt+1))
 	}
 
 	s.platform.SetRouter(inst.Router())
 
-	s.running.Store(&runningState{
+	stopCtx, stopCancel := context.WithCancel(context.Background())
+	rs := &runningState{
 		instance:      inst,
 		boxCtx:        ctx,
 		currentConfig: jsonContent,
 		startedAt:     time.Now().UnixMilli(),
 		stubTags:      stubTags,
-	})
+		stopCtx:       stopCtx,
+		stopCancel:    stopCancel,
+	}
+	s.running.Store(rs)
+	// CAS 失败说明有并发方（Stop/Destroy）已改走状态；由 Swap 的原子性决定谁负责
+	// 关闭，无条件 Close 会与对方的 Close 重入。
 	if !s.casState(StateStarting, StateRunning) {
-		s.running.Swap(nil)
-		inst.Close()
+		if old := s.running.Swap(nil); old != nil {
+			old.close()
+		}
 		return nil
 	}
-	s.subscribeHooks()
+	s.subscribeHooks(rs)
 
 	slog.Info("service running")
 	return nil
 }
 
+// updateMobileInterfaces 在移动端启动实例前上报网络接口并输出 socket 保护诊断日志。
+// 桌面端为空操作。需在 box.New 之后调用（NetworkManager 由其注册进 ctx）。
+func (s *Service) updateMobileInterfaces(ctx context.Context) {
+	if !s.platform.IsMobile() {
+		return
+	}
+	nm := service.FromContext[adapter.NetworkManager](ctx)
+	if nm == nil {
+		slog.Warn("update interfaces: NetworkManager is nil")
+		return
+	}
+	pi := service.FromContext[adapter.PlatformInterface](ctx)
+	protectFn := nm.ProtectFunc()
+	slog.Debug("mobile protect diagnostic",
+		"autoDetect", nm.AutoDetectInterface(),
+		"protectFuncNil", protectFn == nil,
+		"platformNil", pi == nil,
+		"usePlatformCtrl", pi != nil && pi.UsePlatformAutoDetectInterfaceControl(),
+	)
+	if err := nm.UpdateInterfaces(); err != nil {
+		slog.Warn("update interfaces failed", "error", err)
+	} else {
+		slog.Debug("update interfaces", "count", len(nm.NetworkInterfaces()))
+	}
+}
+
+// Stop 停止当前实例并回到 Initialized 态。未在运行时是空操作，返回 nil。
+// 可并发调用，也可在事件回调内调用（不持有 startMu，见该字段注释）。
+// 实例的 Close 错误原样返回。
 func (s *Service) Stop() error {
 	for {
 		st := s.state.Load()
@@ -372,14 +453,24 @@ func (s *Service) Stop() error {
 		}
 	}
 
-	s.unsubscribeHooks()
+	// 先摘掉 running 再退订：顺序反了会留下泄漏窗口——并发的 start 可能在
+	// 退订之后完成订阅，随后被这里的 Swap 关掉实例，4 个订阅 goroutine
+	// 就对着已关闭的实例长期空转。摘除在前，start 的代次校验才能发现自己已过期。
 	old := s.running.Swap(nil)
+	s.unsubscribeHooks()
 
 	if old != nil {
 		slog.Info("service stopped")
-		return old.instance.Close()
+		return old.close()
 	}
 	return nil
+}
+
+// close 先取消在途查询再关闭 sing-box 实例，使查询 goroutine 不会继续
+// 使用已关闭的实例。可安全重复调用（Box.Close 二次调用返回 os.ErrClosed）。
+func (rs *runningState) close() error {
+	rs.stopCancel()
+	return rs.instance.Close()
 }
 
 func (s *Service) Destroy() {
@@ -397,11 +488,12 @@ func (s *Service) Destroy() {
 		(*cancelPtr)()
 	}
 
-	s.unsubscribeHooks()
+	// 与 Stop 同序：先摘 running 再退订，使并发 start 的代次校验能发现自己已过期。
 	old := s.running.Swap(nil)
+	s.unsubscribeHooks()
 
 	if old != nil {
-		old.instance.Close()
+		old.close()
 	}
 	slog.Info("service destroyed")
 }

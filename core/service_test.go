@@ -2,10 +2,15 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -325,4 +330,63 @@ func TestState_String(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, tt.state.String())
 	}
+}
+
+func TestIsTunBusyErr(t *testing.T) {
+	// 模拟 sing-tun 的真实错误链：E.Cause 逐层包装，errno 位于链底。
+	tunBusy := fmt.Errorf("start inbound/tun[tun-in]: %w",
+		fmt.Errorf("configure tun interface: %w",
+			fmt.Errorf("open tun: TUNSETIFF: %w", syscall.EBUSY)))
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"wrapped ebusy", tunBusy, true},
+		{"bare ebusy", syscall.EBUSY, true},
+		{"other errno", fmt.Errorf("open tun: %w", syscall.EPERM), false},
+		{"text only without errno", errors.New("device or resource busy"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isTunBusyErr(tt.err))
+		})
+	}
+}
+
+// 事件回调是在状态变更路径上同步调用的，回调内必须能安全地反手调用 Stop()。
+// 若 Stop 持有 start 路径的锁，这里会因 sync.Mutex 不可重入而死锁。
+func TestService_StopFromEventCallback(t *testing.T) {
+	svc := NewService()
+	dir := t.TempDir()
+	opts, err := json.Marshal(InitOptions{HomeDir: dir})
+	require.NoError(t, err)
+
+	var stopErr error
+	var stopped atomic.Bool
+	svc.SetOnEvent(func(event int32, data string) {
+		if event == EventStateChange && data == StateStarting.String() && stopped.CompareAndSwap(false, true) {
+			stopErr = svc.Stop()
+		}
+	})
+	require.NoError(t, svc.Init(string(opts)))
+	defer svc.Destroy()
+
+	// 配置无关：只要状态推进到 Starting 就会触发上面的回调。
+	// 用 done channel 加超时兜底，死锁时给出明确失败而不是拖到 go test 超时。
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = svc.StartWithContent(`{"log":{"level":"error"}}`, "")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("deadlock: Stop() called from event callback did not return")
+	}
+	require.True(t, stopped.Load(), "callback should have fired on Starting")
+	require.NoError(t, stopErr)
 }

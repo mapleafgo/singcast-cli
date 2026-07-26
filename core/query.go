@@ -11,6 +11,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/clashapi"
 	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/service"
@@ -61,7 +62,7 @@ func (s *Service) QueryProxies() string {
 			Tag:        tag,
 			Type:       out.Type(),
 			Selected:   g.Now(),
-			Selectable: out.Type() == "selector",
+			Selectable: out.Type() == C.TypeSelector,
 		}
 		if cache != nil {
 			if expand, loaded := cache.LoadGroupExpand(tag); loaded {
@@ -170,6 +171,8 @@ func (s *Service) QueryRules() string {
 	return string(data)
 }
 
+// URLTest 测量单个出站的延迟（毫秒）。服务未运行、tag 不存在或测试
+// 失败/超时时返回 -1。服务在测试期间被停止时提前返回 -1。
 func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
 	rs := s.running.Load()
 	if rs == nil {
@@ -181,7 +184,7 @@ func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
 		return -1
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(rs.stopCtx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
 	delay, err := urltest.URLTest(ctx, "", out)
@@ -191,8 +194,18 @@ func (s *Service) URLTest(outboundTag string, timeoutMs int32) int32 {
 	return int32(delay)
 }
 
+// groupTestConcurrency 限制全组测速的并发数。机场订阅常有 300+ 节点，
+// 不限并发会瞬间建立同等数量的 TLS 连接，在移动端足以耗尽 fd。
+const groupTestConcurrency = 16
+
 // TestGroupDelay runs URL tests for all outbounds in a group.
 // Returns a JSON map of {tag: delay_ms}. -1 means failure/timeout.
+//
+// 并发上限为 groupTestConcurrency，但 timeoutMs 是**整批**的墙钟上限而非每个
+// 节点各自的上限：调用方（IPC handler、移动端）是同步等待这个结果的，
+// 若每个节点各自计时，300 个节点在 16 并发下最坏要 ceil(300/16)×timeoutMs，
+// GUI 会像卡死一样等上一分多钟。没轮到或未完成的节点按超时记为 -1。
+// 服务在测试期间被停止时同样立即收敛。
 func (s *Service) TestGroupDelay(groupTag string, timeoutMs int32) string {
 	rs := s.running.Load()
 	if rs == nil {
@@ -212,31 +225,42 @@ func (s *Service) TestGroupDelay(groupTag string, timeoutMs int32) string {
 	tags := g.All()
 	results := make(map[string]int32, len(tags))
 
+	// 整批共用一个 deadline，保证总耗时不超过 timeoutMs。
+	ctx, cancel := context.WithTimeout(rs.stopCtx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	wg.Add(len(tags))
+	sem := make(chan struct{}, groupTestConcurrency)
 
 	for _, tag := range tags {
-		go func(tag string) {
-			defer wg.Done()
-			ob, ok := inst.Outbound().Outbound(tag)
-			if !ok {
-				mu.Lock()
-				results[tag] = -1
-				mu.Unlock()
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
-			defer cancel()
-			delay, err := urltest.URLTest(ctx, "", ob)
+		// 在派生 goroutine 前占槽：放到 goroutine 里占会先创建全部 goroutine，
+		// 限流效果只作用于测速本身，白白付出 N 个 goroutine 的开销。
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			// 已超时/已停止，余下节点保持 -1
 			mu.Lock()
-			if err != nil {
-				results[tag] = -1
-			} else {
-				results[tag] = int32(delay)
-			}
+			results[tag] = -1
 			mu.Unlock()
-		}(tag)
+			continue
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			delay := int32(-1)
+			if ob, ok := inst.Outbound().Outbound(tag); ok {
+				if d, err := urltest.URLTest(ctx, "", ob); err == nil {
+					delay = int32(d)
+				}
+			}
+			mu.Lock()
+			results[tag] = delay
+			mu.Unlock()
+		}()
 	}
 	wg.Wait()
 
