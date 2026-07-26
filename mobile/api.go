@@ -41,7 +41,7 @@ func Create() *Singcast {
 
 // Init initializes the core runtime.
 // optionsJSON: {"home_dir":"/path","debug":false,"health_check":{"enabled":true}}
-// health_check 默认开启：代理持续不通时自动重启 core 自愈，可设 enabled=false 关闭。
+// health_check 默认关闭：设置 health_check.enabled=true 开启代理链路自愈。
 func (s *Singcast) Init(optionsJSON string) error {
 	return s.svc.Init(optionsJSON)
 }

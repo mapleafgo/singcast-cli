@@ -175,9 +175,9 @@ func (s *Service) Init(optionsJSON string) error {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
-	// 自愈看门狗：默认开启，可通过 InitOptions.health_check.enabled 关闭。
+	// 自愈看门狗：默认关闭，需显式设置 health_check.enabled=true 启用。
 	hc := normalizeHealthConfig(opts.HealthCheck)
-	if opts.HealthCheck == nil || opts.HealthCheck.Enabled {
+	if opts.HealthCheck != nil && opts.HealthCheck.Enabled {
 		s.healthCfg = hc
 		wdCtx, wdCancel := context.WithCancel(context.Background())
 		cancelFn := func() { wdCancel() }
