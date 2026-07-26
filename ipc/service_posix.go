@@ -4,7 +4,7 @@ package ipc
 
 import "errors"
 
-func InstallService(_ string) error {
+func InstallService() error {
 	return errors.New("service management is only supported on Windows")
 }
 

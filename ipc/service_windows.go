@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 	"unsafe"
 
@@ -15,7 +16,13 @@ import (
 
 const ServiceName = "SingcastService"
 
-func InstallService(homeDir string) error {
+func InstallService() error {
+	// Windows 推导用户数据目录（与 Flutter getApplicationSupportDirectory 一致）
+	configDir, err := os.UserConfigDir() // %APPDATA% on Windows
+	if err != nil {
+		return fmt.Errorf("resolve user config dir: %w", err)
+	}
+	homeDir := filepath.Join(configDir, "cn.mapleafgo.singcast")
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get executable: %w", err)

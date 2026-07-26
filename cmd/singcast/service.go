@@ -17,15 +17,8 @@ func serviceCommand() *cli.Command {
 			{
 				Name:  "install",
 				Usage: "Install the system service",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "home",
-						Usage:    "home directory for the service",
-						Required: true,
-					},
-				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					if err := ipc.InstallService(cmd.String("home")); err != nil {
+					if err := ipc.InstallService(); err != nil {
 						return fmt.Errorf("install service: %w", err)
 					}
 					fmt.Println("service installed")

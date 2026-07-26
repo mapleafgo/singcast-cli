@@ -3,6 +3,7 @@
 package ipc
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/tailscale/go-winio"
@@ -10,7 +11,7 @@ import (
 
 const pipeSDDL = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;IU)"
 
-func (s *Server) listenPlatform() error {
+func (s *Server) listenPlatform(context.Context) error {
 	l, err := winio.ListenPipe(s.ipcPath, &winio.PipeConfig{
 		SecurityDescriptor: pipeSDDL,
 	})
