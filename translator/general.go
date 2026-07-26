@@ -46,10 +46,13 @@ func translateGeneral(cfg *RawConfig, result *singboxConfig) {
 		applyInboundAuth(cfg.Authentication, inbound)
 		result.Inbounds = append(result.Inbounds, inbound)
 	}
+	// redirect/tproxy 同样要写 listen：缺省时 sing-box 按 0.0.0.0 监听，
+	// allow-lan: false 的用户会得到比自己声明更宽的绑定范围。
 	if cfg.RedirPort > 0 {
 		result.Inbounds = append(result.Inbounds, map[string]any{
 			"type":        "redirect",
 			"tag":         "redirect-in",
+			"listen":      listen,
 			"listen_port": cfg.RedirPort,
 		})
 	}
@@ -57,6 +60,7 @@ func translateGeneral(cfg *RawConfig, result *singboxConfig) {
 		result.Inbounds = append(result.Inbounds, map[string]any{
 			"type":        "tproxy",
 			"tag":         "tproxy-in",
+			"listen":      listen,
 			"listen_port": cfg.TProxyPort,
 		})
 	}

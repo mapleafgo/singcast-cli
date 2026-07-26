@@ -2,6 +2,7 @@ package translator
 
 import (
 	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,10 +30,14 @@ func translateDNS(cfg *RawConfig, t *translation) {
 	}
 
 	// Step 1: Strategy mapping
-	// Use top-level ipv6 to control DNS strategy.
-	if cfg.IPv6 {
+	// 顶层 ipv6 决定 DNS 策略；dns.ipv6 更具体，显式设为 false 时表示禁止 AAAA
+	// 解析，必须覆盖顶层的 prefer_ipv6，否则语义正好相反。
+	switch {
+	case dns.IPv6 != nil && !*dns.IPv6:
+		result.Strategy = "ipv4_only"
+	case cfg.IPv6 || (dns.IPv6 != nil && *dns.IPv6):
 		result.Strategy = "prefer_ipv6"
-	} else {
+	default:
 		result.Strategy = "prefer_ipv4"
 	}
 
@@ -136,7 +141,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 
 	if fakeIPEnabled {
 		fakeipTag = "fakeip-dns"
-		inet4Range := "198.18.0.0/15"
+		inet4Range := defaultFakeIPRange
 		if dns.FakeIPRange != "" {
 			inet4Range = normalizeFakeIPRange(dns.FakeIPRange)
 		}
@@ -181,8 +186,9 @@ func translateDNS(cfg *RawConfig, t *translation) {
 						"server": fakeipTag,
 					})
 				}
-				// Default all other domains to non-fakeip nameserver
-				result.Rules = append(result.Rules, map[string]any{
+				// 白名单模式下其余域名一律走非 fakeip nameserver。这是无条件兜底规则，
+				// 必须排在所有规则最后，否则会遮蔽 geosite/fakeip 等后续规则。
+				t.dnsTerminalRules = append(t.dnsTerminalRules, map[string]any{
 					"server": firstNSTag,
 				})
 			} else {
@@ -290,6 +296,9 @@ func collectECHQueryServers(outbounds []map[string]any, t *translation) {
 // parseDNSServer parses a mihomo DNS URL string into a sing-box DNS server object.
 // defaultDetour is the proxy group tag to use for detour if "#proxy" is in params.
 func parseDNSServer(rawURL string, tag string, defaultDetour string, warn func(string)) map[string]any {
+	if warn == nil {
+		warn = func(string) {}
+	}
 	s := strings.TrimSpace(rawURL)
 	if s == "" {
 		return nil
@@ -303,18 +312,25 @@ func parseDNSServer(rawURL string, tag string, defaultDetour string, warn func(s
 			"tag":  tag,
 		}
 	case s == "fakeip":
+		// 这里拿不到 dns.fake-ip-range，只能用默认段。enhanced-mode: fake-ip
+		// 已经按用户配置建了 fakeip server，nameserver 里再写 fakeip 会多出一个
+		// 独立的 fakeip transport，两者地址池不一致时行为难以预期。
+		warn("nameserver \"fakeip\" creates a separate fake-ip pool with the default range " +
+			defaultFakeIPRange + "; prefer dns.enhanced-mode: fake-ip with fake-ip-range")
 		return map[string]any{
 			"type":        "fakeip",
 			"tag":         tag,
-			"inet4_range": "198.18.0.0/15",
+			"inet4_range": defaultFakeIPRange,
 		}
 	case strings.HasPrefix(s, "rcode://"):
-		rcode := strings.TrimPrefix(s, "rcode://")
-		return map[string]any{
-			"type":  "rcode",
-			"tag":   tag,
-			"rcode": rcode,
-		}
+		// sing-box 没有 rcode 这个 DNS server 类型（constant/dns.go 里只有内部
+		// 用的 legacy_rcode，且未注册进 registry），输出它会让配置在反序列化阶段
+		// 就报 "unknown transport type: rcode"，整份配置起不来。
+		// 现代等价物是 DNS 规则上的 predefined action，但那需要 nameserver-policy
+		// 的域名映射才有意义，而本翻译器整体不翻译 policy（见 translateDNS 注释），
+		// 没有可挂载的规则，因此只能跳过并告知用户。
+		warn("nameserver \"" + s + "\" is not supported by sing-box (no rcode server type), skipping")
+		return nil
 	case strings.HasPrefix(s, "dhcp://"):
 		iface := strings.TrimPrefix(s, "dhcp://")
 		return map[string]any{
@@ -454,33 +470,7 @@ func extractHostPort(rawURL string) (host string, port int, path string, scheme 
 		}
 	}
 
-	// Extract host and port
-	host = s
-	port = 0
-
-	// Handle [ipv6]:port
-	if strings.HasPrefix(host, "[") {
-		if closeBracket := strings.Index(host, "]"); closeBracket >= 0 {
-			hostPart := host[1:closeBracket]
-			rest := host[closeBracket+1:]
-			if strings.HasPrefix(rest, ":") {
-				portStr := rest[1:]
-				if p, err := strconv.Atoi(portStr); err == nil {
-					port = p
-				}
-			}
-			host = hostPart
-		}
-	} else {
-		// host:port
-		if colonIdx := strings.LastIndex(host, ":"); colonIdx >= 0 {
-			portStr := host[colonIdx+1:]
-			if p, err := strconv.Atoi(portStr); err == nil {
-				port = p
-				host = host[:colonIdx]
-			}
-		}
-	}
+	host, port = splitHostPort(s)
 
 	// Default ports based on scheme
 	if port == 0 {
@@ -497,9 +487,33 @@ func extractHostPort(rawURL string) (host string, port int, path string, scheme 
 	return host, port, path, scheme, params
 }
 
+// splitHostPort 从 DNS server 地址中分出主机与端口，port 为 0 表示未指定。
+// 顺序上先整串按 IP 解析：裸 IPv6（mihomo 惯例写法 "2001:4860:4860::8888"）
+// 自身含冒号，若先做 host:port 拆分会被从最后一个冒号截断成非法地址。
+func splitHostPort(s string) (host string, port int) {
+	if addr, err := netip.ParseAddr(s); err == nil {
+		return addr.String(), 0
+	}
+	if h, p, err := net.SplitHostPort(s); err == nil {
+		if n, err := strconv.Atoi(p); err == nil {
+			return h, n
+		}
+	}
+	// 方括号包裹但未带端口的 IPv6，SplitHostPort 会因缺端口报错
+	if trimmed, ok := strings.CutPrefix(s, "["); ok {
+		if inner, ok := strings.CutSuffix(trimmed, "]"); ok {
+			if addr, err := netip.ParseAddr(inner); err == nil {
+				return addr.String(), 0
+			}
+		}
+	}
+	return s, 0
+}
+
 // isIPAddress checks if a string is a valid IP address (v4 or v6).
 func isIPAddress(s string) bool {
-	return net.ParseIP(s) != nil
+	_, err := netip.ParseAddr(s)
+	return err == nil
 }
 
 // addDNSRouteAction adds action:"route" to all DNS rules with a server field.
@@ -625,7 +639,10 @@ func detectCC(t *translation) string {
 	return strings.ToLower(DetectCountry(""))
 }
 
-var fakeIPV4Net = mustParseCIDR("198.18.0.0/15")
+// defaultFakeIPRange 是 fake-ip 地址池的默认段，与 mihomo/sing-box 惯例一致。
+const defaultFakeIPRange = "198.18.0.0/15"
+
+var fakeIPV4Net = mustParseCIDR(defaultFakeIPRange)
 
 func mustParseCIDR(s string) *net.IPNet {
 	_, ipNet, err := net.ParseCIDR(s)
@@ -638,11 +655,11 @@ func mustParseCIDR(s string) *net.IPNet {
 func normalizeFakeIPRange(ipRange string) string {
 	_, ipNet, err := net.ParseCIDR(ipRange)
 	if err != nil {
-		return "198.18.0.0/15"
+		return defaultFakeIPRange
 	}
 	// If the range falls within the standard fake-ip range, normalize to /15
 	if fakeIPV4Net.Contains(ipNet.IP) {
-		return "198.18.0.0/15"
+		return defaultFakeIPRange
 	}
 	return ipNet.String()
 }

@@ -1,6 +1,10 @@
 package translator
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
+)
 
 func assemble(t *translation) {
 	// Inject direct outbound (block and dns outbounds removed in sing-box 1.13.0,
@@ -57,7 +61,10 @@ func assemble(t *translation) {
 	// instead of going through the proxy chain, which would fail if proxy
 	// servers are unreachable. Users behind GFW should use --rule-set-proxy
 	// for URL-level proxying (e.g. gh-proxy.org mirror).
-	for _, def := range t.ruleSetDefs {
+	// 按 tag 排序输出：map 迭代顺序随机会让同一份输入产出字节不同的 JSON，
+	// 破坏调用方基于内容哈希做的缓存/变更检测。
+	for _, tag := range slices.Sorted(maps.Keys(t.ruleSetDefs)) {
+		def := t.ruleSetDefs[tag]
 		if _, has := def["download_detour"]; !has {
 			def["download_detour"] = "DIRECT"
 		}

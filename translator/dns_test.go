@@ -167,16 +167,18 @@ func TestParseDNSServerSystem(t *testing.T) {
 	}
 }
 
+// sing-box 没有 rcode DNS server 类型，输出它会让配置反序列化阶段就失败
+// （unknown transport type: rcode）。必须跳过并告警，而不是产出非法条目。
 func TestParseDNSServerRcode(t *testing.T) {
-	srv := parseDNSServer("rcode://success", "test-rcode", "", nil)
-	if srv == nil {
-		t.Fatal("expected non-nil server")
+	var warnings []string
+	srv := parseDNSServer("rcode://success", "test-rcode", "", func(m string) {
+		warnings = append(warnings, m)
+	})
+	if srv != nil {
+		t.Fatalf("expected nil (unsupported), got %v", srv)
 	}
-	if srv["type"] != "rcode" {
-		t.Errorf("type = %v, want rcode", srv["type"])
-	}
-	if srv["rcode"] != "success" {
-		t.Errorf("rcode = %v, want success", srv["rcode"])
+	if len(warnings) == 0 {
+		t.Error("expected a warning for unsupported rcode nameserver")
 	}
 }
 
@@ -277,6 +279,10 @@ func TestExtractHostPort(t *testing.T) {
 		{"with fragment", "https://dns.google#proxy", "dns.google", 443, "https"},
 		{"ipv6 bracket", "[2001:4860:4860::8888]", "2001:4860:4860::8888", 53, ""},
 		{"ipv6 with port", "[2001:4860:4860::8888]:5353", "2001:4860:4860::8888", 5353, ""},
+		// mihomo 惯例允许不带方括号的裸 IPv6；地址自身含冒号，不得被当成 host:port 截断
+		{"bare ipv6", "2001:4860:4860::8888", "2001:4860:4860::8888", 53, ""},
+		{"bare ipv6 loopback", "::1", "::1", 53, ""},
+		{"bare ipv6 with scheme", "tls://2001:4860:4860::8888", "2001:4860:4860::8888", 853, "tls"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -343,8 +349,8 @@ func TestTranslateDNSFakeIPWhitelist(t *testing.T) {
 	}
 
 	rules := tr.config.DNS.Rules
-	if len(rules) < 3 {
-		t.Fatalf("expected at least 3 rules for whitelist mode, got %d", len(rules))
+	if len(rules) < 2 {
+		t.Fatalf("expected at least 2 rules for whitelist mode, got %d", len(rules))
 	}
 
 	// First rule: suffix match -> fakeip
@@ -352,10 +358,20 @@ func TestTranslateDNSFakeIPWhitelist(t *testing.T) {
 		t.Errorf("whitelist suffix rule server = %v, want fakeip-dns", rules[0]["server"])
 	}
 
-	// Last rule: catch-all -> nameserver
-	last := rules[len(rules)-1]
-	if last["server"] != "ns-0" {
-		t.Errorf("whitelist catch-all server = %v, want ns-0", last["server"])
+	// 无条件兜底规则不进 Rules，改由 generateDNSRules 追加到规则表末尾，
+	// 避免遮蔽其后更精确的规则。
+	if len(tr.dnsTerminalRules) != 1 {
+		t.Fatalf("expected 1 terminal rule, got %d", len(tr.dnsTerminalRules))
+	}
+	if got := tr.dnsTerminalRules[0]["server"]; got != "ns-0" {
+		t.Errorf("whitelist catch-all server = %v, want ns-0", got)
+	}
+
+	// 走完排序后兜底规则必须落在最后一条
+	generateDNSRules("cn", tr)
+	final := tr.config.DNS.Rules
+	if got := final[len(final)-1]["server"]; got != "ns-0" {
+		t.Errorf("catch-all not last after ordering: %v", got)
 	}
 }
 
