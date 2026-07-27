@@ -2,13 +2,10 @@ package core
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -329,30 +326,6 @@ func TestState_String(t *testing.T) {
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, tt.state.String())
-	}
-}
-
-func TestIsTunBusyErr(t *testing.T) {
-	// 模拟 sing-tun 的真实错误链：E.Cause 逐层包装，errno 位于链底。
-	tunBusy := fmt.Errorf("start inbound/tun[tun-in]: %w",
-		fmt.Errorf("configure tun interface: %w",
-			fmt.Errorf("open tun: TUNSETIFF: %w", syscall.EBUSY)))
-
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil", nil, false},
-		{"wrapped ebusy", tunBusy, true},
-		{"bare ebusy", syscall.EBUSY, true},
-		{"other errno", fmt.Errorf("open tun: %w", syscall.EPERM), false},
-		{"text only without errno", errors.New("device or resource busy"), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isTunBusyErr(tt.err))
-		})
 	}
 }
 

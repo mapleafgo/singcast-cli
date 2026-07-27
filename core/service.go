@@ -3,14 +3,12 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	box "github.com/sagernet/sing-box"
@@ -25,21 +23,6 @@ import (
 )
 
 var Version = "dev"
-
-// TUN busy 重试参数：旧实例 Close 后内核释放同名 TUN 接口存在短暂延迟，
-// 重启窗口内 TUNSETIFF 会返回 EBUSY。退避递增（300ms/600ms/900ms）覆盖该窗口，
-// 若接口被其他进程长期占用则重试耗尽后照常报错。
-const (
-	tunBusyMaxRetries = 3
-	tunBusyRetryDelay = 300 * time.Millisecond
-)
-
-// isTunBusyErr 判断错误是否为 TUN 设备暂时被占用（EBUSY）：快速重启窗口内
-// 旧接口尚未被内核释放时，TUNSETIFF 返回该错误。sing 的错误包装链实现了
-// Unwrap，errno 保留在链上，errors.Is 可精确匹配。
-func isTunBusyErr(err error) bool {
-	return errors.Is(err, syscall.EBUSY)
-}
 
 type platformLogWriter struct {
 	svc *Service
@@ -365,25 +348,13 @@ func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) 
 
 	logWriter := &platformLogWriter{svc: s}
 
-	// 快速重启时，旧实例 Close 后内核可能尚未释放同名 TUN 接口，
-	// 立即 TUNSETIFF 会返回 EBUSY。对这类瞬时错误退避重试（每轮重建实例）。
-	var inst *box.Box
-	for attempt := 0; ; attempt++ {
-		inst, err = box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
-		if err != nil {
-			return fmt.Errorf("create instance: %w", err)
-		}
-		s.updateMobileInterfaces(ctx)
-		err = inst.Start()
-		if err == nil {
-			break
-		}
-		// Box.Start 失败时内部已自行 Close，实例不可复用，重试须重建。
-		if attempt >= tunBusyMaxRetries || !isTunBusyErr(err) {
-			return fmt.Errorf("start instance: %w", err)
-		}
-		slog.Warn("tun device busy, retrying start", "attempt", attempt+1, "error", err)
-		time.Sleep(tunBusyRetryDelay * time.Duration(attempt+1))
+	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
+	if err != nil {
+		return fmt.Errorf("create instance: %w", err)
+	}
+	s.updateMobileInterfaces(ctx)
+	if err := inst.Start(); err != nil {
+		return fmt.Errorf("start instance: %w", err)
 	}
 
 	s.platform.SetRouter(inst.Router())
