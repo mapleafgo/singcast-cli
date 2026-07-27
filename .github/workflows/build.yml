@@ -16,6 +16,9 @@ jobs:
       tag_name: ${{ steps.get-release.outputs.tag_name }}
       upload_url: ${{ steps.get-release.outputs.upload_url }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Get release info
         id: get-release
         run: |
