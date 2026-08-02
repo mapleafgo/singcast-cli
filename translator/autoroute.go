@@ -123,6 +123,12 @@ func generateDNSRules(cc string, t *translation) {
 		return
 	}
 
+	// DNS 未启用时只输出 bootstrap DNS server 做 default_domain_resolver 兜底，
+	// 不生成 geo-based DNS 路由规则——用户未启用 DNS，不应改变其 DNS 行为意图。
+	if !t.dnsEnabled {
+		return
+	}
+
 	directTag := findFirstDirectDNSTag(t)
 	fakeipTag := findFakeIPTag(t)
 

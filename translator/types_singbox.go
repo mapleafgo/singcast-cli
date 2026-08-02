@@ -52,6 +52,10 @@ type translation struct {
 	// 命中一切）。单独收集而不直接进 config.DNS.Rules，是因为 sing-box DNS 规则
 	// 首匹配：兜底规则若留在中间，会遮蔽其后所有更精确的规则。
 	dnsTerminalRules []map[string]any
+	// dnsEnabled 标记用户是否显式启用了 DNS（dns.enable: true）。为 false 时
+	// translateDNS 仍输出最小 DNS 模块（仅 bootstrap server）做兜底，
+	// generateDNSRules 据此跳过 DNS 路由规则生成。
+	dnsEnabled bool
 }
 
 func (t *translation) warn(msg string) {

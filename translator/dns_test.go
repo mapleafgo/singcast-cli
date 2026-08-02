@@ -61,9 +61,122 @@ func TestTranslateDNSDisabled(t *testing.T) {
 	}
 
 	translateDNS(cfg, tr)
-	if tr.config.DNS != nil {
-		t.Error("DNS config should be nil when disabled")
+	// DNS 未启用时仍输出最小 DNS 模块（仅 bootstrap server）做兜底，
+	// 避免 default_domain_resolver 为空导致 sing-box 回退到 local transport。
+	if tr.config.DNS == nil {
+		t.Error("DNS config should not be nil when disabled (bootstrap resolver required)")
 	}
+}
+
+// TestTranslateDNSDisabledHasBootstrapResolver 验证 DNS 未启用时仍设置
+// route.default_domain_resolver 指向 IP UDP DNS server。Android VpnService 下
+// 系统 resolver 读到 ::1:53 导致 connection refused（issue #69）。
+func TestTranslateDNSDisabledHasBootstrapResolver(t *testing.T) {
+	tr := newTestTranslation()
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:     false,
+			NameServer: []string{"8.8.8.8"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	if tr.config.Route.DefaultDomainResolver == "" {
+		t.Fatal("default_domain_resolver should not be empty when DNS is disabled")
+	}
+
+	// default_domain_resolver 必须指向一个 IP UDP DNS server，不能是 local 类型
+	for _, srv := range tr.config.DNS.Servers {
+		if tag, _ := srv["tag"].(string); tag == tr.config.Route.DefaultDomainResolver {
+			if srv["type"] == "local" {
+				t.Error("default_domain_resolver points to a local DNS server; expected IP UDP to avoid ::1:53 on Android VPN")
+			}
+			if srv["type"] != "udp" {
+				t.Errorf("default_domain_resolver server type = %v, want udp", srv["type"])
+			}
+			server, _ := srv["server"].(string)
+			if !isIPAddress(server) {
+				t.Errorf("default_domain_resolver server = %q, expected an IP address", server)
+			}
+			return
+		}
+	}
+	t.Fatalf("default_domain_resolver %q not found in DNS servers", tr.config.Route.DefaultDomainResolver)
+}
+
+// TestTranslateDNSNoIPServerHasBootstrap 验证 DNS 启用但无 IP 地址 DNS server 时
+// default_domain_resolver 仍指向 IP UDP DNS（issue #69）。
+// 场景：default-nameserver 为空，nameserver 全是 DoH 域名，无处可 bootstrap。
+func TestTranslateDNSNoIPServerHasBootstrap(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.groupTags["PROXY"] = true
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:     true,
+			NameServer: []string{"https://dns.cloudflare.com/dns-query"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	if tr.config.Route.DefaultDomainResolver == "" {
+		t.Fatal("default_domain_resolver should not be empty")
+	}
+
+	for _, srv := range tr.config.DNS.Servers {
+		if tag, _ := srv["tag"].(string); tag == tr.config.Route.DefaultDomainResolver {
+			if srv["type"] == "local" {
+				t.Error("default_domain_resolver points to a local DNS server; expected IP UDP to avoid ::1:53 on Android VPN")
+			}
+			server, _ := srv["server"].(string)
+			if !isIPAddress(server) {
+				t.Errorf("default_domain_resolver server = %q, expected an IP address", server)
+			}
+			return
+		}
+	}
+	t.Fatalf("default_domain_resolver %q not found in DNS servers", tr.config.Route.DefaultDomainResolver)
+}
+
+// TestTranslateDNSSystemDefaultNameserverNotLocal 验证 default-nameserver 只含
+// system 时 default_domain_resolver 不指向 local 类型 server（issue #69）。
+// local 类型在 Android VPN 下读到 ::1:53 导致 connection refused。
+func TestTranslateDNSSystemDefaultNameserverNotLocal(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.groupTags["PROXY"] = true
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:            true,
+			DefaultNameserver: []string{"system"},
+			NameServer:        []string{"https://dns.cloudflare.com/dns-query"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	if tr.config.Route.DefaultDomainResolver == "" {
+		t.Fatal("default_domain_resolver should not be empty")
+	}
+
+	for _, srv := range tr.config.DNS.Servers {
+		if tag, _ := srv["tag"].(string); tag == tr.config.Route.DefaultDomainResolver {
+			if srv["type"] == "local" {
+				t.Error("default_domain_resolver points to a local DNS server; expected IP UDP to avoid ::1:53 on Android VPN")
+			}
+			server, _ := srv["server"].(string)
+			if !isIPAddress(server) {
+				t.Errorf("default_domain_resolver server = %q, expected an IP address", server)
+			}
+			return
+		}
+	}
+	t.Fatalf("default_domain_resolver %q not found in DNS servers", tr.config.Route.DefaultDomainResolver)
 }
 
 func TestParseDNSServerUDP(t *testing.T) {
@@ -568,5 +681,36 @@ func TestFindFirstECHCapableDNSTagSkipsDetour(t *testing.T) {
 	got := findFirstECHCapableDNSTag(tr)
 	if got != "def-0" {
 		t.Errorf("findFirstECHCapableDNSTag = %q, want def-0 (skip detour servers)", got)
+	}
+}
+
+// TestTranslateDNSDisabledNoDNSRules 验证 DNS 未启用时不生成 DNS 路由规则。
+// 虽然 bootstrap DNS server 需要存在，但用户未启用 DNS，不应有 geo-based DNS
+// 路由规则——这些规则会注册 rule_set 定义并改变用户的 DNS 行为意图。
+func TestTranslateDNSDisabledNoDNSRules(t *testing.T) {
+	tr := newTestTranslation()
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.groupTags["PROXY"] = true
+
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:     false,
+			NameServer: []string{"8.8.8.8"},
+		},
+	}
+
+	translateDNS(cfg, tr)
+
+	// generateDNSRules 在 translateDNS 之后调用，模拟 translateInternal 的流程
+	generateDNSRules("cn", tr)
+
+	if tr.config.DNS == nil {
+		t.Fatal("DNS config should not be nil (bootstrap resolver required)")
+	}
+	if len(tr.config.DNS.Rules) != 0 {
+		t.Errorf("expected 0 DNS rules when DNS disabled, got %d", len(tr.config.DNS.Rules))
+		for i, rule := range tr.config.DNS.Rules {
+			t.Logf("  rule[%d]: %v", i, rule)
+		}
 	}
 }

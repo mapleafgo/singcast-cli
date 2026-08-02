@@ -21,8 +21,20 @@ import (
 func translateDNS(cfg *RawConfig, t *translation) {
 	dns := cfg.DNS
 	if !dns.Enable {
+		// DNS 未启用时仍需设置 default_domain_resolver，确保 rule-set 下载
+		// 和 proxy server 域名解析不走 local transport。Android VpnService 下
+		// local transport 读系统 /etc/resolv.conf 失败 → Go net.defaultNS ::1:53
+		// → connection refused（issue #69）。
+		result := &singboxDNS{Servers: []map[string]any{}}
+		tag := addBootstrapDNS(result)
+		t.config.DNS = result
+		t.config.Route.DefaultDomainResolver = tag
+		result.Final = tag
+		t.dnsEnabled = false
 		return
 	}
+
+	t.dnsEnabled = true
 
 	result := &singboxDNS{
 		Servers: []map[string]any{},
@@ -267,7 +279,39 @@ func translateDNS(cfg *RawConfig, t *translation) {
 		}
 	}
 
+	// 确保 default_domain_resolver 不为空且不指向 local 类型 server。
+	// local 类型在 Android VPN 下读系统 resolver → Go net.defaultNS ::1:53
+	// → connection refused（issue #69）。
+	if dr := t.config.Route.DefaultDomainResolver; dr == "" || isLocalDNSServer(dr, result) {
+		t.config.Route.DefaultDomainResolver = addBootstrapDNS(result)
+	}
+
 	t.config.DNS = result
+}
+
+// addBootstrapDNS 添加一个 IP UDP DNS server 用作 bootstrap/domain 解析兜底。
+// 返回该 server 的 tag。用于 default_domain_resolver 为空或指向 local 类型时：
+// local 类型在 Android VPN 下经 Go net.defaultNS 回退到 ::1:53 导致 connection refused。
+// 选 223.5.5.5（阿里 DNS）：rule-set proxy 场景几乎都是国内用户（设 gh-proxy
+// 就是因为直连 GitHub 不通），国内 UDP 53 解析最稳定且全球可达。
+func addBootstrapDNS(result *singboxDNS) string {
+	tag := "bootstrap-dns"
+	result.Servers = append(result.Servers, map[string]any{
+		"type":   "udp",
+		"tag":    tag,
+		"server": "223.5.5.5",
+	})
+	return tag
+}
+
+// isLocalDNSServer 检查给定 tag 的 DNS server 是否为 local 类型。
+func isLocalDNSServer(tag string, result *singboxDNS) bool {
+	for _, srv := range result.Servers {
+		if t, _ := srv["tag"].(string); t == tag {
+			return srv["type"] == "local"
+		}
+	}
+	return false
 }
 
 // collectECHQueryServers extracts ECH query-server-name domains from translated outbounds.
