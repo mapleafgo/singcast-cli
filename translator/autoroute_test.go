@@ -68,29 +68,29 @@ func TestGenerateGeoRoute_OtherCountry(t *testing.T) {
 	tr := testTranslation(t)
 	tr.groupTagOrder = []string{"PROXY"}
 
-	generateCountryRoutes("us", tr)
+	generateCountryRoutes("bd", tr)
 
 	rules := tr.config.Route.Rules
-	// geosite-us + geoip-us + .us = 3
-	if len(rules) != 3 {
-		t.Fatalf("expected 3 geo rules for US, got %d", len(rules))
+	// geoip-bd + .bd = 2；官方 sing-geosite 没有按国家代码的 geosite-bd
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 geo rules for BD, got %d", len(rules))
 	}
 
-	// Rule 0: geosite-us → DIRECT
-	assertRuleSet(t, rules[0], "geosite-us", "DIRECT", "geosite-us")
+	// Rule 0: geoip-bd → DIRECT
+	assertRuleSet(t, rules[0], "geoip-bd", "DIRECT", "geoip-bd")
 
-	// Rule 1: geoip-us → DIRECT
-	assertRuleSet(t, rules[1], "geoip-us", "DIRECT", "geoip-us")
-
-	// Rule 2: .us domain suffix → DIRECT (fallback)
-	assertDomainSuffix(t, rules[2], ".us", "DIRECT")
+	// Rule 1: .bd domain suffix → DIRECT (fallback)
+	assertDomainSuffix(t, rules[1], ".bd", "DIRECT")
 
 	// Verify rule_set definitions
-	expectedDefs := []string{"geosite-us", "geoip-us"}
+	expectedDefs := []string{"geoip-bd"}
 	for _, tag := range expectedDefs {
 		if _, ok := tr.ruleSetDefs[tag]; !ok {
 			t.Errorf("missing rule_set definition for %q", tag)
 		}
+	}
+	if _, ok := tr.ruleSetDefs["geosite-bd"]; ok {
+		t.Error("must not register geosite-bd: SagerNet/sing-geosite has no per-country rule-set")
 	}
 }
 

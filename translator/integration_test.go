@@ -178,22 +178,23 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// geosite-jp + geoip-jp + domain_suffix:.jp = 8
-	if len(rules) != 8 {
-		t.Fatalf("expected 8 rules for JP, got %d", len(rules))
+	// geoip-jp + domain_suffix:.jp = 7
+	if len(rules) != 7 {
+		t.Fatalf("expected 7 rules for JP, got %d", len(rules))
 	}
 
-	// Verify geoip-jp and geosite-jp rule_set definitions exist
+	// Verify geoip-jp rule_set definition exists (geosite-jp does not exist upstream)
 	rsDefs := route["rule_set"].([]any)
 	rsTags := map[string]bool{}
 	for _, rs := range rsDefs {
 		rsMap := rs.(map[string]any)
 		rsTags[rsMap["tag"].(string)] = true
 	}
-	for _, tag := range []string{"geoip-jp", "geosite-jp"} {
-		if !rsTags[tag] {
-			t.Errorf("missing rule_set: %s", tag)
-		}
+	if !rsTags["geoip-jp"] {
+		t.Error("missing rule_set: geoip-jp")
+	}
+	if rsTags["geosite-jp"] {
+		t.Error("must not register geosite-jp: SagerNet/sing-geosite has no per-country rule-set")
 	}
 }
 

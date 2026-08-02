@@ -89,13 +89,9 @@ func generateCNRoutes(proxyTag string, t *translation) {
 
 // generateCountryRoutes builds non-CN routing rules: local traffic → direct, rest → proxy.
 func generateCountryRoutes(cc string, t *translation) {
-	// geosite-{cc} → direct
-	ensureRuleSetDef("geosite-"+cc, "geosite", cc, t)
-	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-		"rule_set": []string{"geosite-" + cc},
-		"outbound": "DIRECT",
-	})
-
+	// 官方 sing-geosite rule-set 按分类组织（cn、geolocation-!cn、品牌/服务等），
+	// 不提供 geoip 那样的按国家代码文件（geosite-bd.srs 不存在），所以非 CN
+	// 国家不能拼接 geosite-{cc}；geoip-{cc} 在官方 rule-set 中完整覆盖。
 	// geoip-{cc} → direct
 	ensureRuleSetDef("geoip-"+cc, "geoip", cc, t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
@@ -170,13 +166,19 @@ func generateDNSRules(cc string, t *translation) {
 		})
 	}
 
-	// Domestic geosite + geoip → direct DNS
-	geositeTag := "geosite-" + cc
+	// Domestic geosite + geoip → direct DNS。
+	// geosite 只有 CN 有官方 rule-set（geosite-cn）；非 CN 国家没有按国别 geosite，
+	// 只使用官方完整覆盖的 geoip-{cc}，避免下载不存在的 geosite-{cc}.srs。
 	geoipTag := "geoip-" + cc
-	ensureRuleSetDef(geositeTag, "geosite", cc, t)
+	rsTags := []string{}
+	if cc == "cn" {
+		ensureRuleSetDef("geosite-cn", "geosite", "cn", t)
+		rsTags = append(rsTags, "geosite-cn")
+	}
 	ensureRuleSetDef(geoipTag, "geoip", cc, t)
+	rsTags = append(rsTags, geoipTag)
 	rules = append(rules, map[string]any{
-		"rule_set": []string{geositeTag, geoipTag},
+		"rule_set": rsTags,
 		"server":   directTag,
 	})
 

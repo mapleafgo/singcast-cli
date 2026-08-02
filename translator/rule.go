@@ -38,6 +38,9 @@ func registerRuleSet(tag string, rawURL string, t *translation) {
 }
 
 // ensureRuleSetDef creates a rule_set definition for GEOIP/GEOSITE if absent.
+// 注意：sing-geoip rule-set 按 ISO 国家代码提供文件（geoip-{cc}.srs），
+// 而 sing-geosite rule-set 按分类提供（cn、geolocation-!cn 等），不存在按任意
+// 国家代码的文件，调用方不得为任意 cc 拼接 geosite-{cc}。
 func ensureRuleSetDef(tag string, geoType string, name string, t *translation) {
 	var base string
 	if geoType == "geoip" {
