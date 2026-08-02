@@ -265,7 +265,7 @@ sing-box 仅支持 TUIC v5（uuid + password 认证）。mihomo 的 TUIC v4（to
 | `proxies: [...]` | `outbounds: [...]` | **字段名不同** |
 | (无) | `default: "第一个代理"` | 用第一个代理作为默认 |
 
-**丢失字段**：`use`、`filter`、`exclude-filter`、`include-all`、`include-all-proxies`、`include-all-providers` — 翻译时需展开为完整的 outbounds 列表。
+**丢失字段（当前忽略，不展开/不过滤）**：`use`、`filter`、`exclude-filter`、`include-all`、`include-all-proxies`、`include-all-providers` — 当前实现只按 `proxies` 列表和已知 outbound tag 过滤；provider 展开方案见 S 节（参考设计，未实现）。
 
 ### C.2 URL-Test → URLTest
 
@@ -304,6 +304,8 @@ mihomo relay 已弃用（建议用 dialer-proxy）。sing-box 无对应。跳过
 ---
 
 ## D. 规则映射
+
+> **当前实现注意**：singcast 翻译器**不翻译 mihomo 的 `rules` 和 `rule-providers`**，这些配置会被整体忽略并输出 warning，路由规则由 `autoroute.go` 自动地理分流生成（见 T.3）。以下 D 节仅作为 sing-box 规则格式的映射参考，适用于直接提供 sing-box JSON 或后续扩展翻译能力。
 
 > **大小写约定**：sing-box 规则中的 `outbound` 字段值必须与目标 outbound 的 `tag` 精确匹配。内置组使用大写 `"DIRECT"` / `"REJECT"`（见 C.6），代理组名称保留 mihomo 原始大小写。以下示例统一使用大写。
 
@@ -360,7 +362,9 @@ mihomo relay 已弃用（建议用 dialer-proxy）。sing-box 无对应。跳过
 |---|---|---|
 | `MATCH,auto` | `route.final: "auto"` | 移到 route 顶层 |
 
-### D.6 规则集
+### D.6 规则集（参考映射，当前未启用）
+
+> **注意**：当前实现**不翻译 rule-provider**（`warnUnsupportedRouting` 忽略并警告），自动注册的 rule_set 见 T.3/T.8。下表仅说明若实现映射时的字段对应关系。
 
 | mihomo rule-provider | sing-box rule_set | 翻译说明 |
 |---|---|---|
@@ -552,7 +556,7 @@ translator/
 │   ├── socks.go       SOCKS5 翻译
 │   └── tls.go         TLS/REALITY/uTLS 公共翻译
 ├── group.go           代理组 → selector/urltest
-├── rule.go            规则翻译
+├── rule.go            规则翻译（autoroute 自动地理分流，忽略用户 rules）
 ├── dns.go             DNS 翻译
 └── tun.go             TUN 翻译
 ```
@@ -564,7 +568,7 @@ translator/
 
 ## I. 已知限制与不兼容项
 
-1. **proxy-provider / rule-provider 动态加载**：mihomo 支持运行时动态加载代理集和规则集，sing-box 的 rule_set 需要预先声明。翻译时需将 provider 内容展开。
+1. **proxy-provider / rule-provider 动态加载**：mihomo 支持运行时动态加载代理集和规则集，sing-box 的 rule_set 需要预先声明。当前实现**不支持 provider 拉取/展开**：`proxy-providers`、`rule-providers` 被整体忽略并输出 warning，用户须改用内联 `proxies`，规则由自动地理分流替代（见 T.3）。
 
 2. **sub-rules**：mihomo 支持子规则嵌套，sing-box 的 logical rule 可部分替代但语义不完全一致。
 
@@ -1035,7 +1039,7 @@ sing-box tun inbound 支持 `platform` 对象（`TunPlatformOptions`），但**�
 |---|---|---|
 | `name: "xxx"` | `tag: "xxx"` | 直接 |
 | `proxies: [...]` | `outbounds: [...]` | **字段名不同** |
-| `use: [provider1]` | (无对应) | **需展开 provider 中的代理名** |
+| `use: [provider1]` | (无对应) | **当前忽略，不展开**（S 节为参考设计） |
 | `url: "http://..."` | `url: "http://..."` | urltest 直接映射 |
 | `interval: 300` | `interval: "5m"` | **秒→Duration** |
 | `timeout: 5000` | (无对应) | 忽略 |
@@ -1044,12 +1048,12 @@ sing-box tun inbound 支持 `platform` 对象（`TunPlatformOptions`），但**�
 | `disable-udp: true` | (无对应) | 忽略 |
 | `interface-name: eth0` | dial `bind_interface` | 移到 dial fields |
 | `routing-mark: 11451` | dial `routing_mark` | 移到 dial fields |
-| `filter: "(?i)港\|hk"` | (无对应) | **翻译时需过滤代理列表** |
-| `exclude-filter: "美\|日"` | (无对应) | **翻译时需过滤代理列表** |
-| `exclude-type: "Shadowsocks\|Http"` | (无对应) | **翻译时需过滤代理列表** |
-| `include-all: true` | (无对应) | **翻译时需展开所有代理** |
-| `include-all-proxies: true` | (无对应) | **翻译时需展开** |
-| `include-all-providers: true` | (无对应) | **翻译时需展开** |
+| `filter: "(?i)港\|hk"` | (无对应) | **当前忽略**：仅按 `proxies` 已知 tag 过滤 |
+| `exclude-filter: "美\|日"` | (无对应) | **当前忽略**：仅按 `proxies` 已知 tag 过滤 |
+| `exclude-type: "Shadowsocks\|Http"` | (无对应) | **当前忽略** |
+| `include-all: true` | (无对应) | **当前忽略** |
+| `include-all-proxies: true` | (无对应) | **当前忽略** |
+| `include-all-providers: true` | (无对应) | **当前忽略** |
 | `expected-status: 204` | (无对应) | 忽略 |
 | `hidden: true` | (无对应) | UI 层面，翻译时忽略 |
 | `icon: xxx` | (无对应) | UI 层面，翻译时忽略 |
@@ -1105,11 +1109,13 @@ sing-box tun inbound 支持 `platform` 对象（`TunPlatformOptions`），但**�
 
 ---
 
-## S. 补全：proxy-provider 展开策略
+## S. 参考设计：proxy-provider 展开策略（当前未实现）
 
-mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无此概念。翻译策略：
+> **注意**：以下策略是**参考设计**，当前翻译器**未实现 provider 下载/展开**。`proxy-providers` 会被整体忽略并输出 warning（`warnUnsupportedRouting`），`use`、`include-all*`、正则 `filter` 等字段不生效。
 
-### S.1 静态翻译时处理
+mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无此概念。若未来实现展开，翻译策略：
+
+### S.1 静态展开流程（若实现）
 
 ```
 1. 读取 mihomo config
@@ -1129,25 +1135,25 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 ### S.2 HTTP Provider 处理
 
 对于 `type: http` 的 provider：
-- 翻译时尝试下载 provider 内容
+- 若实现时：尝试下载 provider 内容
 - 如果下载失败：输出 warning，该 group 的 outbounds 留空
 - 下载成功后解析 YAML，提取代理列表
 
-### S.3 provider 相关字段映射
+### S.3 provider 相关字段参考映射
 
-| mihomo proxy-provider | sing-box | 翻译策略 |
+| mihomo proxy-provider | sing-box | 参考策略（若实现） |
 |---|---|---|
-| `type: http` | (无对应) | 翻译时下载并展开 |
-| `type: file` | (无对应) | 翻译时读取文件并展开 |
+| `type: http` | (无对应) | 下载并展开 |
+| `type: file` | (无对应) | 读取文件并展开 |
 | `type: inline` | (无对应) | 直接解析 payload |
 | `url` | (无对应) | 用于下载 |
 | `path` | (无对应) | 用于缓存 |
 | `interval` | (无对应) | 忽略 |
 | `proxy` | (无对应) | 下载时的代理 |
 | `health-check` | (无对应) | sing-box urltest 自行测试 |
-| `override` | 翻译时应用到每个代理 | 覆盖代理字段 |
-| `filter` / `exclude-filter` | 翻译时过滤 | 正则过滤代理名 |
-| `exclude-type` | 翻译时过滤 | 按类型排除 |
+| `override` | 应用到每个代理 | 覆盖代理字段 |
+| `filter` / `exclude-filter` | 过滤 | 正则过滤代理名 |
+| `exclude-type` | 过滤 | 按类型排除 |
 | `payload` | 直接解析 | inline 内容 |
 | `header` | 用于下载请求 | HTTP 头 |
 
@@ -1196,7 +1202,7 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 
 **mihomo 配置**：mihomo 的 `rules` 由用户手动指定
 
-**singcast 处理**：`autoroute.go` 的 `translateRules()` 基于检测到的国家代码自动生成路由规则，与用户定义的 rules 合并：
+**singcast 处理**：`autoroute.go` 的 `translateRules()` 基于检测到的国家代码自动生成路由规则，**替代用户定义的 rules**（用户的 `rules` 被整体忽略并输出 warning）：
 
 **CN 用户**（`generateCNRoutes`）：
 
@@ -1214,9 +1220,10 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 | 规则 | 出站 |
 |------|------|
 | 私有 IP | DIRECT |
-| geosite-{cc} | DIRECT |
 | geoip-{cc} | DIRECT |
 | .{cc} 域名后缀 | DIRECT |
+
+> **注意**：官方 `SagerNet/sing-geosite` 的 rule-set 按分类提供（如 `cn`、`geolocation-!cn`、品牌/服务），不提供按国家代码的 `geosite-{cc}` 文件（例如 `geosite-bd.srs` 不存在，见 issue #69）。因此非 CN 用户只使用官方完整覆盖的 `geoip-{cc}` 与国别顶级域名后缀做“本国直连”，不再拼接 `geosite-{cc}`。
 
 **代码位置**：`translator/autoroute.go`
 
@@ -1291,5 +1298,7 @@ route.default_domain_resolver = "def-0"
 | `type` | `"remote"` | 所有自动注册的 rule_set 都是远程类型 |
 
 `download_detour: "DIRECT"` 是关键安全措施——如果 rule_set 下载经过代理，而代理服务器本身需要 rule_set 规则才能正确路由，就会形成循环依赖。用户在 GFW 环境下应使用 `--rule-set-proxy` 进行 URL 级别代理（如 gh-proxy.org 镜像），而非让下载走代理 outbound。
+
+自动注册的 rule_set 全部来自 autoroute 生成清单（见 T.3）：官方 `SagerNet/sing-geoip`、`SagerNet/sing-geosite` 及 `overseas-ai` 第三方列表；`--rule-set-proxy` 只对 `raw.githubusercontent.com` 开头的 URL 做前缀拼接（`rule.go` 的 `ProxyURL`）。
 
 **代码位置**：`translator/rule.go`
