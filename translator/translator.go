@@ -19,6 +19,16 @@ func Translate(data []byte) (string, []string, error) {
 	return TranslateWithOptions(data, nil)
 }
 
+// Convert 统一处理订阅输入：base64 解码与 URI 列表组装后，再走格式识别与翻译。
+// JSON 直接透传，YAML 翻译为 sing-box JSON。
+func Convert(data []byte) (string, []string, error) {
+	normalized, err := NormalizeInput(data)
+	if err != nil {
+		return "", nil, err
+	}
+	return Translate(normalized)
+}
+
 // Meta holds post-translation metadata that callers (e.g. core.Service) may need.
 type Meta struct {
 	// StubTags maps outbound tag → original protocol for proxies that were

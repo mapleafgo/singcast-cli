@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 )
@@ -756,5 +757,33 @@ rules:
 	}
 	if count != 1 {
 		t.Errorf("expected exactly 1 ECH DNS rule entry for cloudflare-ech.com, got %d (should deduplicate)", count)
+	}
+}
+
+func TestConvertBase64URIList(t *testing.T) {
+	raw := "trojan://pass@example.com:443#tr\n"
+	encoded := base64.StdEncoding.EncodeToString([]byte(raw))
+	jsonStr, warnings, err := Convert([]byte(encoded))
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	out := parseJSON(t, jsonStr)
+	outbounds, _ := out["outbounds"].([]any)
+	if len(outbounds) == 0 {
+		t.Fatalf("expected outbounds, got: %s", jsonStr)
+	}
+}
+
+func TestConvertJSONPassthrough(t *testing.T) {
+	raw := `{"log":{"level":"info"},"outbounds":[{"type":"direct","tag":"direct"}]}`
+	jsonStr, _, err := Convert([]byte(raw))
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if jsonStr != raw {
+		t.Fatalf("expected passthrough, got: %s", jsonStr)
 	}
 }
