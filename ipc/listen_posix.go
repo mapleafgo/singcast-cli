@@ -35,7 +35,7 @@ func (s *Server) listenPlatform(ctx context.Context) error {
 	}
 	s.listener = listener
 
-	if err := s.grantSocketAccess(); err != nil {
+	if err := s.grantSocketAccess(ctx); err != nil {
 		_ = s.listener.Close()
 		os.Remove(s.ipcPath)
 		return err
@@ -85,7 +85,7 @@ func listenUnixPrivate(path string) (net.Listener, error) {
 // （移动端/开发场景下目录已归属最终使用者）。socket 权限是 0600，
 // 保留 singcast 属主，用 ACL 添加 GUI 用户的读写权限。
 // 因 systemd unit 启用 RestrictSUIDSGID（禁止所有 chown），必须用 setfacl。
-func (s *Server) grantSocketAccess() error {
+func (s *Server) grantSocketAccess(ctx context.Context) error {
 	if guiUID := os.Getenv("SINGCAST_GUI_UID"); guiUID != "" && guiUID != "0" {
 		// "0" 是包安装拿不到调用者 uid 时的 fallback，此时留待 GUI 首次提权补授权。
 		uid, err := strconv.Atoi(guiUID)
@@ -95,7 +95,7 @@ func (s *Server) grantSocketAccess() error {
 		// 用 setfacl 而非 chown：socket 保持 singcast 属主，
 		// 服务进程受 RestrictSUIDSGID 约束不能 chown（见 unit 注释）。
 		// setfacl 无需额外 capability，acl 已包含在 PKGBUILD depends 中。
-		cmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%d:rw", uid), s.ipcPath)
+		cmd := exec.CommandContext(ctx, "setfacl", "-m", fmt.Sprintf("u:%d:rw", uid), s.ipcPath)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("setfacl u:%d:rw %s: %w\n%s", uid, s.ipcPath, err, out)
 		}
@@ -112,7 +112,7 @@ func (s *Server) grantSocketAccess() error {
 		return nil
 	}
 	// 非 root 目录（移动端/开发场景）：同样用 setfacl 授权，避免 chown。
-	cmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%d:rw", int(stat.Uid)), s.ipcPath)
+	cmd := exec.CommandContext(ctx, "setfacl", "-m", fmt.Sprintf("u:%d:rw", int(stat.Uid)), s.ipcPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("setfacl u:%d:rw %s: %w\n%s", int(stat.Uid), s.ipcPath, err, out)
 	}
