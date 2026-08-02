@@ -27,6 +27,7 @@ const (
 	MethodGetVersion          = "core.getVersion"
 	MethodCheckConfig         = "core.checkConfig"
 	MethodSetLogLevel         = "core.setLogLevel"
+	MethodConvert             = "core.convert"
 )
 
 // JSON-RPC 2.0 notification names (Service → GUI).
@@ -146,6 +147,11 @@ type CheckConfigParams struct {
 // SetLogLevelParams holds parameters for core.setLogLevel.
 type SetLogLevelParams struct {
 	Level int32 `json:"level"`
+}
+
+// ConvertParams holds parameters for core.convert.
+type ConvertParams struct {
+	Content string `json:"content"`
 }
 
 // --- Notification payload types ---

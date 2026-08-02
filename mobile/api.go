@@ -180,6 +180,11 @@ func (s *Singcast) CheckConfig(content string) error {
 	return core.CheckConfig(context.Background(), content)
 }
 
+// Convert converts a Clash YAML / URI list / base64 subscription to sing-box JSON.
+func (s *Singcast) Convert(content string) (string, error) {
+	return core.Convert(content)
+}
+
 // --- Proxy Control ---
 
 // SelectProxy selects a proxy in the given group.

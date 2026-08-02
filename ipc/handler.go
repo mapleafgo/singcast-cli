@@ -73,6 +73,8 @@ func (h *Handler) Handle(req *JSONRPCRequest) JSONRPCResponse {
 		return h.handleRawJSON(id, core.VersionJSON())
 	case MethodCheckConfig:
 		return h.handleCheckConfig(req, id)
+	case MethodConvert:
+		return h.handleConvert(req, id)
 	case MethodSetLogLevel:
 		return h.handleSetLogLevel(req, id)
 	default:
@@ -162,6 +164,18 @@ func (h *Handler) handleCheckConfig(req *JSONRPCRequest, id int64) JSONRPCRespon
 		return newResult(id, map[string]string{"error": err.Error()})
 	}
 	return newResult(id, map[string]string{"error": ""})
+}
+
+func (h *Handler) handleConvert(req *JSONRPCRequest, id int64) JSONRPCResponse {
+	var params ConvertParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return newError(id, -32602, "invalid params: "+err.Error())
+	}
+	jsonStr, err := core.Convert(params.Content)
+	if err != nil {
+		return newError(id, 1, err.Error())
+	}
+	return newResult(id, map[string]string{"json": jsonStr})
 }
 
 func (h *Handler) handleSetLogLevel(req *JSONRPCRequest, id int64) JSONRPCResponse {
