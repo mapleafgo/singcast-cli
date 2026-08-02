@@ -90,6 +90,8 @@ func buildClashYAMLFromURIs(data []byte) ([]byte, error) {
 
 // buildRawConfigFromURIs 逐行解析代理 URI，直接构造 RawConfig。
 // 跳过 YAML 序列化往返，供 Convert 直接调用。
+// 默认值参考 mihomo DefaultRawConfig()，确保 URI 列表转换结果与
+// mihomo 导入行为一致（关键：IPv6=true 影响 DNS strategy 与 TUN inet6 地址）。
 func buildRawConfigFromURIs(data []byte) (*RawConfig, error) {
 	proxies := []map[string]any{}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -104,7 +106,13 @@ func buildRawConfigFromURIs(data []byte) (*RawConfig, error) {
 	if len(proxies) == 0 {
 		return nil, fmt.Errorf("no valid proxies found in subscription")
 	}
-	return &RawConfig{Proxy: proxies}, nil
+	return &RawConfig{
+		BindAddress: "*",
+		Mode:        "rule",
+		LogLevel:    "info",
+		IPv6:        true,
+		Proxy:       proxies,
+	}, nil
 }
 
 func parseProxyURI(uri string) map[string]any {
@@ -187,6 +195,10 @@ func parseVmess(body, name string) map[string]any {
 	var raw map[string]any
 	if json.Unmarshal([]byte(dec), &raw) != nil {
 		return nil
+	}
+	// vmess 名称取 JSON 的 ps 字段（mihomo 行为），fallback 到 URI # 片段
+	if ps := fmt.Sprint(raw["ps"]); ps != "" && ps != "<nil>" {
+		name = ps
 	}
 	return map[string]any{
 		"name":    name,
