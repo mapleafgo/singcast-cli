@@ -107,11 +107,37 @@ func buildRawConfigFromURIs(data []byte) (*RawConfig, error) {
 		return nil, fmt.Errorf("no valid proxies found in subscription")
 	}
 	return &RawConfig{
-		BindAddress: "*",
-		Mode:        "rule",
-		LogLevel:    "info",
-		IPv6:        true,
-		Proxy:       proxies,
+		BindAddress:     "*",
+		Mode:            "rule",
+		LogLevel:        "info",
+		IPv6:            true,
+		FindProcessMode: "strict",
+		DNS: RawDNS{
+			Enable:       true,
+			EnhancedMode: "redir-host",
+			FakeIPRange:  "198.18.0.1/16",
+			DefaultNameserver: []string{
+				"114.114.114.114",
+				"223.5.5.5",
+				"8.8.8.8",
+				"1.0.0.1",
+			},
+			NameServer: []string{
+				"https://doh.pub/dns-query",
+				"tls://223.5.5.5:853",
+			},
+			FallbackFilter: RawFallbackFilter{
+				GeoIP:     true,
+				GeoIPCode: "CN",
+			},
+			FakeIPFilter: []string{
+				"dns.msftnsci.com",
+				"www.msftnsci.com",
+				"www.msftconnecttest.com",
+			},
+			FakeIPFilterMode: "blacklist",
+		},
+		Proxy: proxies,
 	}, nil
 }
 
