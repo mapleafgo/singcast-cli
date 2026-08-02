@@ -129,7 +129,7 @@ func parseProxyURI(uri string) map[string]any {
 }
 
 func parseSS(body, name string) map[string]any {
-	decoded := ""
+	var decoded string
 	var serverPort []string
 	if strings.Contains(body, "@") {
 		atIdx := strings.Index(body, "@")
