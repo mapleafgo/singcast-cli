@@ -81,6 +81,16 @@ func isProxyURIList(data []byte) bool {
 }
 
 func buildClashYAMLFromURIs(data []byte) ([]byte, error) {
+	cfg, err := buildRawConfigFromURIs(data)
+	if err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(proxyListYAML{Proxies: cfg.Proxy})
+}
+
+// buildRawConfigFromURIs 逐行解析代理 URI，直接构造 RawConfig。
+// 跳过 YAML 序列化往返，供 Convert 直接调用。
+func buildRawConfigFromURIs(data []byte) (*RawConfig, error) {
 	proxies := []map[string]any{}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -94,7 +104,7 @@ func buildClashYAMLFromURIs(data []byte) ([]byte, error) {
 	if len(proxies) == 0 {
 		return nil, fmt.Errorf("no valid proxies found in subscription")
 	}
-	return yaml.Marshal(proxyListYAML{Proxies: proxies})
+	return &RawConfig{Proxy: proxies}, nil
 }
 
 func parseProxyURI(uri string) map[string]any {

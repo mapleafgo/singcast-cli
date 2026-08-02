@@ -22,11 +22,26 @@ func Translate(data []byte) (string, []string, error) {
 // Convert 统一处理订阅输入：base64 解码与 URI 列表组装后，再走格式识别与翻译。
 // JSON 直接透传，YAML 翻译为 sing-box JSON。
 func Convert(data []byte) (string, []string, error) {
-	normalized, err := NormalizeInput(data)
-	if err != nil {
-		return "", nil, err
+	// base64 解码
+	decoded, _ := decodeBase64Input(data)
+	if decoded != nil {
+		data = decoded
 	}
-	return Translate(normalized)
+	// JSON 直接透传
+	if DetectFormat(data) == FormatJSON {
+		return string(data), nil, nil
+	}
+	// URI 列表：直接构造 RawConfig，跳过 YAML 序列化往返
+	if isProxyURIList(data) {
+		cfg, err := buildRawConfigFromURIs(data)
+		if err != nil {
+			return "", nil, err
+		}
+		jsonStr, _, _, err := translateFromConfig(cfg, nil)
+		return jsonStr, nil, err
+	}
+	// Clash YAML：走标准翻译
+	return Translate(data)
 }
 
 // Meta holds post-translation metadata that callers (e.g. core.Service) may need.
@@ -61,6 +76,12 @@ func translateInternal(data []byte, opts *Options) (string, []string, Meta, erro
 		return "", nil, Meta{}, fmt.Errorf("parse YAML: %w", err)
 	}
 
+	return translateFromConfig(cfg, opts)
+}
+
+// translateFromConfig 运行翻译管线：RawConfig → sing-box JSON。
+// 供直接持有 RawConfig 的调用方（如 URI 列表转换）使用，跳过 YAML 序列化。
+func translateFromConfig(cfg *RawConfig, opts *Options) (string, []string, Meta, error) {
 	t := &translation{
 		config: &singboxConfig{
 			Inbounds:  []map[string]any{},
