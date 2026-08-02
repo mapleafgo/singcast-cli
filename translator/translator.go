@@ -110,6 +110,11 @@ func translateFromConfig(cfg *RawConfig, opts *Options) (string, []string, Meta,
 	// Step 4: Translate proxy groups → outbounds
 	groupOutbounds := translateGroups(cfg, t)
 
+	// Step 4b: 无 proxy-groups 的订阅（v2ray URI 列表）自动生成默认组
+	if len(t.groupTagOrder) == 0 {
+		groupOutbounds = generateDefaultGroups(t)
+	}
+
 	// Combine outbounds: proxies first, then groups
 	t.config.Outbounds = append(t.config.Outbounds, proxyOutbounds...)
 	t.config.Outbounds = append(t.config.Outbounds, groupOutbounds...)

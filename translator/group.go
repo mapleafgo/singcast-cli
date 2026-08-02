@@ -2,6 +2,7 @@ package translator
 
 import (
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/mapleafgo/singcast/translator/proxy"
@@ -301,4 +302,42 @@ func toInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// generateDefaultGroups 为没有 proxy-groups 的订阅（v2ray URI 列表）自动生成默认组。
+//
+// 仅一个节点时不生成 urltest 组，直接用 selector 包裹。
+// selector 组名为 "PROXY"，urltest 组名为 "Auto"，放在 selector 顶部。
+func generateDefaultGroups(t *translation) []map[string]any {
+	// 收集全部有效代理 tag（保持插入顺序）
+	allProxies := make([]string, 0, len(t.proxyTags))
+	for tag := range t.proxyTags {
+		allProxies = append(allProxies, tag)
+	}
+	if len(allProxies) == 0 {
+		return nil
+	}
+	// proxyTags 是 map，顺序不稳定；但 URI 列表节点数通常很少，排序保证输出确定性
+	slices.Sort(allProxies)
+
+	// urltest 可用代理：过滤掉无效健康检查节点（stub / 缺 endpoint）
+	healthCheckProxies := filterHealthCheckProxies(allProxies, t)
+
+	var groups []map[string]any
+	var selectorOutbounds []string
+
+	if len(healthCheckProxies) >= 2 {
+		auto := translateURLTestGroup("Auto", healthCheckProxies, map[string]any{}, t)
+		groups = append(groups, auto)
+		selectorOutbounds = append(selectorOutbounds, "Auto")
+		t.groupTags["Auto"] = true
+	}
+
+	selectorOutbounds = append(selectorOutbounds, allProxies...)
+	proxy := translateSelectGroup("PROXY", selectorOutbounds)
+	groups = append(groups, proxy)
+	t.groupTags["PROXY"] = true
+
+	t.groupTagOrder = []string{"PROXY"}
+	return groups
 }

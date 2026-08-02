@@ -111,10 +111,10 @@ rules:
 		}
 	}
 
-	// Check route.final — no proxy groups, so falls back to DIRECT
+	// Check route.final — no proxy groups, so auto-generated PROXY group is used
 	route := m["route"].(map[string]any)
-	if route["final"] != "DIRECT" {
-		t.Errorf("route.final = %v, want DIRECT (no proxy groups)", route["final"])
+	if route["final"] != "PROXY" {
+		t.Errorf("route.final = %v, want PROXY (auto-generated group)", route["final"])
 	}
 
 	// Check default rules (sniff, hijack-dns + auto-routing rules)
