@@ -60,19 +60,29 @@ func VersionJSON() string {
 // 通过 slog 输出（进而转为 EventLog），不影响返回值。
 func CheckConfig(ctx context.Context, content string) error {
 	data := []byte(content)
-	if translator.DetectFormat(data) == translator.FormatYAML {
-		result, warnings, err := translator.TranslateWithOptions(data, nil)
-		if err != nil {
-			return fmt.Errorf("translate config: %w", err)
-		}
-		for _, w := range warnings {
-			slog.Warn("check config", "warning", w)
-		}
-		data = []byte(result)
+	jsonStr, warnings, err := translator.Convert(data)
+	if err != nil {
+		return fmt.Errorf("convert config: %w", err)
 	}
+	for _, w := range warnings {
+		slog.Warn("check config", "warning", w)
+	}
+	data = []byte(jsonStr)
 	ctx = include.Context(ctx)
-	_, err := singjson.UnmarshalExtendedContext[option.Options](ctx, data)
+	_, err = singjson.UnmarshalExtendedContext[option.Options](ctx, data)
 	return err
+}
+
+// Convert 统一处理订阅输入并返回 sing-box JSON，不启动内核。
+func Convert(content string) (string, error) {
+	jsonStr, warnings, err := translator.Convert([]byte(content))
+	if err != nil {
+		return "", err
+	}
+	for _, w := range warnings {
+		slog.Warn("convert config", "warning", w)
+	}
+	return jsonStr, nil
 }
 
 type State int32
@@ -226,9 +236,13 @@ func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 }
 
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
-	// Translate config outside the lock — pure computation, no shared state.
+	// Normalize (base64 decode / URI list) then translate — outside the lock.
 	data := []byte(content)
-	jsonContent, stubTags, err := s.translateConfig(data, translator.DetectFormat(data), ruleSetProxy)
+	normalized, err := translator.NormalizeInput(data)
+	if err != nil {
+		return err
+	}
+	jsonContent, stubTags, err := s.translateConfig(normalized, translator.DetectFormat(normalized), ruleSetProxy)
 	if err != nil {
 		return err
 	}
