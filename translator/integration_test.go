@@ -46,7 +46,9 @@ proxy-groups:
     type: select
     proxies: [p1, DIRECT]
 `
-	out, _, err := Convert([]byte(yaml))
+	// 固定 Country=CN：该用例验证 CN 自动分流规则，不能依赖运行环境 IP 地理定位。
+	// CI runner 通常在非 CN 区域，DetectCountry 成功时会走 generateCountryRoutes（7 条规则）导致失败。
+	out, _, _, err := ConvertWithMeta([]byte(yaml), &Options{Country: "CN"})
 	if err != nil {
 		t.Fatal(err)
 	}
