@@ -11,7 +11,7 @@ import (
 func convertCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "convert",
-		Usage: "Translate a mihomo YAML config to sing-box JSON",
+		Usage: "Translate a Clash YAML / URI list / base64 subscription to sing-box JSON",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "config",

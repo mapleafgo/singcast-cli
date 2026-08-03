@@ -9,6 +9,7 @@ Singcast exposes three integration interfaces: **Desktop** (c-shared C ABI), **M
 | Service lifecycle | CoreInit / Start / Stop / Destroy | Init / Start / Stop / Destroy | core.startWithContent / core.stop |
 | State query | CoreQueryState | State | core.queryState |
 | Config management | CoreCheckConfig | CheckConfig | core.checkConfig |
+| Subscription convert | — | Convert | core.convert |
 | Proxy control | Select / Test / TestGroup / Mode | Select / Test / TestGroup / Mode | core.selectProxy / core.testDelay / core.testGroupDelay / core.setMode |
 | Query API | Query* functions | Query* methods | core.query* |
 | Connection tracking | Query / Close | Query / Close | core.queryConnections / core.closeConnection |
@@ -182,6 +183,7 @@ Built with `gomobile bind` from the `mobile/` package, generates AAR (Android) a
 | Method | Description |
 |--------|-------------|
 | `CheckConfig(content string) error` | Validate config |
+| `Convert(content string) (string, error)` | Convert Clash YAML / URI list / base64 subscription to sing-box JSON |
 
 ### Logging
 
@@ -367,6 +369,7 @@ On Windows, `singcast ipc` auto-detects whether it's running under the Windows S
 | Method | Params | Result | Description |
 |--------|--------|--------|-------------|
 | `core.checkConfig` | `{"content": string}` | `{"error": string}` | Validate config, empty error on success |
+| `core.convert` | `{"content": string}` | `{"json": string}` | Convert Clash YAML / URI list / base64 subscription to sing-box JSON |
 | `core.setLogLevel` | `{"level": int32}` | `null` | Set min log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace) |
 | `core.getVersion` | — | JSON string | Version info |
 
