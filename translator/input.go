@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -148,7 +149,7 @@ func parseProxyURI(uri string) map[string]any {
 
 func parseSS(body, name string) map[string]any {
 	var decoded string
-	var serverPort []string
+	var authority string
 	if strings.Contains(body, "@") {
 		atIdx := strings.Index(body, "@")
 		dec, err := base64Decode(body[:atIdx])
@@ -156,7 +157,7 @@ func parseSS(body, name string) map[string]any {
 			return nil
 		}
 		decoded = dec
-		serverPort = strings.Split(strings.Split(body[atIdx+1:], "?")[0], ":")
+		authority = strings.Split(body[atIdx+1:], "?")[0]
 	} else {
 		dec, err := base64Decode(strings.Split(body, "?")[0])
 		if err != nil {
@@ -167,10 +168,13 @@ func parseSS(body, name string) map[string]any {
 		if atIdx < 0 {
 			return nil
 		}
-		serverPort = strings.Split(decoded[atIdx+1:], ":")
+		authority = decoded[atIdx+1:]
 		decoded = decoded[:atIdx]
 	}
-	if len(serverPort) < 2 {
+	// IPv6 主机带方括号（如 [2001:db8::1]:8388），手工按冒号拆分会拆错，
+	// 统一交给标准库处理主机与端口。
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil {
 		return nil
 	}
 	colonIdx := strings.Index(decoded, ":")
@@ -180,8 +184,8 @@ func parseSS(body, name string) map[string]any {
 	return map[string]any{
 		"name":     name,
 		"type":     "ss",
-		"server":   serverPort[0],
-		"port":     strToInt(serverPort[1]),
+		"server":   host,
+		"port":     strToInt(port),
 		"cipher":   decoded[:colonIdx],
 		"password": decoded[colonIdx+1:],
 	}
