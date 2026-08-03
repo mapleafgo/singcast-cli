@@ -43,7 +43,7 @@ go test -tags 'with_clash_api,with_utls,with_quic,with_gvisor' -run TestTranslat
 
 ### 翻译器层 (`translator/`)
 
-翻译器将 Mihomo YAML → sing-box JSON，在 `TranslateWithOptions()` 中按 10 步流水线执行：
+翻译器将 Mihomo YAML → sing-box JSON，在 `Convert()`/`ConvertWithMeta()` 统一入口中按 10 步流水线执行：
 
 1. 格式检测 (`detect.go`) — 先尝试 JSON 解析，失败则为 YAML
 2. 全局配置 → inbounds (`general.go`) — mixed/HTTP/SOCKS/redir/tproxy 端口、认证、sniffer

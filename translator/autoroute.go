@@ -13,7 +13,7 @@ func translateRules(cfg *RawConfig, t *translation) {
 		proxyTag = "DIRECT"
 	}
 
-	cc := detectCC(t)
+	cc := t.country
 
 	// Private IP → DIRECT
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
@@ -114,7 +114,8 @@ func generateCountryRoutes(cc string, t *translation) {
 //
 // Strategy: domestic geosite/geoip → direct DNS, everything else → fallback/fakeip.
 // This differs from mihomo where users explicitly map patterns to servers.
-func generateDNSRules(cc string, t *translation) {
+func generateDNSRules(t *translation) {
+	cc := t.country
 	if t.config.DNS == nil || len(t.config.DNS.Servers) == 0 {
 		return
 	}

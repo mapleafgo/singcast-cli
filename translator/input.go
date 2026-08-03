@@ -7,25 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 )
-
-// proxyListYAML 只序列化 proxies 字段，避免把 RawConfig 的零值字段全部输出。
-type proxyListYAML struct {
-	Proxies []map[string]any `yaml:"proxies"`
-}
-
-// NormalizeInput 统一订阅输入：base64 解码；URI 列表组装为 mihomo YAML。
-func NormalizeInput(data []byte) ([]byte, error) {
-	if decoded, ok := decodeBase64Input(data); ok {
-		data = decoded
-	}
-	if isProxyURIList(data) {
-		return buildClashYAMLFromURIs(data)
-	}
-	return data, nil
-}
 
 func decodeBase64Input(data []byte) ([]byte, bool) {
 	trimmed := strings.TrimSpace(string(data))
@@ -78,14 +60,6 @@ func isProxyURIList(data []byte) bool {
 		}
 	}
 	return true
-}
-
-func buildClashYAMLFromURIs(data []byte) ([]byte, error) {
-	cfg, err := buildRawConfigFromURIs(data)
-	if err != nil {
-		return nil, err
-	}
-	return yaml.Marshal(proxyListYAML{Proxies: cfg.Proxy})
 }
 
 // buildRawConfigFromURIs 逐行解析代理 URI，直接构造 RawConfig。
@@ -222,16 +196,22 @@ func parseVmess(body, name string) map[string]any {
 	if json.Unmarshal([]byte(dec), &raw) != nil {
 		return nil
 	}
+	// 必填字段缺失时跳过该节点，避免生成 server="<nil>" 的坏配置
+	server, _ := raw["add"].(string)
+	id, _ := raw["id"].(string)
+	if server == "" || id == "" {
+		return nil
+	}
 	// vmess 名称取 JSON 的 ps 字段（mihomo 行为），fallback 到 URI # 片段
-	if ps := fmt.Sprint(raw["ps"]); ps != "" && ps != "<nil>" {
+	if ps, _ := raw["ps"].(string); ps != "" {
 		name = ps
 	}
 	return map[string]any{
 		"name":    name,
 		"type":    "vmess",
-		"server":  fmt.Sprint(raw["add"]),
+		"server":  server,
 		"port":    strToInt(raw["port"]),
-		"uuid":    fmt.Sprint(raw["id"]),
+		"uuid":    id,
 		"alterId": strToInt(raw["aid"]),
 		"cipher":  strOr(raw["scy"], "auto"),
 	}

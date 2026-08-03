@@ -63,9 +63,7 @@ func TestConnectivity_Google(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
-		RuleSetURLPrefix: "https://gh-proxy.org",
-	})
+	jsonContent, warns, err := translator.Convert(data)
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -197,9 +195,7 @@ func TestConnectivity_SOCKS5(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
-		RuleSetURLPrefix: "https://gh-proxy.org",
-	})
+	jsonContent, warns, err := translator.Convert(data)
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -291,9 +287,7 @@ func TestConnectivity_HTTPS(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
-		RuleSetURLPrefix: "https://gh-proxy.org",
-	})
+	jsonContent, warns, err := translator.Convert(data)
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}
@@ -494,9 +488,7 @@ func TestConnectivity_TUN(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 
-	jsonContent, warns, err := translator.TranslateWithOptions(data, &translator.Options{
-		RuleSetURLPrefix: "https://gh-proxy.org",
-	})
+	jsonContent, warns, err := translator.Convert(data)
 	if err != nil {
 		t.Fatalf("translate config: %v", err)
 	}

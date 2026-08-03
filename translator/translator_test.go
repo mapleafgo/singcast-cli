@@ -19,9 +19,9 @@ func parseJSON(t *testing.T, s string) map[string]any {
 // mustTranslate translates YAML and parses the result JSON. Fatals on error.
 func mustTranslate(t *testing.T, yaml string) (map[string]any, []string) {
 	t.Helper()
-	jsonStr, warnings, err := Translate([]byte(yaml))
+	jsonStr, warnings, err := Convert([]byte(yaml))
 	if err != nil {
-		t.Fatalf("Translate: %v", err)
+		t.Fatalf("Convert: %v", err)
 	}
 	return parseJSON(t, jsonStr), warnings
 }
@@ -29,7 +29,7 @@ func mustTranslate(t *testing.T, yaml string) (map[string]any, []string) {
 // translateMustFail translates and expects an error.
 func translateMustFail(t *testing.T, yaml string) error {
 	t.Helper()
-	_, _, err := Translate([]byte(yaml))
+	_, _, err := Convert([]byte(yaml))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -64,7 +64,7 @@ func TestDetectFormat(t *testing.T) {
 
 func TestTranslateJSONPassthrough(t *testing.T) {
 	input := `{"log":{"level":"info"},"outbounds":[{"type":"direct","tag":"DIRECT"}]}`
-	out, warns, err := Translate([]byte(input))
+	out, warns, err := Convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ proxies:
 rules:
   - MATCH,DIRECT
 `
-	_, warns, err := Translate([]byte(yaml))
+	_, warns, err := Convert([]byte(yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

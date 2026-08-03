@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	cachedCountry     string
-	cachedCountryOnce sync.Once
+	cachedCountry         string
+	cachedCountryOnce     sync.Once
+	cachedCountryFallback bool
 )
 
 // DetectCountry returns the user's two-letter country code (ISO 3166-1 alpha-2).
@@ -27,9 +28,20 @@ func DetectCountry(override string) string {
 			cachedCountry = strings.ToUpper(cc)
 		} else {
 			cachedCountry = "CN"
+			cachedCountryFallback = true
 		}
 	})
 	return cachedCountry
+}
+
+// DetectCountryWithFallback 返回国家代码，并告知是否因 IP 检测失败回退到 CN。
+// 与 DetectCountry 共用同一缓存；override 合法时直接返回覆盖值。
+func DetectCountryWithFallback(override string) (string, bool) {
+	if cc := strings.TrimSpace(override); len(cc) == 2 {
+		return strings.ToUpper(cc), false
+	}
+	DetectCountry("")
+	return cachedCountry, cachedCountryFallback
 }
 
 // detectCountryByIP races multiple geolocation services and returns the first successful result.

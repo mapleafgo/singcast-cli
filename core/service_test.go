@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mapleafgo/singcast/translator"
 )
 
 func mustMkdirAll(t *testing.T, dir string) {
@@ -86,54 +88,28 @@ func TestService_FlushDNS(t *testing.T) {
 	svc.FlushSystemDNS()
 }
 
-func TestApplyRuleSetProxy(t *testing.T) {
-	input := `{
-		"route": {
-			"rule_set": [
-				{"tag": "geoip-cn", "type": "remote", "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"},
-				{"tag": "geosite-cn", "type": "remote", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"},
-				{"tag": "custom", "type": "remote", "url": "https://example.com/rules.srs"}
-			]
-		}
-	}`
-
-	result, err := applyRuleSetProxy([]byte(input), "https://gh-proxy.org")
+func TestApplyRuleSetProxy_GitHubOnly(t *testing.T) {
+	input := `{"route":{"rule_set":[
+		{"tag":"gh","url":"https://raw.githubusercontent.com/a/b/c.srs"},
+		{"tag":"other","url":"https://example.com/r.srs"}
+	]}}`
+	result, err := translator.ApplyRuleSetProxy(input, "https://mirror.example.com")
 	require.NoError(t, err)
-
 	var cfg map[string]any
 	require.NoError(t, json.Unmarshal([]byte(result), &cfg))
-
-	ruleSets := cfg["route"].(map[string]any)["rule_set"].([]any)
-
-	// raw.githubusercontent.com URLs should be prefixed
-	assert.Equal(t, "https://gh-proxy.org/https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
-		ruleSets[0].(map[string]any)["url"])
-	assert.Equal(t, "https://gh-proxy.org/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
-		ruleSets[1].(map[string]any)["url"])
-
-	// Non-GitHub URLs should remain unchanged
-	assert.Equal(t, "https://example.com/rules.srs",
-		ruleSets[2].(map[string]any)["url"])
+	rs := cfg["route"].(map[string]any)["rule_set"].([]any)
+	assert.Equal(t, "https://mirror.example.com/https://raw.githubusercontent.com/a/b/c.srs",
+		rs[0].(map[string]any)["url"])
+	assert.Equal(t, "https://example.com/r.srs",
+		rs[1].(map[string]any)["url"])
 }
 
 func TestApplyRuleSetProxy_EmptyProxy(t *testing.T) {
-	input := `{"route": {"rule_set": [{"tag": "t", "url": "https://raw.githubusercontent.com/test.srs"}]}}`
-
-	// Empty proxy should return original
-	result, err := applyRuleSetProxy([]byte(input), "")
+	input := `{"route":{"rule_set":[{"tag":"t","url":"https://raw.githubusercontent.com/x.srs"}]}}`
+	result, err := translator.ApplyRuleSetProxy(input, "")
 	require.NoError(t, err)
-	// translateConfig skips applyRuleSetProxy when proxy is empty,
-	// but if called directly, it still applies since caller checks
-	_ = result
+	assert.Equal(t, input, result)
 }
-
-func TestApplyRuleSetProxy_NoRoute(t *testing.T) {
-	input := `{"log": {"level": "info"}}`
-	result, err := applyRuleSetProxy([]byte(input), "https://gh-proxy.org")
-	require.NoError(t, err)
-	assert.JSONEq(t, input, result)
-}
-
 func TestService_QueryProxies_NotRunning(t *testing.T) {
 	svc := NewService()
 	defer svc.Destroy()

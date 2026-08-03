@@ -674,15 +674,6 @@ func findFakeIPTag(t *translation) string {
 	return ""
 }
 
-func detectCC(t *translation) string {
-	if t.opts != nil && t.opts.Country != "" {
-		if cc := strings.ToLower(strings.TrimSpace(t.opts.Country)); len(cc) == 2 {
-			return cc
-		}
-	}
-	return strings.ToLower(DetectCountry(""))
-}
-
 // defaultFakeIPRange 是 fake-ip 地址池的默认段，与 mihomo/sing-box 惯例一致。
 const defaultFakeIPRange = "198.18.0.0/15"
 

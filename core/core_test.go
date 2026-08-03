@@ -66,9 +66,9 @@ rules:
 // mustTranslateYAML translates YAML to sing-box JSON, fatals on error.
 func mustTranslateYAML(t *testing.T, yaml string) string {
 	t.Helper()
-	out, _, err := translator.Translate([]byte(yaml))
+	out, _, err := translator.Convert([]byte(yaml))
 	if err != nil {
-		t.Fatalf("Translate: %v", err)
+		t.Fatalf("Convert: %v", err)
 	}
 	return out
 }

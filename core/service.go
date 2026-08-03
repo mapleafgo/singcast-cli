@@ -230,19 +230,24 @@ func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 			"fail_threshold", hc.failThreshold, "cooldown", hc.cooldown.String())
 	}
 
+	// 提前触发国家检测：Init 阶段代理尚未启动，IP 地理位置服务拿到的是真实出口 IP。
+	// sync.Once 缓存后，后续 StartWithContent 翻译时即使旧代理还在运行也读缓存值。
+	cc, fallback := translator.DetectCountryWithFallback("")
+	if fallback {
+		slog.Warn("country detection failed, using CN fallback", "country", cc)
+	} else {
+		slog.Debug("country detected", "country", cc)
+	}
+
 	s.emitState(StateInitialized)
 	slog.Info("service init done")
 	return nil
 }
 
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
-	// Normalize (base64 decode / URI list) then translate — outside the lock.
 	data := []byte(content)
-	normalized, err := translator.NormalizeInput(data)
-	if err != nil {
-		return err
-	}
-	jsonContent, stubTags, err := s.translateConfig(normalized, translator.DetectFormat(normalized), ruleSetProxy)
+	// 统一走 ConvertWithMeta：base64 解码、URI 列表、YAML 翻译、JSON 透传
+	jsonContent, stubTags, err := s.translateConfig(data, ruleSetProxy)
 	if err != nil {
 		return err
 	}
@@ -273,56 +278,26 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 	return nil
 }
 
-func (s *Service) translateConfig(data []byte, format translator.Format, ruleSetProxy string) (string, map[string]string, error) {
-	if format == translator.FormatYAML {
-		opts := &translator.Options{RuleSetURLPrefix: ruleSetProxy}
-		result, warnings, meta, err := translator.TranslateWithMeta(data, opts)
-		if err != nil {
-			return "", nil, fmt.Errorf("translate config: %w", err)
-		}
-		// warnings 是非致命但用户需要知道的降级项（跳过的节点、未翻译的规则）。
-		// 走 slog 而非丢弃：coreLogHandler 会转成 EventLog 送到前端日志面板。
-		for _, w := range warnings {
-			slog.Warn("translate config", "warning", w)
-		}
-		return result, meta.StubTags, nil
-	}
-	if ruleSetProxy != "" {
-		applied, err := applyRuleSetProxy(data, ruleSetProxy)
-		return applied, nil, err
-	}
-	return string(data), nil, nil
-}
-
-// applyRuleSetProxy prepends the proxy prefix to raw.githubusercontent.com URLs
-// in sing-box JSON route.rule_set[].url, using translator.ProxyURL.
-func applyRuleSetProxy(data []byte, proxy string) (string, error) {
-	var root map[string]any
-	if err := json.Unmarshal(data, &root); err != nil {
-		return "", fmt.Errorf("parse json: %w", err)
-	}
-	route, _ := root["route"].(map[string]any)
-	if route == nil {
-		return string(data), nil
-	}
-	ruleSets, _ := route["rule_set"].([]any)
-	if ruleSets == nil {
-		return string(data), nil
-	}
-	for _, rs := range ruleSets {
-		def, _ := rs.(map[string]any)
-		if def == nil {
-			continue
-		}
-		if url, _ := def["url"].(string); url != "" {
-			def["url"] = translator.ProxyURL(url, proxy)
-		}
-	}
-	out, err := json.Marshal(root)
+func (s *Service) translateConfig(data []byte, ruleSetProxy string) (string, map[string]string, error) {
+	start := time.Now()
+	result, warnings, meta, err := translator.ConvertWithMeta(data, nil)
 	if err != nil {
-		return "", fmt.Errorf("marshal json: %w", err)
+		return "", nil, fmt.Errorf("translate config: %w", err)
 	}
-	return string(out), nil
+	slog.Debug("translate config", "elapsed", time.Since(start), "warnings", len(warnings))
+	// warnings 是非致命但用户需要知道的降级项（跳过的节点、未翻译的规则）。
+	// 走 slog 而非丢弃：coreLogHandler 会转成 EventLog 送到前端日志面板。
+	for _, w := range warnings {
+		slog.Warn("translate config", "warning", w)
+	}
+	// rule_set URL 前缀改写是启动时参数，在翻译完成后做后处理
+	if ruleSetProxy != "" {
+		result, err = translator.ApplyRuleSetProxy(result, ruleSetProxy)
+		if err != nil {
+			return "", nil, fmt.Errorf("apply rule-set proxy: %w", err)
+		}
+	}
+	return result, meta.StubTags, nil
 }
 
 func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) error {

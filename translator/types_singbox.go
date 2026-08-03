@@ -56,6 +56,10 @@ type translation struct {
 	// translateDNS 仍输出最小 DNS 模块（仅 bootstrap server）做兜底，
 	// generateDNSRules 据此跳过 DNS 路由规则生成。
 	dnsEnabled bool
+	// country 是翻译管线启动时一次性确定的国家代码（小写 ISO 3166-1 alpha-2）。
+	// 优先取 Options.Country，否则走 IP 地理位置自动检测（Init 阶段已缓存）。
+	// 后续所有路由/DNS 规则生成都读此字段。
+	country string
 }
 
 func (t *translation) warn(msg string) {

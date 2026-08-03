@@ -127,17 +127,20 @@ func TestGenerateGeoRoute_RuleSetURLs(t *testing.T) {
 	}
 }
 
-func TestGenerateGeoRoute_RuleSetURLPrefix(t *testing.T) {
+func TestGenerateGeoRoute_RawURL(t *testing.T) {
 	tr := testTranslation(t)
 	tr.groupTagOrder = []string{"PROXY"}
-	tr.opts = &Options{RuleSetURLPrefix: "https://gh-proxy.org"}
 
 	generateCNRoutes("PROXY", tr)
 
+	// translator 只做纯翻译，rule_set URL 保持原始值，前缀改写在 core 层做
 	for tag, def := range tr.ruleSetDefs {
 		url, _ := def["url"].(string)
-		if !strings.HasPrefix(url, "https://gh-proxy.org/") {
-			t.Errorf("rule_set %q URL not proxied: %s", tag, url)
+		if strings.Contains(url, "gh-proxy") {
+			t.Errorf("rule_set %q URL should be raw, got: %s", tag, url)
+		}
+		if !strings.HasPrefix(url, "https://raw.githubusercontent.com") {
+			t.Errorf("rule_set %q URL unexpected: %s", tag, url)
 		}
 	}
 }

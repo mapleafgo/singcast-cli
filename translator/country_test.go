@@ -22,6 +22,13 @@ func TestDetectCountry_Override(t *testing.T) {
 	}
 }
 
+func TestDetectCountryWithFallback_Override(t *testing.T) {
+	cc, fallback := DetectCountryWithFallback("  CN  ")
+	if cc != "CN" || fallback {
+		t.Errorf("DetectCountryWithFallback(\"  CN  \") = %q, fallback=%v, want CN, false", cc, fallback)
+	}
+}
+
 func TestDetectCountry_FallbackOnEmpty(t *testing.T) {
 	got := DetectCountry("")
 	if len(got) != 2 {

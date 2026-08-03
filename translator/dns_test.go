@@ -481,7 +481,8 @@ func TestTranslateDNSFakeIPWhitelist(t *testing.T) {
 	}
 
 	// 走完排序后兜底规则必须落在最后一条
-	generateDNSRules("cn", tr)
+	tr.country = "cn"
+	generateDNSRules(tr)
 	final := tr.config.DNS.Rules
 	if got := final[len(final)-1]["server"]; got != "ns-0" {
 		t.Errorf("catch-all not last after ordering: %v", got)
@@ -702,7 +703,8 @@ func TestTranslateDNSDisabledNoDNSRules(t *testing.T) {
 	translateDNS(cfg, tr)
 
 	// generateDNSRules 在 translateDNS 之后调用，模拟 translateInternal 的流程
-	generateDNSRules("cn", tr)
+	tr.country = "cn"
+	generateDNSRules(tr)
 
 	if tr.config.DNS == nil {
 		t.Fatal("DNS config should not be nil (bootstrap resolver required)")

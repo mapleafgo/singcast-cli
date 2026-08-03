@@ -1,0 +1,64 @@
+mixed-port: 7890
+mode: rule
+log-level: info
+ipv6: true
+proxies:
+  - name: p01
+    type: socks5
+    server: 10.0.0.1
+    port: 10001
+  - name: p02
+    type: socks5
+    server: 10.0.0.2
+    port: 10002
+  - name: p03
+    type: socks5
+    server: 10.0.0.3
+    port: 10003
+  - name: p04
+    type: socks5
+    server: 10.0.0.4
+    port: 10004
+  - name: p05
+    type: socks5
+    server: 10.0.0.5
+    port: 10005
+  - name: p06
+    type: socks5
+    server: 10.0.0.6
+    port: 10006
+  - name: p07
+    type: socks5
+    server: 10.0.0.7
+    port: 10007
+  - name: p08
+    type: socks5
+    server: 10.0.0.8
+    port: 10008
+  - name: p09
+    type: socks5
+    server: 10.0.0.9
+    port: 10009
+  - name: p10
+    type: socks5
+    server: 10.0.0.10
+    port: 10010
+  - name: p11
+    type: socks5
+    server: 10.0.0.11
+    port: 10011
+  - name: p12
+    type: socks5
+    server: 10.0.0.12
+    port: 10012
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [p01, p02, p03, p04, p05, p06, p07, p08, p09, p10, p11, p12, DIRECT]
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 223.5.5.5
+    - https://doh.pub/dns-query

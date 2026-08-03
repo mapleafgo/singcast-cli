@@ -3,45 +3,23 @@ package translator
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
 
 // Options controls translation behavior.
 type Options struct {
-	Country          string // override auto-detected country code (e.g. "US", "JP")
-	RuleSetURLPrefix string // URL prefix for rule_set downloads (e.g. "https://gh-proxy.org"), empty = direct
+	// Country 覆盖自动检测的国家代码（ISO 3166-1 alpha-2），仅测试使用。
+	// 生产调用方传 nil 即可，翻译器自动走 IP 地理位置检测。
+	Country string
 }
 
-// Translate translates a mihomo YAML config to a sing-box JSON config string.
-// Returns the JSON string, a list of warnings, and any fatal error.
-func Translate(data []byte) (string, []string, error) {
-	return TranslateWithOptions(data, nil)
-}
-
-// Convert 统一处理订阅输入：base64 解码与 URI 列表组装后，再走格式识别与翻译。
-// JSON 直接透传，YAML 翻译为 sing-box JSON。
+// Convert 统一处理订阅输入：base64 解码 → 格式识别 → JSON 透传 / URI 列表直构造 / Clash YAML 翻译。
+// 纯转换，不做 rule_set URL 前缀改写（由调用方通过 ApplyRuleSetProxy 后处理）。
 func Convert(data []byte) (string, []string, error) {
-	// base64 解码
-	decoded, _ := decodeBase64Input(data)
-	if decoded != nil {
-		data = decoded
-	}
-	// JSON 直接透传
-	if DetectFormat(data) == FormatJSON {
-		return string(data), nil, nil
-	}
-	// URI 列表：直接构造 RawConfig，跳过 YAML 序列化往返
-	if isProxyURIList(data) {
-		cfg, err := buildRawConfigFromURIs(data)
-		if err != nil {
-			return "", nil, err
-		}
-		jsonStr, _, _, err := translateFromConfig(cfg, nil)
-		return jsonStr, nil, err
-	}
-	// Clash YAML：走标准翻译
-	return Translate(data)
+	jsonStr, warnings, _, err := ConvertWithMeta(data, nil)
+	return jsonStr, warnings, err
 }
 
 // Meta holds post-translation metadata that callers (e.g. core.Service) may need.
@@ -51,31 +29,30 @@ type Meta struct {
 	StubTags map[string]string
 }
 
-// TranslateWithMeta is like TranslateWithOptions but also returns translation metadata.
-func TranslateWithMeta(data []byte, opts *Options) (string, []string, Meta, error) {
-	jsonStr, warnings, meta, err := translateInternal(data, opts)
-	return jsonStr, warnings, meta, err
-}
-
-// TranslateWithOptions translates with additional configuration options.
-func TranslateWithOptions(data []byte, opts *Options) (string, []string, error) {
-	jsonStr, warnings, _, err := translateInternal(data, opts)
-	return jsonStr, warnings, err
-}
-
-func translateInternal(data []byte, opts *Options) (string, []string, Meta, error) {
-	// Detect format
+// ConvertWithMeta 是 Convert 的完整版，返回翻译元数据和 warnings。
+// 统一入口：base64 解码 → 格式识别 → JSON 透传 / URI 列表直构造 / Clash YAML 翻译。
+func ConvertWithMeta(data []byte, opts *Options) (string, []string, Meta, error) {
+	decoded, _ := decodeBase64Input(data)
+	if decoded != nil {
+		data = decoded
+	}
+	// JSON 直接透传
 	if DetectFormat(data) == FormatJSON {
-		// Already sing-box JSON, pass through
 		return string(data), nil, Meta{}, nil
 	}
-
-	// Parse YAML
+	// URI 列表：直接构造 RawConfig，跳过 YAML 序列化往返
+	if isProxyURIList(data) {
+		cfg, err := buildRawConfigFromURIs(data)
+		if err != nil {
+			return "", nil, Meta{}, err
+		}
+		return translateFromConfig(cfg, opts)
+	}
+	// Clash YAML：走标准翻译
 	cfg := &RawConfig{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return "", nil, Meta{}, fmt.Errorf("parse YAML: %w", err)
 	}
-
 	return translateFromConfig(cfg, opts)
 }
 
@@ -95,6 +72,18 @@ func translateFromConfig(cfg *RawConfig, opts *Options) (string, []string, Meta,
 		ruleSetDefs:                 make(map[string]map[string]any),
 		opts:                        opts,
 	}
+
+	// 提前一次性确定国家代码，后续路由/DNS 规则生成统一读 t.country。
+	// Options.Country 仅测试覆盖用，且必须是两位 ISO 代码；
+	// 非法值回退自动检测，避免生成 geoip-xxx/domain_suffix ".xxx" 的坏规则。
+	cc := ""
+	if opts != nil {
+		cc = strings.ToLower(strings.TrimSpace(opts.Country))
+	}
+	if len(cc) != 2 {
+		cc = strings.ToLower(DetectCountry(""))
+	}
+	t.country = cc
 
 	// Step 1-2: Global config → inbounds + log
 	translateGeneral(cfg, t.config)
@@ -126,7 +115,7 @@ func translateFromConfig(cfg *RawConfig, opts *Options) (string, []string, Meta,
 	translateDNS(cfg, t)
 
 	// Step 6b: Generate DNS rules based on detected country (needs DNS servers from Step 6)
-	generateDNSRules(detectCC(t), t)
+	generateDNSRules(t)
 
 	// Step 6c: Add action:"route" to all DNS rules with a server field
 	addDNSRouteAction(t)

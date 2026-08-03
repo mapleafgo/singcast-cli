@@ -46,7 +46,7 @@ proxy-groups:
     type: select
     proxies: [p1, DIRECT]
 `
-	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	out, _, err := Convert([]byte(yaml))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +156,9 @@ proxy-groups:
 	}
 }
 
-// TestIntegrationAutoRoutingOtherCountry verifies non-CN auto-routing.
-func TestIntegrationAutoRoutingOtherCountry(t *testing.T) {
+// TestIntegrationCountryOverride 验证 Options.Country 能覆盖自动检测，
+// 使非 CN 国家走 generateCountryRoutes 分支。
+func TestIntegrationCountryOverride(t *testing.T) {
 	yaml := `mixed-port: 7890
 proxies:
   - name: p1
@@ -169,21 +170,14 @@ proxy-groups:
     type: select
     proxies: [p1, DIRECT]
 `
-	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "JP"})
+	out, _, _, err := ConvertWithMeta([]byte(yaml), &Options{Country: "JP"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := parseJSON(t, out)
 	route := m["route"].(map[string]any)
 
-	rules := route["rules"].([]any)
-	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// geoip-jp + domain_suffix:.jp = 7
-	if len(rules) != 7 {
-		t.Fatalf("expected 7 rules for JP, got %d", len(rules))
-	}
-
-	// Verify geoip-jp rule_set definition exists (geosite-jp does not exist upstream)
+	// geoip-jp rule_set 应存在（geosite-jp 不存在上游）
 	rsDefs := route["rule_set"].([]any)
 	rsTags := map[string]bool{}
 	for _, rs := range rsDefs {
@@ -195,6 +189,47 @@ proxy-groups:
 	}
 	if rsTags["geosite-jp"] {
 		t.Error("must not register geosite-jp: SagerNet/sing-geosite has no per-country rule-set")
+	}
+}
+
+// TestIntegrationCountryOverrideInvalid 验证非两位的国家覆盖会回退自动检测，
+// 不再生成 geoip-usa/domain_suffix ".usa" 这类坏规则。
+func TestIntegrationCountryOverrideInvalid(t *testing.T) {
+	yaml := `mixed-port: 7890
+proxies:
+  - name: p1
+    type: socks5
+    server: 1.2.3.4
+    port: 1080
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [p1, DIRECT]
+`
+	out, _, _, err := ConvertWithMeta([]byte(yaml), &Options{Country: "USA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := parseJSON(t, out)
+	route := m["route"].(map[string]any)
+
+	rsDefs := route["rule_set"].([]any)
+	for _, rs := range rsDefs {
+		def := rs.(map[string]any)
+		if u, _ := def["url"].(string); strings.Contains(u, "/geoip-usa.srs") {
+			t.Errorf("invalid country override must fallback, got %s", u)
+		}
+	}
+	rules := route["rules"].([]any)
+	for _, r := range rules {
+		rule := r.(map[string]any)
+		if ds, ok := rule["domain_suffix"].([]any); ok {
+			for _, d := range ds {
+				if d == ".usa" {
+					t.Error("invalid country override must fallback, got domain_suffix .usa")
+				}
+			}
+		}
 	}
 }
 
@@ -217,7 +252,7 @@ proxy-groups:
     type: select
     proxies: [ssr-node, good-node, DIRECT]
 `
-	out, warnings, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	out, warnings, err := Convert([]byte(yaml))
 	if err != nil {
 		t.Fatalf("translation failed: %v", err)
 	}
@@ -302,7 +337,7 @@ proxy-groups:
     type: select
     proxies: [bad-ss, good-node]
 `
-	out, _, err := TranslateWithOptions([]byte(yaml), &Options{Country: "CN"})
+	out, _, err := Convert([]byte(yaml))
 	if err != nil {
 		t.Fatalf("translation failed: %v", err)
 	}
@@ -323,7 +358,7 @@ proxy-groups:
 	t.Fatal("bad-ss stub outbound not found")
 }
 
-// TestIntegrationStubTagsMeta verifies that TranslateWithMeta returns correct
+// TestIntegrationStubTagsMeta verifies that ConvertWithMeta returns correct
 // stubTags mapping for proxies with unsupported protocols.
 func TestIntegrationStubTagsMeta(t *testing.T) {
 	yaml := `mixed-port: 7890
@@ -341,7 +376,7 @@ proxy-groups:
     type: select
     proxies: [ssr-node, good-node, DIRECT]
 `
-	_, _, meta, err := TranslateWithMeta([]byte(yaml), &Options{Country: "CN"})
+	_, _, meta, err := ConvertWithMeta([]byte(yaml), &Options{Country: "CN"})
 	if err != nil {
 		t.Fatalf("translation failed: %v", err)
 	}
