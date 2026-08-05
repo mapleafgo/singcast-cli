@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -297,7 +298,43 @@ func (s *Service) translateConfig(data []byte, ruleSetProxy string) (string, map
 			return "", nil, fmt.Errorf("apply rule-set proxy: %w", err)
 		}
 	}
+	if len(meta.StubTags) == 0 {
+		// JSON 透传路径不会重新计算 stubTags；从转换产物里恢复内嵌标记，
+		// 这样保存后的配置再次启动时还能继续报告 unsupported。
+		meta.StubTags = extractStubTagsFromJSON(result)
+	}
 	return result, meta.StubTags, nil
+}
+
+type rawOutbound struct {
+	Type       string `json:"type"`
+	Tag        string `json:"tag"`
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+	Username   string `json:"username"`
+}
+
+// extractStubTagsFromJSON 扫描转换后的 JSON，找回 socks stub 中内嵌的
+// "unsupported:<original>" 标记。除 JSON 透传路径外，也兼容用户手动改过
+// 订阅但保留 stub 的已保存配置。
+func extractStubTagsFromJSON(content string) map[string]string {
+	var cfg struct {
+		Outbounds []rawOutbound `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(content), &cfg); err != nil {
+		return nil
+	}
+	tags := make(map[string]string)
+	for _, ob := range cfg.Outbounds {
+		if ob.Type != "socks" || ob.Server != "127.0.0.1" || ob.ServerPort != 1 {
+			continue
+		}
+		if !strings.HasPrefix(ob.Username, "unsupported:") {
+			continue
+		}
+		tags[ob.Tag] = strings.TrimPrefix(ob.Username, "unsupported:")
+	}
+	return tags
 }
 
 func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) error {

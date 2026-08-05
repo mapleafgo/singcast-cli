@@ -118,6 +118,37 @@ func TestService_QueryProxies_NotRunning(t *testing.T) {
 	assert.JSONEq(t, "[]", result)
 }
 
+// TestTranslateConfigRestoresStubTagsFromJSON verifies that stub metadata
+// embedded in a converted JSON config is recovered through the real
+// translateConfig path, so restarting from the saved profile keeps the
+// "unsupported" marker instead of degrading to a plain socks node.
+func TestTranslateConfigRestoresStubTagsFromJSON(t *testing.T) {
+	yaml := `mixed-port: 1080
+proxies:
+  - name: ssr-node
+    type: ssr
+    server: 1.2.3.4
+    port: 1080
+  - name: good-node
+    type: socks5
+    server: 5.6.7.8
+    port: 1081
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [ssr-node, good-node, DIRECT]
+`
+	jsonStr, _, _, err := translator.ConvertWithMeta([]byte(yaml), &translator.Options{Country: "CN"})
+	require.NoError(t, err)
+
+	svc := NewService()
+	defer svc.Destroy()
+	_, tags, err := svc.translateConfig([]byte(jsonStr), "")
+	require.NoError(t, err)
+	assert.Equal(t, "ssr", tags["ssr-node"])
+	assert.NotContains(t, tags, "good-node")
+}
+
 func TestService_QueryStats_NotRunning(t *testing.T) {
 	svc := NewService()
 	defer svc.Destroy()

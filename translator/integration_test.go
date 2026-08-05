@@ -283,6 +283,10 @@ proxy-groups:
 	if ssrStub["server_port"] != float64(1) {
 		t.Errorf("ssr-node server_port = %v, want 1", ssrStub["server_port"])
 	}
+	// 原始协议标记必须持久化到转换产物里，保存后再启动也能被核心恢复。
+	if ssrStub["username"] != "unsupported:ssr" {
+		t.Errorf("ssr-node username = %v, want unsupported:ssr", ssrStub["username"])
+	}
 
 	// PROXY group should include ssr-node in its outbounds
 	var proxyGroup map[string]any
@@ -353,6 +357,9 @@ proxy-groups:
 		if obMap["tag"] == "bad-ss" {
 			if obMap["type"] != "socks" {
 				t.Errorf("bad-ss type = %v, want socks (stub)", obMap["type"])
+			}
+			if obMap["username"] != "unsupported:ss" {
+				t.Errorf("bad-ss username = %v, want unsupported:ss", obMap["username"])
 			}
 			return
 		}

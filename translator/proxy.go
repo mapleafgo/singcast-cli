@@ -22,7 +22,7 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 		}
 		if !hasProxyEndpoint(p) {
 			t.warn("proxy \"" + name + "\": missing server or port, degraded to stub")
-			outbounds = append(outbounds, makeStubOutbound(name))
+			outbounds = append(outbounds, makeStubOutbound(name, proxyType))
 			t.stubTags[name] = proxyType
 			t.proxyTags[name] = true
 			markInvalidHealthCheckProxy(t, name)
@@ -33,7 +33,7 @@ func translateProxies(cfg *RawConfig, t *translation) []map[string]any {
 			// Create a socks stub so unsupported nodes stay visible in the UI.
 			// The stub points to 127.0.0.1:1 — a dead endpoint that fails on
 			// any connection attempt, making it clear the node is non-functional.
-			outbound = makeStubOutbound(name)
+			outbound = makeStubOutbound(name, proxyType)
 			t.stubTags[name] = proxyType
 			markInvalidHealthCheckProxy(t, name)
 		}
@@ -88,13 +88,16 @@ func hasProxyEndpoint(p map[string]any) bool {
 
 // makeStubOutbound creates a non-functional socks outbound for unsupported proxies.
 // The node appears in the Clash API UI but fails on use or health check.
-func makeStubOutbound(name string) map[string]any {
+// username 用于在转换产物中持久化原始协议标记，保存配置后再启动时仍能恢复
+// stubTags；stub 指向死端点，不会真正发起 Socks 认证，因此该字段只是内部标记。
+func makeStubOutbound(name, proxyType string) map[string]any {
 	return map[string]any{
 		"type":        "socks",
 		"tag":         name,
 		"version":     "5",
 		"server":      "127.0.0.1",
 		"server_port": 1,
+		"username":    "unsupported:" + proxyType,
 	}
 }
 
