@@ -426,7 +426,7 @@ sing-box 使用 `dns.servers` + `dns.rules` 的路由模式。
 
 实际生成的 DNS 规则策略：
 - `clash_mode: "Direct"` → 国内 DNS
-- 国内 geosite/geoip → 国内 DNS
+- 私有域名、国内 geosite/geoip → 国内 DNS
 - A/AAAA 查询 → FakeIP 服务器（如启用）
 - 其他 → DNS final 服务器
 
@@ -434,7 +434,7 @@ sing-box 使用 `dns.servers` + `dns.rules` 的路由模式。
 sing-box dns.rules（自动生成）:
   [
     {clash_mode: "Direct", server: "dns-local"},
-    {rule_set: ["geosite-cn", "geoip-cn"], server: "dns-local"},
+    {rule_set: ["geosite-private", "geosite-cn", "geoip-cn"], server: "dns-local"},
     {query_type: ["A", "AAAA"], server: "fakeip"},
   ]
 ```
@@ -1209,7 +1209,12 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 | 规则 | 出站 |
 |------|------|
 | 私有 IP | DIRECT |
+| geosite-private（内网/本地域名） | DIRECT |
 | overseas-ai rule_set | 代理组 |
+| geosite-microsoft@cn | DIRECT |
+| geosite-steam@cn | DIRECT |
+| geosite-category-games@cn | DIRECT |
+| geosite-onedrive | DIRECT |
 | geosite-geolocation-!cn | 代理组 |
 | geosite-cn | DIRECT |
 | geoip-cn | DIRECT |
@@ -1220,10 +1225,11 @@ mihomo 的 proxy-provider 允许运行时动态加载代理列表，sing-box 无
 | 规则 | 出站 |
 |------|------|
 | 私有 IP | DIRECT |
+| geosite-private（内网/本地域名） | DIRECT |
 | geoip-{cc} | DIRECT |
-| .{cc} 域名后缀 | DIRECT |
+| .{cc} 域名后缀（通用 ccTLD 跳过） | DIRECT |
 
-> **注意**：官方 `SagerNet/sing-geosite` 的 rule-set 按分类提供（如 `cn`、`geolocation-!cn`、品牌/服务），不提供按国家代码的 `geosite-{cc}` 文件（例如 `geosite-bd.srs` 不存在，见 issue #69）。因此非 CN 用户只使用官方完整覆盖的 `geoip-{cc}` 与国别顶级域名后缀做“本国直连”，不再拼接 `geosite-{cc}`。
+> **注意**：官方 `SagerNet/sing-geosite` 的 rule-set 按分类提供（如 `cn`、`geolocation-!cn`、品牌/服务），不提供按国家代码的 `geosite-{cc}` 文件（例如 `geosite-bd.srs` 不存在，见 issue #69）。因此非 CN 用户只使用官方完整覆盖的 `geoip-{cc}` 与国别顶级域名后缀做“本国直连”，不再拼接 `geosite-{cc}`。被当通用域名使用的 ccTLD（`io/tv/ai/me/cc/co/ly/to/ws/sh/gg/je/fm/am/la`）与 Freenom 免费域名（`tk/cf/ga/gq/ml`）不会生成后缀直连，避免误放行外国流量。
 
 **代码位置**：`translator/autoroute.go`
 

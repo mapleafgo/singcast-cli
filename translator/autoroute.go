@@ -21,6 +21,13 @@ func translateRules(cfg *RawConfig, t *translation) {
 		"outbound":      "DIRECT",
 	})
 
+	// 内网/本地域名（.local、.internal、localhost 等）直连，不走代理
+	ensureRuleSetDef("geosite-private", "geosite", "private", t)
+	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+		"rule_set": []string{"geosite-private"},
+		"outbound": "DIRECT",
+	})
+
 	if cc == "cn" {
 		generateCNRoutes(proxyTag, t)
 	} else {
@@ -59,6 +66,17 @@ func generateCNRoutes(proxyTag string, t *translation) {
 		"outbound": proxyTag,
 	})
 
+	// 国内有接入点的服务先直连，必须在 geolocation-!cn 之前，
+	// 否则会被"国外域名走代理"规则抢先匹配。
+	for _, name := range []string{"microsoft@cn", "steam@cn", "category-games@cn", "onedrive"} {
+		tag := "geosite-" + name
+		ensureRuleSetDef(tag, "geosite", name, t)
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+			"rule_set": []string{tag},
+			"outbound": "DIRECT",
+		})
+	}
+
 	// Non-CN geolocation → proxy (must precede geosite-cn)
 	ensureRuleSetDef("geosite-geolocation-!cn", "geosite", "geolocation-!cn", t)
 	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
@@ -87,6 +105,17 @@ func generateCNRoutes(proxyTag string, t *translation) {
 	})
 }
 
+// genericCCTLDs 是后缀直连会误放行外国流量的国别顶级域：
+// - Freenom 免费域名大规模运营：tk/cf/ga/gq/ml
+// - 被普遍当作通用域名/品牌域名使用：io/tv/ai/me/cc/co/ly/to/ws/sh/gg/je/fm/am/la
+// 对这类用户只保留 geoip-{cc}，不再生成 .{cc} 后缀直连。
+var genericCCTLDs = map[string]bool{
+	"io": true, "tv": true, "ai": true, "me": true, "cc": true,
+	"sh": true, "gg": true, "je": true, "fm": true, "am": true,
+	"la": true, "ly": true, "to": true, "co": true, "ws": true,
+	"tk": true, "cf": true, "ga": true, "gq": true, "ml": true,
+}
+
 // generateCountryRoutes builds non-CN routing rules: local traffic → direct, rest → proxy.
 func generateCountryRoutes(cc string, t *translation) {
 	// 官方 sing-geosite rule-set 按分类组织（cn、geolocation-!cn、品牌/服务等），
@@ -100,10 +129,12 @@ func generateCountryRoutes(cc string, t *translation) {
 	})
 
 	// .{cc} domain suffix → direct (fallback)
-	t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
-		"domain_suffix": []string{"." + cc},
-		"outbound":      "DIRECT",
-	})
+	if !genericCCTLDs[cc] {
+		t.config.Route.Rules = append(t.config.Route.Rules, map[string]any{
+			"domain_suffix": []string{"." + cc},
+			"outbound":      "DIRECT",
+		})
+	}
 }
 
 // generateDNSRules implements singcast's equivalent of mihomo's nameserver-policy.
@@ -171,7 +202,8 @@ func generateDNSRules(t *translation) {
 	// geosite 只有 CN 有官方 rule-set（geosite-cn）；非 CN 国家没有按国别 geosite，
 	// 只使用官方完整覆盖的 geoip-{cc}，避免下载不存在的 geosite-{cc}.srs。
 	geoipTag := "geoip-" + cc
-	rsTags := []string{}
+	rsTags := []string{"geosite-private"}
+	ensureRuleSetDef("geosite-private", "geosite", "private", t)
 	if cc == "cn" {
 		ensureRuleSetDef("geosite-cn", "geosite", "cn", t)
 		rsTags = append(rsTags, "geosite-cn")

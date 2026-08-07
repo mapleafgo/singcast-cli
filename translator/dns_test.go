@@ -716,3 +716,42 @@ func TestTranslateDNSDisabledNoDNSRules(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateDNSRulesIncludesPrivate(t *testing.T) {
+	tr := newTestTranslation()
+	tr.country = "cn"
+	tr.dnsEnabled = true
+	tr.config.DNS = &singboxDNS{
+		Servers: []map[string]any{
+			{"tag": "ns-0", "type": "udp", "server": "8.8.8.8"},
+			{"tag": "fakeip-dns", "type": "fakeip"},
+		},
+	}
+	tr.dnsTerminalRules = []map[string]any{{"server": "ns-0"}}
+
+	generateDNSRules(tr)
+
+	var geoRule map[string]any
+	for _, rule := range tr.config.DNS.Rules {
+		if _, ok := rule["rule_set"]; ok {
+			geoRule = rule
+			break
+		}
+	}
+	if geoRule == nil {
+		t.Fatal("expected a geo-based DNS rule")
+	}
+	rs, _ := geoRule["rule_set"].([]string)
+	found := false
+	for _, tag := range rs {
+		if tag == "geosite-private" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("geo DNS rule_set = %v, want geosite-private", rs)
+	}
+	if _, ok := tr.ruleSetDefs["geosite-private"]; !ok {
+		t.Error("missing rule_set definition for geosite-private")
+	}
+}

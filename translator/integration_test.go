@@ -62,9 +62,10 @@ proxy-groups:
 
 	rules := route["rules"].([]any)
 	// sniff + hijack-dns + clash_mode:Direct + clash_mode:Global + ip_is_private +
-	// overseas-ai + geolocation-!cn + geosite-cn + geoip-cn + domain_suffix:.cn = 10
-	if len(rules) != 10 {
-		t.Fatalf("expected 10 rules for CN, got %d", len(rules))
+	// geosite-private + overseas-ai + microsoft@cn + steam@cn + category-games@cn +
+	// onedrive + geolocation-!cn + geosite-cn + geoip-cn + domain_suffix:.cn = 15
+	if len(rules) != 15 {
+		t.Fatalf("expected 15 rules for CN, got %d", len(rules))
 	}
 
 	// Verify clash_mode:Direct catch-all
@@ -91,57 +92,79 @@ proxy-groups:
 		t.Errorf("ip_is_private outbound = %v, want DIRECT", privateRule["outbound"])
 	}
 
+	// Verify geosite-private → DIRECT rule
+	privateDomainRule := rules[5].(map[string]any)
+	privateRS, _ := privateDomainRule["rule_set"].([]any)
+	if len(privateRS) != 1 || privateRS[0] != "geosite-private" {
+		t.Errorf("rule 5 rule_set = %v, want [geosite-private]", privateRS)
+	}
+	if privateDomainRule["outbound"] != "DIRECT" {
+		t.Errorf("rule 5 outbound = %v, want DIRECT", privateDomainRule["outbound"])
+	}
+
 	// Verify overseas-ai → proxy rule
-	aiRule := rules[5].(map[string]any)
+	aiRule := rules[6].(map[string]any)
 	aiRS, _ := aiRule["rule_set"].([]any)
 	if len(aiRS) != 1 || aiRS[0] != "overseas-ai" {
-		t.Errorf("rule 5 rule_set = %v, want [overseas-ai]", aiRS)
+		t.Errorf("rule 6 rule_set = %v, want [overseas-ai]", aiRS)
 	}
 	if aiRule["outbound"] != "PROXY" {
-		t.Errorf("rule 5 outbound = %v, want PROXY", aiRule["outbound"])
+		t.Errorf("rule 6 outbound = %v, want PROXY", aiRule["outbound"])
+	}
+
+	// Verify 国内服务细分直连在 geolocation-!cn 之前
+	for i, tag := range []string{"geosite-microsoft@cn", "geosite-steam@cn", "geosite-category-games@cn", "geosite-onedrive"} {
+		rule := rules[7+i].(map[string]any)
+		rs, _ := rule["rule_set"].([]any)
+		if len(rs) != 1 || rs[0] != tag {
+			t.Errorf("rule %d rule_set = %v, want [%s]", 7+i, rs, tag)
+		}
+		if rule["outbound"] != "DIRECT" {
+			t.Errorf("rule %d outbound = %v, want DIRECT", 7+i, rule["outbound"])
+		}
 	}
 
 	// Verify geosite-geolocation-!cn → proxy rule (comes BEFORE cn rule)
-	notCNRule := rules[6].(map[string]any)
+	notCNRule := rules[11].(map[string]any)
 	notCNRS, _ := notCNRule["rule_set"].([]any)
 	if len(notCNRS) != 1 || notCNRS[0] != "geosite-geolocation-!cn" {
-		t.Errorf("rule 6 rule_set = %v, want [geosite-geolocation-!cn]", notCNRS)
+		t.Errorf("rule 11 rule_set = %v, want [geosite-geolocation-!cn]", notCNRS)
 	}
 	if notCNRule["outbound"] != "PROXY" {
-		t.Errorf("rule 6 outbound = %v, want PROXY", notCNRule["outbound"])
+		t.Errorf("rule 11 outbound = %v, want PROXY", notCNRule["outbound"])
 	}
 	if notCNRule["clash_mode"] != "Rule" {
 		t.Error("geolocation-!cn rule should have clash_mode=Rule")
 	}
 
 	// Verify geosite-cn → DIRECT rule
-	geoCNRule := rules[7].(map[string]any)
+	geoCNRule := rules[12].(map[string]any)
 	geoCNRS, _ := geoCNRule["rule_set"].([]any)
 	if len(geoCNRS) != 1 || geoCNRS[0] != "geosite-cn" {
-		t.Errorf("rule 7 rule_set = %v, want [geosite-cn]", geoCNRS)
+		t.Errorf("rule 12 rule_set = %v, want [geosite-cn]", geoCNRS)
 	}
 	if geoCNRule["outbound"] != "DIRECT" {
-		t.Errorf("rule 7 outbound = %v, want DIRECT", geoCNRule["outbound"])
+		t.Errorf("rule 12 outbound = %v, want DIRECT", geoCNRule["outbound"])
 	}
 
 	// Verify geoip-cn → DIRECT rule
-	geoipCNRule := rules[8].(map[string]any)
+	geoipCNRule := rules[13].(map[string]any)
 	geoipCNRS, _ := geoipCNRule["rule_set"].([]any)
 	if len(geoipCNRS) != 1 || geoipCNRS[0] != "geoip-cn" {
-		t.Errorf("rule 8 rule_set = %v, want [geoip-cn]", geoipCNRS)
+		t.Errorf("rule 13 rule_set = %v, want [geoip-cn]", geoipCNRS)
 	}
 	if geoipCNRule["outbound"] != "DIRECT" {
-		t.Errorf("rule 8 outbound = %v, want DIRECT", geoipCNRule["outbound"])
+		t.Errorf("rule 13 outbound = %v, want DIRECT", geoipCNRule["outbound"])
 	}
 
 	// Verify domain_suffix:.cn → DIRECT rule (fallback after geo rules)
-	cnSuffixRule := rules[9].(map[string]any)
+	cnSuffixRule := rules[14].(map[string]any)
 	cnDS, _ := cnSuffixRule["domain_suffix"].([]any)
 	if len(cnDS) != 1 || cnDS[0] != ".cn" {
-		t.Errorf("rule 9 domain_suffix = %v, want [.cn]", cnDS)
+		t.Errorf("rule 14 domain_suffix = %v, want [.cn]", cnDS)
 	}
 	if cnSuffixRule["outbound"] != "DIRECT" {
-		t.Errorf("rule 9 outbound = %v, want DIRECT", cnSuffixRule["outbound"])
+		t.Errorf("rule 14 outbound = %v, want DIRECT", cnSuffixRule["outbound"])
 	}
 
 	// Verify rule_set definitions
@@ -151,7 +174,17 @@ proxy-groups:
 		rsMap := rs.(map[string]any)
 		rsTags[rsMap["tag"].(string)] = true
 	}
-	for _, tag := range []string{"geosite-geolocation-!cn", "geoip-cn", "geosite-cn", "overseas-ai"} {
+	for _, tag := range []string{
+		"geosite-geolocation-!cn",
+		"geoip-cn",
+		"geosite-cn",
+		"geosite-private",
+		"geosite-microsoft@cn",
+		"geosite-steam@cn",
+		"geosite-category-games@cn",
+		"geosite-onedrive",
+		"overseas-ai",
+	} {
 		if !rsTags[tag] {
 			t.Errorf("missing rule_set: %s", tag)
 		}
@@ -188,6 +221,9 @@ proxy-groups:
 	}
 	if !rsTags["geoip-jp"] {
 		t.Error("missing rule_set: geoip-jp")
+	}
+	if !rsTags["geosite-private"] {
+		t.Error("missing rule_set: geosite-private")
 	}
 	if rsTags["geosite-jp"] {
 		t.Error("must not register geosite-jp: SagerNet/sing-geosite has no per-country rule-set")

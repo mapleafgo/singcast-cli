@@ -28,28 +28,44 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	generateCNRoutes("PROXY", tr)
 
 	rules := tr.config.Route.Rules
-	// overseas-ai + geolocation-!cn + geosite-cn + geoip-cn + .cn = 5
-	if len(rules) != 5 {
-		t.Fatalf("expected 5 geo rules for CN, got %d", len(rules))
+	// overseas-ai + microsoft@cn + steam@cn + category-games@cn + onedrive +
+	// geolocation-!cn + geosite-cn + geoip-cn + .cn = 9
+	if len(rules) != 9 {
+		t.Fatalf("expected 9 geo rules for CN, got %d", len(rules))
 	}
 
 	// Rule 0: overseas-ai → PROXY
 	assertRuleSet(t, rules[0], "overseas-ai", "PROXY", "overseas-ai")
 
-	// Rule 1: geolocation-!cn → PROXY (must come before cn rule)
-	assertRuleSet(t, rules[1], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
+	// Rule 1-4: 国内有接入点的服务先直连，必须在 geolocation-!cn 之前
+	assertRuleSet(t, rules[1], "geosite-microsoft@cn", "DIRECT", "microsoft@cn")
+	assertRuleSet(t, rules[2], "geosite-steam@cn", "DIRECT", "steam@cn")
+	assertRuleSet(t, rules[3], "geosite-category-games@cn", "DIRECT", "category-games@cn")
+	assertRuleSet(t, rules[4], "geosite-onedrive", "DIRECT", "onedrive")
 
-	// Rule 2: geosite-cn → DIRECT
-	assertRuleSet(t, rules[2], "geosite-cn", "DIRECT", "geosite-cn")
+	// Rule 5: geolocation-!cn → PROXY (must come before cn rule)
+	assertRuleSet(t, rules[5], "geosite-geolocation-!cn", "PROXY", "geolocation-!cn")
 
-	// Rule 3: geoip-cn → DIRECT
-	assertRuleSet(t, rules[3], "geoip-cn", "DIRECT", "geoip-cn")
+	// Rule 6: geosite-cn → DIRECT
+	assertRuleSet(t, rules[6], "geosite-cn", "DIRECT", "geosite-cn")
 
-	// Rule 4: .cn domain suffix → DIRECT (fallback)
-	assertDomainSuffix(t, rules[4], ".cn", "DIRECT")
+	// Rule 7: geoip-cn → DIRECT
+	assertRuleSet(t, rules[7], "geoip-cn", "DIRECT", "geoip-cn")
+
+	// Rule 8: .cn domain suffix → DIRECT (fallback)
+	assertDomainSuffix(t, rules[8], ".cn", "DIRECT")
 
 	// Verify rule_set definitions
-	expectedDefs := []string{"geosite-cn", "geosite-geolocation-!cn", "geoip-cn", "overseas-ai"}
+	expectedDefs := []string{
+		"geosite-cn",
+		"geosite-geolocation-!cn",
+		"geosite-microsoft@cn",
+		"geosite-steam@cn",
+		"geosite-category-games@cn",
+		"geosite-onedrive",
+		"geoip-cn",
+		"overseas-ai",
+	}
 	for _, tag := range expectedDefs {
 		if _, ok := tr.ruleSetDefs[tag]; !ok {
 			t.Errorf("missing rule_set definition for %q", tag)
@@ -61,6 +77,44 @@ func TestGenerateGeoRoute_China(t *testing.T) {
 	aiURL, _ := aiDef["url"].(string)
 	if !strings.Contains(aiURL, "viewer12/OverseasAI.list") {
 		t.Errorf("overseas-ai URL = %q, want viewer12/OverseasAI.list", aiURL)
+	}
+}
+
+func TestGenerateGeoRoute_PrivateDomain(t *testing.T) {
+	tr := testTranslation(t)
+	tr.groupTagOrder = []string{"PROXY"}
+	tr.country = "cn"
+
+	translateRules(nil, tr)
+
+	rules := tr.config.Route.Rules
+	// 私有域名直连必须紧跟 ip_is_private，先于任何代理/国内分流规则
+	if len(rules) < 2 {
+		t.Fatalf("expected at least 2 rules, got %d", len(rules))
+	}
+	assertRuleSet(t, rules[1], "geosite-private", "DIRECT", "private")
+
+	if def, ok := tr.ruleSetDefs["geosite-private"]; !ok {
+		t.Error("missing rule_set definition for geosite-private")
+	} else if url, _ := def["url"].(string); !strings.HasSuffix(url, "/geosite-private.srs") {
+		t.Errorf("geosite-private URL = %q, want SagerNet sing-geosite private rule-set", url)
+	}
+}
+
+func TestGenerateGeoRoute_GenericCCTLDSuffixSkipped(t *testing.T) {
+	tr := testTranslation(t)
+	tr.groupTagOrder = []string{"PROXY"}
+
+	// 通用域名 ccTLD（io/tv/ai/me/cc）与 Freenom 免费域名（tk/cf/ga/gq/ml）
+	// 后缀直连会误放行外国流量，不生成 .{cc} 规则
+	for _, cc := range []string{"io", "tv", "ai", "me", "cc", "tk", "cf", "ga", "gq", "ml"} {
+		tr.config.Route.Rules = nil
+		generateCountryRoutes(cc, tr)
+		rules := tr.config.Route.Rules
+		if len(rules) != 1 {
+			t.Fatalf("%s: expected only geoip-%s rule, got %d rules", cc, cc, len(rules))
+		}
+		assertRuleSet(t, rules[0], "geoip-"+cc, "DIRECT", "geoip-"+cc)
 	}
 }
 
