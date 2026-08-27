@@ -186,6 +186,9 @@ tasks:
     desc: Update all direct dependencies to latest and tidy
     cmds:
       - GOPROXY=https://proxy.golang.org,direct go get -u ./...
+      # sing-box v1.13.x 锁定的是打 tag 前的 sing-quic 提交；stable v0.6.4
+      # 依赖更新的 sing TLS API，会导致当前版本的 tag 构建失败。
+      - go get github.com/sagernet/sing-quic@v0.6.4-0.20260803041914-d83826c306d7
       - go mod tidy
 
   clean:
