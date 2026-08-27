@@ -1,5 +1,7 @@
 package translator
 
+// RawConfig 是 mihomo YAML 的宽松输入结构。未知字段由 YAML 解析器忽略，
+// 已知但暂不支持的字段由各翻译阶段通过 warnings 告知调用方。
 type RawConfig struct {
 	Port       int `yaml:"port" json:"port"`
 	SocksPort  int `yaml:"socks-port" json:"socks-port"`
@@ -34,6 +36,8 @@ type RawConfig struct {
 	GlobalFingerprint  string                    `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`
 }
 
+// RawSniffer 保存 mihomo sniffer 输入；当前翻译策略固定启用 sing-box sniff，
+// 这些字段只用于保持输入结构完整。
 type RawSniffer struct {
 	Enable      bool `yaml:"enable" json:"enable"`
 	Parsing     any  `yaml:"parsing" json:"parsing"`
@@ -44,6 +48,7 @@ type RawSniffer struct {
 	ParsePureIP any  `yaml:"parse-pure-ip" json:"parse-pure-ip"`
 }
 
+// RawDNS 保存 mihomo DNS 配置，字段语义以 mihomo 文档为准。
 type RawDNS struct {
 	Enable                bool              `yaml:"enable" json:"enable"`
 	IPv6                  *bool             `yaml:"ipv6" json:"ipv6"`
@@ -64,6 +69,7 @@ type RawDNS struct {
 	PreferH3              bool              `yaml:"prefer-h3" json:"prefer-h3"`
 }
 
+// RawFallbackFilter 描述 fallback 结果的地理/IP 过滤条件。
 type RawFallbackFilter struct {
 	GeoIP     bool     `yaml:"geoip" json:"geoip"`
 	GeoIPCode string   `yaml:"geoip-code" json:"geoip-code"`
@@ -72,11 +78,13 @@ type RawFallbackFilter struct {
 	GeoSite   []string `yaml:"geosite" json:"geosite"`
 }
 
+// RawProfile 保存 mihomo profile 持久化选项。
 type RawProfile struct {
 	StoreSelected bool `yaml:"store-selected" json:"store-selected"`
 	StoreFakeIP   bool `yaml:"store-fake-ip" json:"store-fake-ip"`
 }
 
+// RawTun 保存 mihomo TUN 输入；端口、UID、包名等平台字段按原语义映射。
 type RawTun struct {
 	Enable              bool     `yaml:"enable" json:"enable"`
 	Device              string   `yaml:"device" json:"device"`

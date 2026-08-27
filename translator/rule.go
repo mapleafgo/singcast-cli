@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// RawGitHubPrefix 是官方 rule-set 与社区 rule-set 共用的 GitHub 原始文件前缀；
+// ApplyRuleSetProxy 只改写该前缀，避免代理参数影响任意 URL。
 const RawGitHubPrefix = "https://raw.githubusercontent.com/"
 
 // ProxyURL prepends the proxy prefix for raw.githubusercontent.com URLs.

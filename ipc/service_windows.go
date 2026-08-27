@@ -15,8 +15,11 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
+// ServiceName 是 Windows SCM 中的服务唯一名称。
 const ServiceName = "SingcastService"
 
+// InstallService 创建或更新 Windows 服务。调用方无需提升权限，
+// 但服务二进制路径必须指向当前可执行文件。
 func InstallService(_ context.Context) error {
 	// Windows 推导用户数据目录（与 Flutter getApplicationSupportDirectory 一致）
 	configDir, err := os.UserConfigDir() // %APPDATA% on Windows
@@ -63,6 +66,7 @@ func InstallService(_ context.Context) error {
 	return setServiceDACL(ServiceName)
 }
 
+// UninstallService 停止并删除 Windows 服务；服务不存在时返回 SCM 错误。
 func UninstallService(_ context.Context) error {
 	// Connect to SCM with minimal access — SC_MANAGER_CONNECT is granted to
 	// Authenticated Users by default, so no elevation is needed.
