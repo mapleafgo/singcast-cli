@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"runtime"
 	"sync"
 	"time"
@@ -35,6 +37,7 @@ func (s *Service) clashServer() *clashapi.Server {
 	return srv
 }
 
+// QueryProxies 返回代理组 JSON；未运行或 Clash API 未启用时返回空数组。
 func (s *Service) QueryProxies() string {
 	rs := s.running.Load()
 	if rs == nil {
@@ -92,6 +95,7 @@ func (s *Service) QueryProxies() string {
 	return string(data)
 }
 
+// QueryStats 返回流量、连接数、内存与启动时间 JSON；未运行时返回零值快照。
 func (s *Service) QueryStats() string {
 	srv := s.clashServer()
 	if srv == nil {
@@ -117,6 +121,7 @@ func zeroStatsJSON() string {
 	return string(data)
 }
 
+// QueryConnections 返回当前连接的 JSON；未运行时返回空数组。
 func (s *Service) QueryConnections() string {
 	srv := s.clashServer()
 	if srv == nil {
@@ -135,6 +140,7 @@ func (s *Service) QueryConnections() string {
 	return string(data)
 }
 
+// QueryMode 返回可用模式与当前模式；未运行时返回 Rule/Global/Direct 与 Rule。
 func (s *Service) QueryMode() string {
 	srv := s.clashServer()
 	if srv == nil {
@@ -151,6 +157,7 @@ func (s *Service) QueryMode() string {
 	return string(data)
 }
 
+// QueryRules 返回路由规则 JSON；未运行时返回空列表。
 func (s *Service) QueryRules() string {
 	rs := s.running.Load()
 	if rs == nil {
@@ -268,6 +275,7 @@ func (s *Service) TestGroupDelay(groupTag string, timeoutMs int32) string {
 	return string(data)
 }
 
+// SelectOutbound 在 selector 组中选择出站。任一 tag 不存在或组不可选择时返回错误。
 func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
 	rs := s.running.Load()
 	if rs == nil {
@@ -289,6 +297,7 @@ func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
 	return nil
 }
 
+// SetMode 切换 Clash 路由模式；Clash API 不可用时返回错误。
 func (s *Service) SetMode(mode string) error {
 	srv := s.clashServer()
 	if srv == nil {
@@ -298,6 +307,7 @@ func (s *Service) SetMode(mode string) error {
 	return nil
 }
 
+// CloseConnection 按 UUID 关闭指定连接；ID 无效或连接不存在时返回错误。
 func (s *Service) CloseConnection(connID string) error {
 	srv := s.clashServer()
 	if srv == nil {
@@ -314,16 +324,28 @@ func (s *Service) CloseConnection(connID string) error {
 	return tracker.Close()
 }
 
+// CloseConnections 关闭当前非 DNS 连接并清空流量统计；单个连接关闭失败时返回错误。
 func (s *Service) CloseConnections() error {
 	srv := s.clashServer()
 	if srv == nil {
 		return fmt.Errorf("clash API not available")
 	}
-	srv.TrafficManager().ResetStatistic()
+	manager := srv.TrafficManager()
+	for _, metadata := range manager.Connections() {
+		tracker := manager.Connection(metadata.ID)
+		if tracker == nil {
+			continue
+		}
+		if err := tracker.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("close connection %s: %w", metadata.ID, err)
+		}
+	}
+	manager.ResetStatistic()
 	s.ResetNetwork()
 	return nil
 }
 
+// SetGroupExpand 持久化代理组在 UI 中的展开状态；未运行或无缓存文件时返回错误。
 func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
 	rs := s.running.Load()
 	if rs == nil {
@@ -336,6 +358,7 @@ func (s *Service) SetGroupExpand(groupTag string, isExpand bool) error {
 	return cf.StoreGroupExpand(groupTag, isExpand)
 }
 
+// FlushFakeIP 清空 FakeIP 地址缓存；未运行或无缓存文件时返回错误。
 func (s *Service) FlushFakeIP() error {
 	rs := s.running.Load()
 	if rs == nil {
@@ -362,13 +385,17 @@ func (s *Service) FlushDNSCache() error {
 	return nil
 }
 
+// ResetNetwork 重建 DNS/网络状态并促使出站重连；未运行时为空操作。
 func (s *Service) ResetNetwork() {
 	if rs := s.running.Load(); rs != nil {
 		rs.instance.Router().ResetNetwork()
 	}
 }
 
-func (s *Service) FlushSystemDNS()         { flushSystemDNS(context.Background()) }
+// FlushSystemDNS 尝试刷新系统 DNS 缓存；平台不支持或刷新失败只记录日志。
+func (s *Service) FlushSystemDNS() { flushSystemDNS(context.Background()) }
+
+// SetLogLevel 原子更新内核日志级别，立即对后续日志生效。
 func (s *Service) SetLogLevel(level int32) { SetLogLevel(level) }
 
 // TriggerGC forces a garbage collection.

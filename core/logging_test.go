@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	singboxlog "github.com/sagernet/sing-box/log"
 )
 
 func TestLogging_Callback(t *testing.T) {
@@ -82,5 +84,34 @@ func TestSlogToCoreLevel(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("slogToCoreLevel(%v) = %d, want %d", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestPlatformLogWriterUsesLogLevelFilter(t *testing.T) {
+	SetLogLevel(LogLevelError)
+	defer SetLogLevel(LogLevelInfo)
+
+	var mu sync.Mutex
+	var messages []string
+	SetOnLogEvent(func(_ int32, jsonStr string) {
+		var entry LogEntry
+		if err := json.Unmarshal([]byte(jsonStr), &entry); err != nil {
+			t.Errorf("unmarshal: %v", err)
+			return
+		}
+		mu.Lock()
+		messages = append(messages, entry.Message)
+		mu.Unlock()
+	})
+	defer SetOnLogEvent(nil)
+
+	writer := &platformLogWriter{}
+	writer.WriteMessage(singboxlog.LevelDebug, "platform-debug")
+	writer.WriteMessage(singboxlog.LevelError, "platform-error")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(messages) != 1 || messages[0] != "platform-error" {
+		t.Fatalf("messages = %v, want only platform-error", messages)
 	}
 }

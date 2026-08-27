@@ -41,7 +41,6 @@ func init() {
 		C.invokeEventCB(*cb, C.int(eventType), cs)
 	}
 	svc.SetOnEvent(emit)
-	core.SetOnLogEvent(emit)
 }
 
 // errorString returns nil on success, or the error message as a C string on failure.

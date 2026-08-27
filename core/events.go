@@ -11,7 +11,8 @@ import (
 
 // --- Callbacks ---
 
-// SetOnEvent 注册事件回调，传 nil 取消注册。可在任意时刻调用（含 Running 态）：
+// SetOnEvent 注册统一事件回调，传 nil 取消注册。回调会同时收到内核 slog 日志
+// 与状态/连接/统计事件。可在任意时刻调用（含 Running 态）：
 // 订阅始终建立，回调只在发事件时读取，因此 Start 之后注册也能立即收到后续事件。
 // 回调会在 core 内部 goroutine 上被调用，实现方需自行保证线程安全且不可长时间阻塞。
 func (s *Service) SetOnEvent(fn func(int32, string)) {
@@ -20,6 +21,7 @@ func (s *Service) SetOnEvent(fn func(int32, string)) {
 	} else {
 		s.onEvent.Store(&fn)
 	}
+	SetOnLogEvent(fn)
 }
 
 func (s *Service) getOnEvent() func(int32, string) {

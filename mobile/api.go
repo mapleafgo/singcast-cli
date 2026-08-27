@@ -95,6 +95,8 @@ type WiFiStateProvider interface {
 	GetWiFiState() string
 }
 
+// SetInterfaceProvider 注册网络接口数据提供者，传 nil 取消注册。
+// GetInterfaces 返回的 JSON 数组格式见 PlatformIO.NetworkInterfaces。
 func (s *Singcast) SetInterfaceProvider(p InterfaceProvider) {
 	if p == nil {
 		s.svc.PlatformIO().SetInterfaceProvider(nil)
@@ -105,6 +107,7 @@ func (s *Singcast) SetInterfaceProvider(p InterfaceProvider) {
 	})
 }
 
+// SetWiFiStateProvider 注册 Wi-Fi 状态提供者，传 nil 取消注册。
 func (s *Singcast) SetWiFiStateProvider(p WiFiStateProvider) {
 	if p == nil {
 		s.svc.PlatformIO().SetWiFiStateProvider(nil)
@@ -259,13 +262,14 @@ type EventListener interface {
 	OnEvent(eventType int32, json string)
 }
 
+// SetOnEvent 注册统一事件监听器，传 nil 取消注册。监听器会收到内核日志、
+// 状态变化、连接事件和统计事件；实现方需保证线程安全且不可长时间阻塞。
 func (s *Singcast) SetOnEvent(l EventListener) {
 	var fn func(int32, string)
 	if l != nil {
 		fn = func(eventType int32, json string) { l.OnEvent(eventType, json) }
 	}
 	s.svc.SetOnEvent(fn)
-	core.SetOnLogEvent(fn)
 }
 
 // --- Memory ---

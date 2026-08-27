@@ -23,34 +23,31 @@ import (
 	"github.com/mapleafgo/singcast/translator"
 )
 
+// Version 是内核发行版本，构建时通过 -ldflags 注入；开发构建为 dev。
 var Version = "dev"
 
 type platformLogWriter struct {
-	svc *Service
 }
 
 func (w *platformLogWriter) WriteMessage(level singboxlog.Level, message string) {
-	var coreLevel int32
+	var slogLevel slog.Level
 	switch {
 	case level <= singboxlog.LevelError:
-		coreLevel = LogLevelError
+		slogLevel = slog.LevelError
 	case level <= singboxlog.LevelWarn:
-		coreLevel = LogLevelWarn
+		slogLevel = slog.LevelWarn
 	case level <= singboxlog.LevelInfo:
-		coreLevel = LogLevelInfo
+		slogLevel = slog.LevelInfo
 	case level <= singboxlog.LevelDebug:
-		coreLevel = LogLevelDebug
+		slogLevel = slog.LevelDebug
 	default:
-		coreLevel = LogLevelTrace
+		slogLevel = slog.LevelDebug - 1
 	}
-	data, _ := json.Marshal(LogEntry{
-		Level:     coreLevel,
-		Message:   message,
-		Timestamp: time.Now().UnixMilli(),
-	})
-	w.svc.emitEvent(EventLog, string(data))
+	slog.Log(context.Background(), slogLevel, message)
 }
 
+// VersionJSON 返回移动端与 IPC 使用的版本信息 JSON。该调用只读全局 Version，
+// 不会失败；JSON 结构由 VersionInfo 定义。
 func VersionJSON() string {
 	data, _ := json.Marshal(VersionInfo{Version: Version, Core: "singcast"})
 	return string(data)
@@ -86,6 +83,7 @@ func Convert(content string) (string, error) {
 	return jsonStr, nil
 }
 
+// State 表示服务的生命周期状态，切换通过原子 CAS 完成，可被任意 goroutine 读取。
 type State int32
 
 const (
@@ -96,6 +94,7 @@ const (
 	StateDestroyed
 )
 
+// String 返回状态的稳定字符串表示；未知数值返回 unknown 而不是报错。
 func (s State) String() string {
 	switch s {
 	case StateCreated:
@@ -137,6 +136,8 @@ type runningState struct {
 	stubTags map[string]string
 }
 
+// Service 管理 sing-box 实例的生命周期和对外查询/控制 API。
+// StartWithContent 与 Stop 可并发调用；具体锁序约束见字段注释。
 type Service struct {
 	state     atomicState
 	running   atomic.Pointer[runningState]
@@ -165,12 +166,16 @@ type Service struct {
 	hooksMu sync.Mutex
 }
 
+// NewService 创建处于 Created 状态的内核服务。调用方需先 Init/InitContext，
+// 再启动配置；不需要时应调用 Destroy 释放运行时资源。
 func NewService() *Service { return &Service{platform: NewPlatformIO()} }
 
+// State 原子读取当前生命周期状态。
 func (s *Service) State() State {
 	return s.state.Load()
 }
 
+// PlatformIO 返回平台 I/O 适配器；调用方可在 Init 前注入移动端回调。
 func (s *Service) PlatformIO() *PlatformIO { return s.platform }
 
 // Init 以 context.Background() 初始化服务，等价于 InitContext。
@@ -198,12 +203,17 @@ func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 		s.state.Store(StateCreated)
 		return fmt.Errorf("init: home_dir is required")
 	}
+	homeDir, err := filepath.Abs(opts.HomeDir)
+	if err != nil {
+		s.state.Store(StateCreated)
+		return fmt.Errorf("resolve home dir: %w", err)
+	}
 
-	if err := os.MkdirAll(opts.HomeDir, 0o755); err != nil {
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		s.state.Store(StateCreated)
 		return fmt.Errorf("create home dir: %w", err)
 	}
-	if err := os.Chdir(opts.HomeDir); err != nil {
+	if err := os.Chdir(homeDir); err != nil {
 		s.state.Store(StateCreated)
 		return fmt.Errorf("chdir: %w", err)
 	}
@@ -212,7 +222,7 @@ func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 		SetLogLevel(LogLevelDebug)
 	}
 
-	tempDir := filepath.Join(opts.HomeDir, "temp")
+	tempDir := filepath.Join(homeDir, "temp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		s.state.Store(StateCreated)
 		return fmt.Errorf("create temp dir: %w", err)
@@ -245,6 +255,10 @@ func (s *Service) InitContext(ctx context.Context, optionsJSON string) error {
 	return nil
 }
 
+// StartWithContent 翻译并启动 content 指定的 Clash YAML、URI 列表或 sing-box JSON。
+// ruleSetProxy 非空时只改写 raw.githubusercontent.com 的 rule-set URL。
+// 并发调用会按启动序号合并，最新调用胜出；翻译或启动失败返回 error，
+// 旧实例停止失败记录 warning 后继续尝试新配置。
 func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 	data := []byte(content)
 	// 统一走 ConvertWithMeta：base64 解码、URI 列表、YAML 翻译、JSON 透传
@@ -372,7 +386,7 @@ func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) 
 		options.Route.AutoDetectInterface = true
 	}
 
-	logWriter := &platformLogWriter{svc: s}
+	logWriter := &platformLogWriter{}
 
 	inst, err := box.New(box.Options{Options: options, Context: ctx, PlatformLogWriter: logWriter})
 	if err != nil {
@@ -470,6 +484,8 @@ func (rs *runningState) close() error {
 	return rs.instance.Close()
 }
 
+// Destroy 停止实例、看门狗与事件订阅，并把服务推进到终态 Destroyed。
+// 该方法可重复调用，但服务销毁后不能重新 Init 或 Start。
 func (s *Service) Destroy() {
 	for {
 		st := s.state.Load()

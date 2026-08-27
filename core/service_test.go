@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +28,22 @@ func mustMkdirAll(t *testing.T, dir string) {
 func initJSON(homeDir string) string {
 	data, _ := json.Marshal(InitOptions{HomeDir: homeDir})
 	return string(data)
+}
+
+var testOriginalWD = func() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return os.TempDir()
+	}
+	return wd
+}()
+
+func chdirInTest(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(testOriginalWD))
+	})
 }
 
 func TestService_StopWhenNotRunning(t *testing.T) {
@@ -296,6 +314,41 @@ func TestService_SetOnEvent_Callback(t *testing.T) {
 	fn(42, "test-data")
 	assert.Equal(t, int32(42), receivedEvent)
 	assert.Equal(t, "test-data", receivedData)
+}
+
+func TestService_SetOnEvent_ReceivesCoreLogs(t *testing.T) {
+	SetLogLevel(LogLevelInfo)
+	svc := NewService()
+	defer svc.Destroy()
+
+	var receivedEvent int32
+	var receivedData string
+	svc.SetOnEvent(func(eventType int32, data string) {
+		receivedEvent = eventType
+		receivedData = data
+	})
+	defer svc.SetOnEvent(nil)
+
+	slog.Info("service-log-test")
+
+	assert.Equal(t, EventLog, receivedEvent)
+	assert.Contains(t, receivedData, "service-log-test")
+}
+
+func TestService_InitContextNormalizesRelativeHomeDir(t *testing.T) {
+	root := t.TempDir()
+	chdirInTest(t, root)
+
+	svc := NewService()
+	require.NoError(t, svc.InitContext(context.Background(), initJSON("home")))
+	defer svc.Destroy()
+
+	if _, err := os.Stat(filepath.Join(root, "home", "temp")); err != nil {
+		t.Fatalf("stat home temp dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "home", "home", "temp")); err == nil {
+		t.Fatal("relative home path was resolved again after chdir")
+	}
 }
 
 func TestService_TriggerGC(t *testing.T) {
