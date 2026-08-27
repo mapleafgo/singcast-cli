@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,16 @@ func TestDetectCountryWithFallback_Override(t *testing.T) {
 	cc, fallback := DetectCountryWithFallback("  CN  ")
 	if cc != "CN" || fallback {
 		t.Errorf("DetectCountryWithFallback(\"  CN  \") = %q, fallback=%v, want CN, false", cc, fallback)
+	}
+}
+
+func TestTranslateFromConfigFallsBackOnNonLetterCountryOverride(t *testing.T) {
+	out, _, _, err := translateFromConfig(&RawConfig{}, &Options{Country: "1X"})
+	if err != nil {
+		t.Fatalf("translateFromConfig() error = %v", err)
+	}
+	if strings.Contains(out, "geoip-1x") || strings.Contains(out, ".1x") {
+		t.Errorf("non-letter country override leaked into rules: %s", out)
 	}
 }
 

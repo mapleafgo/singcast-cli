@@ -76,14 +76,11 @@ func translateFromConfig(cfg *RawConfig, opts *Options) (string, []string, Meta,
 	// 提前一次性确定国家代码，后续路由/DNS 规则生成统一读 t.country。
 	// Options.Country 仅测试覆盖用，且必须是两位 ISO 代码；
 	// 非法值回退自动检测，避免生成 geoip-xxx/domain_suffix ".xxx" 的坏规则。
-	cc := ""
+	country := DetectCountry("")
 	if opts != nil {
-		cc = strings.ToLower(strings.TrimSpace(opts.Country))
+		country = DetectCountry(opts.Country)
 	}
-	if len(cc) != 2 {
-		cc = strings.ToLower(DetectCountry(""))
-	}
-	t.country = cc
+	t.country = strings.ToLower(country)
 
 	// Step 1-2: Global config → inbounds + log
 	translateGeneral(cfg, t.config)

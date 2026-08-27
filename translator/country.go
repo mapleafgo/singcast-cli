@@ -17,11 +17,26 @@ var (
 	cachedCountryFallback bool
 )
 
+// normalizeCountryCode 校验并规范化 ISO 3166-1 alpha-2 国家代码。
+// 只接受两位 ASCII 字母；数字、Unicode 字母或其他符号都不是合法代码。
+func normalizeCountryCode(code string) (string, bool) {
+	cc := strings.ToUpper(strings.TrimSpace(code))
+	if len(cc) != 2 {
+		return "", false
+	}
+	for _, r := range cc {
+		if r < 'A' || r > 'Z' {
+			return "", false
+		}
+	}
+	return cc, true
+}
+
 // DetectCountry returns the user's two-letter country code (ISO 3166-1 alpha-2).
 // Priority: explicit argument > cached IP geolocation > fallback "CN".
 func DetectCountry(override string) string {
-	if cc := strings.TrimSpace(override); len(cc) == 2 {
-		return strings.ToUpper(cc)
+	if cc, ok := normalizeCountryCode(override); ok {
+		return cc
 	}
 	cachedCountryOnce.Do(func() {
 		if cc, err := detectCountryByIP(); err == nil && len(cc) == 2 {
@@ -37,8 +52,8 @@ func DetectCountry(override string) string {
 // DetectCountryWithFallback 返回国家代码，并告知是否因 IP 检测失败回退到 CN。
 // 与 DetectCountry 共用同一缓存；override 合法时直接返回覆盖值。
 func DetectCountryWithFallback(override string) (string, bool) {
-	if cc := strings.TrimSpace(override); len(cc) == 2 {
-		return strings.ToUpper(cc), false
+	if cc, ok := normalizeCountryCode(override); ok {
+		return cc, false
 	}
 	DetectCountry("")
 	return cachedCountry, cachedCountryFallback

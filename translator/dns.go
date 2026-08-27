@@ -246,6 +246,7 @@ func translateDNS(cfg *RawConfig, t *translation) {
 			}
 			domains = append(domains, domain)
 		}
+		slices.Sort(domains)
 		result.Servers = append(result.Servers, map[string]any{
 			"type":       "hosts",
 			"tag":        hostsTag,

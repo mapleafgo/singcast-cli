@@ -3,6 +3,7 @@ package translator
 import (
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -519,6 +520,40 @@ hosts:
 	}
 	if !found {
 		t.Error("DNS rule routing to hosts server not found")
+	}
+}
+
+func TestHostsTranslationDomainOrderStable(t *testing.T) {
+	cfg := &RawConfig{
+		DNS: RawDNS{
+			Enable:     true,
+			NameServer: []string{"8.8.8.8"},
+		},
+		Hosts: map[string]any{
+			"z.example": "192.0.2.3",
+			"a.example": "192.0.2.1",
+			"m.example": "192.0.2.2",
+		},
+	}
+
+	for range 20 {
+		tr := &translation{
+			config:    &singboxConfig{Route: &singboxRoute{}},
+			groupTags: map[string]bool{},
+		}
+		translateDNS(cfg, tr)
+
+		for _, rule := range tr.config.DNS.Rules {
+			if rule["server"] != "hosts" {
+				continue
+			}
+			rawDomains, _ := rule["domain"].([]string)
+			domains := slices.Clone(rawDomains)
+			slices.Sort(domains)
+			if !slices.Equal(rawDomains, domains) {
+				t.Fatalf("hosts domains are not sorted: %v", rawDomains)
+			}
+		}
 	}
 }
 
