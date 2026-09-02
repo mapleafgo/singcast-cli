@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	github.com/gofrs/uuid/v5 v5.5.1
 	github.com/sagernet/sing v0.8.14
-	github.com/sagernet/sing-box v1.13.19
-	github.com/sagernet/sing-tun v0.8.13
+	github.com/sagernet/sing-box v1.13.21
+	github.com/sagernet/sing-tun v0.8.15
 	github.com/stretchr/testify v1.12.1
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55
 	github.com/urfave/cli/v3 v3.11.0
@@ -118,7 +118,7 @@ require (
 	github.com/sagernet/nftables v0.3.0-mod.4 // indirect
 	github.com/sagernet/quic-go v0.61.0-sing-box-mod.5 // indirect
 	github.com/sagernet/sing-mux v0.3.5 // indirect
-	github.com/sagernet/sing-quic v0.6.4-0.20260803041914-d83826c306d7 // indirect
+	github.com/sagernet/sing-quic v0.6.5 // indirect
 	github.com/sagernet/sing-shadowsocks v0.2.9 // indirect
 	github.com/sagernet/sing-shadowsocks2 v0.2.2 // indirect
 	github.com/sagernet/sing-shadowtls v0.2.1 // indirect
