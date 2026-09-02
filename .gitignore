@@ -28,3 +28,4 @@ core/cache.db
 
 # Local tool directories
 .mimicode/
+.worktrees/
