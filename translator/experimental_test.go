@@ -122,8 +122,11 @@ func TestTranslateExperimentalCacheFile(t *testing.T) {
 			if cacheFile["path"] != "cache.db" {
 				t.Errorf("cache_file.path = %v, want cache.db", cacheFile["path"])
 			}
-			if _, exists := cacheFile["store_dns"]; exists {
-				t.Error("cache_file.store_dns should not be present")
+			if cacheFile["store_dns"] != true {
+				t.Error("cache_file.store_dns = false, want true")
+			}
+			if _, exists := cacheFile["store_rdrc"]; exists {
+				t.Error("cache_file.store_rdrc is deprecated and should not be present")
 			}
 		})
 	}

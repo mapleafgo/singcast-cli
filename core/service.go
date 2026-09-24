@@ -122,10 +122,11 @@ func (a *atomicState) CompareAndSwap(old, newState State) bool {
 }
 
 type runningState struct {
-	instance      *box.Box
-	boxCtx        context.Context
-	currentConfig string
-	startedAt     int64
+	instance        *box.Box
+	boxCtx          context.Context
+	currentConfig   string
+	startedAt       int64
+	clashAPIEnabled bool
 	// stopCtx 在本实例被关闭前取消，供在途查询（URLTest/TestGroupDelay）及时退出。
 	// 没有它，一次全组测速会在最长 timeoutMs 的窗口里继续使用已 Close 的实例。
 	stopCtx    context.Context
@@ -401,13 +402,14 @@ func (s *Service) startWithJSON(jsonContent string, stubTags map[string]string) 
 
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	rs := &runningState{
-		instance:      inst,
-		boxCtx:        ctx,
-		currentConfig: jsonContent,
-		startedAt:     time.Now().UnixMilli(),
-		stubTags:      stubTags,
-		stopCtx:       stopCtx,
-		stopCancel:    stopCancel,
+		instance:        inst,
+		boxCtx:          ctx,
+		currentConfig:   jsonContent,
+		startedAt:       time.Now().UnixMilli(),
+		clashAPIEnabled: options.Experimental != nil && options.Experimental.ClashAPI != nil,
+		stubTags:        stubTags,
+		stopCtx:         stopCtx,
+		stopCancel:      stopCancel,
 	}
 	s.running.Store(rs)
 	// CAS 失败说明有并发方（Stop/Destroy）已改走状态；由 Swap 的原子性决定谁负责

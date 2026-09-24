@@ -206,14 +206,14 @@ func TestNetworkExtensionIncludeAllNetworks(t *testing.T) {
 
 func TestWiFiStateProvider_ReadRoundTrip(t *testing.T) {
 	p := newPlatform()
-	state := p.ReadWIFIState()
+	state := p.ReadWIFIState(context.Background())
 	if state.SSID != "" {
 		t.Error("should be empty before set")
 	}
 	p.SetWiFiStateProvider(func() string {
 		return `{"ssid":"MyWiFi","bssid":"aa:bb:cc:dd:ee:ff"}`
 	})
-	state = p.ReadWIFIState()
+	state = p.ReadWIFIState(context.Background())
 	if state.SSID != "MyWiFi" || state.BSSID != "aa:bb:cc:dd:ee:ff" {
 		t.Errorf("got SSID=%q BSSID=%q", state.SSID, state.BSSID)
 	}
@@ -328,7 +328,7 @@ func TestFlushSystemDNS_NoPanic(t *testing.T) {
 
 func TestPlatformIO_NoPanicStubs(t *testing.T) {
 	p := newPlatform()
-	if p.ReadWIFIState().SSID != "" {
+	if p.ReadWIFIState(context.Background()).SSID != "" {
 		t.Error("ReadWIFIState should return empty SSID by default")
 	}
 	if p.SystemCertificates() != nil {

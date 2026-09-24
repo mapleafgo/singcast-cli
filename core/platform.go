@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"os"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -147,6 +148,8 @@ func (p *PlatformIO) OpenInterface(options *tun.Options, _ option.TunPlatformOpt
 	return tunDev, nil
 }
 
+func (p *PlatformIO) ProcessPlatformOptions(option.TunPlatformOptions) error { return nil }
+
 func (p *PlatformIO) UsePlatformAutoDetectInterfaceControl() bool { return true }
 
 func (p *PlatformIO) AutoDetectInterfaceControl(fd int) error {
@@ -201,7 +204,7 @@ func (p *PlatformIO) ClearDNSCache() { flushSystemDNS(context.Background()) }
 
 func (p *PlatformIO) RequestPermissionForWIFIState() error { return nil }
 
-func (p *PlatformIO) ReadWIFIState() adapter.WIFIState {
+func (p *PlatformIO) ReadWIFIState(context.Context) adapter.WIFIState {
 	fn := p.getWiFiStateFn.Load()
 	if fn == nil {
 		return adapter.WIFIState{}
@@ -230,7 +233,37 @@ func (p *PlatformIO) UsePlatformNotification() bool { return false }
 
 func (p *PlatformIO) SendNotification(*adapter.Notification) error { return nil }
 
+func (p *PlatformIO) CancelNotification(string, int32) error { return nil }
+
 func (p *PlatformIO) MyInterfaceAddress() []netip.Addr { return nil }
+
+func (p *PlatformIO) UsePlatformNeighborResolver() bool { return false }
+
+func (p *PlatformIO) StartNeighborMonitor(adapter.NeighborUpdateListener) error { return os.ErrInvalid }
+
+func (p *PlatformIO) CloseNeighborMonitor(adapter.NeighborUpdateListener) error { return nil }
+
+func (p *PlatformIO) UsePlatformShell() bool { return false }
+
+func (p *PlatformIO) CheckPlatformShell() error { return nil }
+
+func (p *PlatformIO) OpenShellSession(*adapter.PlatformUser, string, []string, string, int32, int32) (adapter.ShellSession, error) {
+	return nil, os.ErrInvalid
+}
+
+func (p *PlatformIO) LookupUser(string) (*adapter.PlatformUser, error) { return nil, os.ErrInvalid }
+
+func (p *PlatformIO) LookupSFTPServer() (string, error) { return "", os.ErrInvalid }
+
+func (p *PlatformIO) ReadSystemSSHHostKey() ([]byte, error) { return nil, os.ErrInvalid }
+
+func (p *PlatformIO) TailscaleHostname() string { return "" }
+
+func (p *PlatformIO) UsePlatformBridge() bool { return false }
+
+func (p *PlatformIO) CreateBridge(adapter.BridgeOptions) (adapter.BridgeSession, error) {
+	return nil, os.ErrInvalid
+}
 
 // --- helpers ---
 

@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/sagernet/sing-box/experimental/clashapi/trafficontrol"
+	"github.com/sagernet/sing-box/common/trafficcontrol"
+	"github.com/sagernet/sing-box/common/urltest"
+	"github.com/sagernet/sing-box/experimental/clashmode"
 	"github.com/sagernet/sing/common/observable"
+	"github.com/sagernet/sing/service"
 )
+
+const connectionEventClosed = 2
 
 // --- Callbacks ---
 
@@ -45,8 +50,7 @@ func (s *Service) emitState(state State) {
 // rs 必须是刚存入 s.running 的那个实例：安装前会校验它是否仍是当前代，
 // 若并发的 Stop 已把它摘除则直接放弃订阅，避免 goroutine 对着已关闭的实例空转。
 func (s *Service) subscribeHooks(rs *runningState) {
-	srv := s.clashServer()
-	if srv == nil {
+	if !rs.clashAPIEnabled {
 		return
 	}
 
@@ -63,36 +67,68 @@ func (s *Service) subscribeHooks(rs *runningState) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancelFn := func() { cancel() }
 	s.subCancel.Store(&cancelFn)
+	history := service.PtrFromContext[urltest.HistoryStorage](rs.boxCtx)
+	modeManager := service.PtrFromContext[clashmode.Manager](rs.boxCtx)
+	trafficManager := service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
+	if history == nil || modeManager == nil || trafficManager == nil {
+		cancel()
+		s.subCancel.Store(nil)
+		return
+	}
+	sub3, done, err := trafficManager.SubscribeEvents()
+	if err != nil {
+		cancel()
+		s.subCancel.Store(nil)
+		return
+	}
 
 	// 无条件订阅：不能用"启动瞬间是否已注册回调"来决定，否则宿主在 Start 之后
 	// 才 SetOnEvent 时，事件在下次重启前永远不会送达。emitEvent 内部已判空，
 	// 未注册回调时这些 goroutine 只是空转。
 	sub := observable.NewSubscriber[struct{}](8)
-	srv.HistoryStorage().SetHook(sub)
+	history.AddUpdateHook(sub)
 	go observe(ctx, sub, func(struct{}) {
 		s.emitEvent(EventURLTest, "")
 	})
 
 	sub2 := observable.NewSubscriber[struct{}](8)
-	srv.SetModeUpdateHook(sub2)
+	modeManager.AddUpdateHook(sub2)
 	go observe(ctx, sub2, func(struct{}) {
-		s.emitEvent(EventModeUpdate, srv.Mode())
+		s.emitEvent(EventModeUpdate, modeManager.Mode())
 	})
 
-	sub3 := observable.NewSubscriber[trafficontrol.ConnectionEvent](64)
-	srv.TrafficManager().SetEventHook(sub3)
-	go observe(ctx, sub3, func(evt trafficontrol.ConnectionEvent) {
+	go observeSubscription(ctx, sub3, done, func() { trafficManager.UnSubscribeEvents(sub3) }, func(evt trafficcontrol.ConnectionEvent) {
 		meta := evt.Metadata
 		if meta == nil {
 			return
 		}
 		entry := trackerToEntry(meta)
 		entry.Event = int32(evt.Type)
+		if evt.Type == trafficcontrol.ConnectionEventClosed {
+			entry.Event = connectionEventClosed
+		}
 		data, _ := json.Marshal(entry)
 		s.emitEvent(EventConnEvent, string(data))
 	})
 
 	go s.observeStats(ctx)
+}
+
+func observeSubscription[T any](ctx context.Context, sub observable.Subscription[T], done <-chan struct{}, unsubscribe func(), fn func(T)) {
+	defer unsubscribe()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			return
+		case value, ok := <-sub:
+			if !ok {
+				return
+			}
+			fn(value)
+		}
+	}
 }
 
 func (s *Service) observeStats(ctx context.Context) {
@@ -142,7 +178,7 @@ func (s *Service) cancelHooksLocked() {
 	}
 }
 
-func trackerToEntry(meta *trafficontrol.TrackerMetadata) connEntry {
+func trackerToEntry(meta *trafficcontrol.TrackerMetadata) connEntry {
 	domain := meta.Metadata.Domain
 	if domain == "" {
 		domain = meta.Metadata.Destination.Fqdn

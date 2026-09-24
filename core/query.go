@@ -12,29 +12,34 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/common/trafficcontrol"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/experimental/clashapi"
+	"github.com/sagernet/sing-box/experimental/clashmode"
 	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/service"
 )
 
-// clashServer returns the *clashapi.Server from the running instance, or nil if
-// clash_api is not enabled or the service is not running.
-func (s *Service) clashServer() *clashapi.Server {
+func (s *Service) trafficManager() *trafficcontrol.Manager {
 	rs := s.running.Load()
 	if rs == nil {
 		return nil
 	}
-	cs := service.FromContext[adapter.ClashServer](rs.boxCtx)
-	if cs == nil {
+	if !rs.clashAPIEnabled {
 		return nil
 	}
-	srv, ok := cs.(*clashapi.Server)
-	if !ok {
+	return service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
+}
+
+func (s *Service) clashModeManager() *clashmode.Manager {
+	rs := s.running.Load()
+	if rs == nil {
 		return nil
 	}
-	return srv
+	if !rs.clashAPIEnabled {
+		return nil
+	}
+	return service.PtrFromContext[clashmode.Manager](rs.boxCtx)
 }
 
 // QueryProxies 返回代理组 JSON；未运行或 Clash API 未启用时返回空数组。
@@ -45,12 +50,10 @@ func (s *Service) QueryProxies() string {
 	}
 	inst := rs.instance
 
-	srv := s.clashServer()
-
-	var history adapter.URLTestHistoryStorage
+	var history *urltest.HistoryStorage
 	var cache adapter.CacheFile
-	if srv != nil {
-		history = srv.HistoryStorage()
+	if rs.clashAPIEnabled {
+		history = service.PtrFromContext[urltest.HistoryStorage](rs.boxCtx)
 	}
 	cache = service.FromContext[adapter.CacheFile](rs.boxCtx)
 
@@ -97,21 +100,23 @@ func (s *Service) QueryProxies() string {
 
 // QueryStats 返回流量、连接数、内存与启动时间 JSON；未运行时返回零值快照。
 func (s *Service) QueryStats() string {
-	srv := s.clashServer()
-	if srv == nil {
+	rs := s.running.Load()
+	if rs == nil || !rs.clashAPIEnabled {
 		return zeroStatsJSON()
 	}
-	snap := srv.TrafficManager().Snapshot()
-	var startedAt int64
-	if rs := s.running.Load(); rs != nil {
-		startedAt = rs.startedAt
+	manager := service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
+	if manager == nil {
+		return zeroStatsJSON()
 	}
+	up, down := manager.Total()
+	var memoryStats runtime.MemStats
+	runtime.ReadMemStats(&memoryStats)
 	data, _ := json.Marshal(StatsSnapshot{
-		Up:          snap.Upload,
-		Down:        snap.Download,
-		Connections: len(snap.Connections),
-		Memory:      snap.Memory,
-		StartedAt:   startedAt,
+		Up:          up,
+		Down:        down,
+		Connections: manager.ConnectionsLen(),
+		Memory:      memoryStats.StackInuse + memoryStats.HeapInuse + memoryStats.HeapIdle - memoryStats.HeapReleased,
+		StartedAt:   rs.startedAt,
 	})
 	return string(data)
 }
@@ -123,11 +128,11 @@ func zeroStatsJSON() string {
 
 // QueryConnections 返回当前连接的 JSON；未运行时返回空数组。
 func (s *Service) QueryConnections() string {
-	srv := s.clashServer()
-	if srv == nil {
+	manager := s.trafficManager()
+	if manager == nil {
 		return "[]"
 	}
-	conns := srv.TrafficManager().Connections()
+	conns := manager.Connections()
 	if len(conns) == 0 {
 		return "[]"
 	}
@@ -142,8 +147,8 @@ func (s *Service) QueryConnections() string {
 
 // QueryMode 返回可用模式与当前模式；未运行时返回 Rule/Global/Direct 与 Rule。
 func (s *Service) QueryMode() string {
-	srv := s.clashServer()
-	if srv == nil {
+	manager := s.clashModeManager()
+	if manager == nil {
 		data, _ := json.Marshal(ModeInfo{
 			Modes:       []string{"Rule", "Global", "Direct"},
 			CurrentMode: "Rule",
@@ -151,8 +156,8 @@ func (s *Service) QueryMode() string {
 		return string(data)
 	}
 	data, _ := json.Marshal(ModeInfo{
-		Modes:       srv.ModeList(),
-		CurrentMode: srv.Mode(),
+		Modes:       manager.ModeList(),
+		CurrentMode: manager.Mode(),
 	})
 	return string(data)
 }
@@ -299,38 +304,41 @@ func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
 
 // SetMode 切换 Clash 路由模式；Clash API 不可用时返回错误。
 func (s *Service) SetMode(mode string) error {
-	srv := s.clashServer()
-	if srv == nil {
+	manager := s.clashModeManager()
+	if manager == nil {
 		return fmt.Errorf("clash API not available")
 	}
-	srv.SetMode(mode)
+	manager.SetMode(mode)
 	return nil
 }
 
 // CloseConnection 按 UUID 关闭指定连接；ID 无效或连接不存在时返回错误。
 func (s *Service) CloseConnection(connID string) error {
-	srv := s.clashServer()
-	if srv == nil {
+	manager := s.trafficManager()
+	if manager == nil {
 		return fmt.Errorf("clash API not available")
 	}
 	id := uuid.FromStringOrNil(connID)
 	if id == uuid.Nil {
 		return fmt.Errorf("invalid connection ID: %s", connID)
 	}
-	tracker := srv.TrafficManager().Connection(id)
+	tracker := manager.Connection(id)
 	if tracker == nil {
 		return fmt.Errorf("connection %s not found", connID)
 	}
 	return tracker.Close()
 }
 
-// CloseConnections 关闭当前非 DNS 连接并清空流量统计；单个连接关闭失败时返回错误。
+// CloseConnections 关闭当前非 DNS 连接并清理内核保留的已关闭连接元数据；累计流量不清零。
 func (s *Service) CloseConnections() error {
-	srv := s.clashServer()
-	if srv == nil {
+	rs := s.running.Load()
+	if rs == nil {
 		return fmt.Errorf("clash API not available")
 	}
-	manager := srv.TrafficManager()
+	manager := service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
+	if manager == nil {
+		return fmt.Errorf("clash API not available")
+	}
 	for _, metadata := range manager.Connections() {
 		tracker := manager.Connection(metadata.ID)
 		if tracker == nil {
@@ -340,7 +348,7 @@ func (s *Service) CloseConnections() error {
 			return fmt.Errorf("close connection %s: %w", metadata.ID, err)
 		}
 	}
-	manager.ResetStatistic()
+	manager.Clear()
 	s.ResetNetwork()
 	return nil
 }
