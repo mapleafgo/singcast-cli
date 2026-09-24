@@ -14,7 +14,7 @@ func TestSystemdUnit_ContainsKeyFields(t *testing.T) {
 	unit := systemdUnit("/opt/Singcast/singcast-core", "/var/lib/singcast", "1000")
 	require.Contains(t, unit, "User=singcast")
 	require.Contains(t, unit, "Group=singcast")
-	require.Contains(t, unit, "AmbientCapabilities=CAP_NET_ADMIN")
+	require.Contains(t, unit, "AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW")
 	// ExecStart 路径必须带引号，避免空格路径拆词
 	require.Contains(t, unit, `ExecStart="/opt/Singcast/singcast-core" ipc --home "/var/lib/singcast"`)
 	require.Contains(t, unit, "RuntimeDirectory=singcast")

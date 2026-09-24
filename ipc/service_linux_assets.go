@@ -45,7 +45,7 @@ RuntimeDirectoryMode=0755
 WorkingDirectory=` + stateDir + `
 Environment=SINGCAST_IPC_PATH=/run/singcast/command.sock
 ` + envGui + `ExecStart=` + quotedExe + ` ipc --home ` + quotedHome + `
-AmbientCapabilities=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 RestrictSUIDSGID=yes
