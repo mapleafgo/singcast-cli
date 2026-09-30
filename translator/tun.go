@@ -4,6 +4,9 @@ import (
 	"github.com/mapleafgo/singcast/translator/proxy"
 )
 
+// 默认绕过 RFC1918 网段，使 DIRECT 流量沿系统路由访问局域网和 VPN。
+var defaultRouteExcludeAddresses = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
 // translateTUN adds a TUN inbound if TUN is enabled in the mihomo config.
 func translateTUN(cfg *RawConfig, t *translation) {
 	if !cfg.Tun.Enable {
@@ -63,9 +66,11 @@ func translateTUN(cfg *RawConfig, t *translation) {
 	if len(cfg.Tun.RouteAddress) > 0 {
 		tunInbound["route_address"] = cfg.Tun.RouteAddress
 	}
-	if len(cfg.Tun.RouteExcludeAddress) > 0 {
-		tunInbound["route_exclude_address"] = cfg.Tun.RouteExcludeAddress
+	routeExcludeAddresses := cfg.Tun.RouteExcludeAddress
+	if len(routeExcludeAddresses) == 0 {
+		routeExcludeAddresses = defaultRouteExcludeAddresses
 	}
+	tunInbound["route_exclude_address"] = routeExcludeAddresses
 
 	// Linux: iproute2 table/rule index
 	if cfg.Tun.IPRoute2TableIndex > 0 {

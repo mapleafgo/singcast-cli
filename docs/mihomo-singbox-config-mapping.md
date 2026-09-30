@@ -460,7 +460,7 @@ sing-box dns.rules（自动生成）:
 | `auto-redirect: true` | `auto_redirect` | 仅 `true` 时写入，仅 Linux 有效 | — |
 | `udp-timeout: 300` | `udp_timeout: "5m"` | **秒 → Go Duration 字符串**，`0` 时不写入 | — |
 | `route-address: [...]` | `route_address` | 空切片不写入 | — |
-| `route-exclude-address: [...]` | `route_exclude_address` | 空切片不写入 | — |
+| `route-exclude-address: [...]` | `route_exclude_address` | 未配置或为空时使用默认值；非空列表按原顺序透传并替换默认值 | `[10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]` |
 | `iproute2-table-index` | `iproute2_table_index` | Linux，`0` 时不写入 | — |
 | `iproute2-rule-index` | `iproute2_rule_index` | Linux，`0` 时不写入 | — |
 | `include-uid: [...]` | `include_uid` | Linux，空切片不写入 | — |

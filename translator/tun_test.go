@@ -1,6 +1,9 @@
 package translator
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func mustStringSlice(t *testing.T, m map[string]any, key string) []string {
 	t.Helper()
@@ -357,7 +360,7 @@ func TestTranslateTUNUDPTimeoutZero(t *testing.T) {
 	}
 }
 
-func TestTranslateTUNEmptySliceOmitted(t *testing.T) {
+func TestTranslateTUNEmptySlices(t *testing.T) {
 	cfg := &RawConfig{
 		Tun: RawTun{
 			Enable:              true,
@@ -371,10 +374,15 @@ func TestTranslateTUNEmptySliceOmitted(t *testing.T) {
 	translateTUN(cfg, tt)
 
 	ib := tt.config.Inbounds[0]
-	for _, key := range []string{"route_address", "route_exclude_address", "include_uid", "include_package"} {
+	for _, key := range []string{"route_address", "include_uid", "include_package"} {
 		if _, exists := ib[key]; exists {
 			t.Errorf("%s should not be set for empty slice", key)
 		}
+	}
+	got := mustStringSlice(t, ib, "route_exclude_address")
+	want := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	if !slices.Equal(got, want) {
+		t.Errorf("route_exclude_address = %v, want %v", got, want)
 	}
 }
 
