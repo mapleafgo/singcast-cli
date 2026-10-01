@@ -74,6 +74,21 @@
 - 规则层：`translator/autoroute.go` 已用 `rule_set`（`ensureRuleSetDef`），`translator/assemble.go` 已用 route `action=sniff`，都是 1.14 推荐形态；无内联 `geosite` / `geoip` / inbound 旧 `sniff` / `domain_strategy` 残留。
 - 配置路径：需在迁移后用 1.14 对一份真实配置做 CheckConfig/启动验证，确认无 `unknown field` / 校验失败（尤其 DNS 的 `default_domain_resolver`、`domain_resolver` 等）。
 
+> **实测补充（DNS 响应匹配）**：原判断"translator 无 1.14 残留"只覆盖了 route 规则层。
+> `generateDNSRules()` 生成的 DNS 规则引用了纯 `ip_cidr` 的 GeoIP rule-set，在 1.14
+> 属于 [Legacy Address Filter Fields](https://sing-box.sagernet.org/migration/#migrate-address-filter-fields-to-response-matching)，
+> 启动即报 `initialize rule-set[0]: ... Legacy Address Filter Fields in DNS rules is deprecated`。
+> `check` 只做配置反序列化、不触发 rule-set 元数据校验，因此本地 `check` 通过并不代表能启动，
+> 必须用 `run` 验证。修复见下一节。
+
+### 4.1 DNS 响应匹配迁移
+
+- `translator/autoroute.go` 的 `generateDNSRules()` 改为先发 `action: "evaluate"` 取响应，
+  再用 `match_response: true` + `rule_set` 按响应地址判定直连；`query_type` 限定
+  `A/AAAA/HTTPS`，与 legacy `WithAddressLimit` 的生效范围一致。
+- 旧版本已转换并保存的 profile 是 JSON，走 `ConvertWithMeta` 的 JSON 透传分支。
+  新增 `translator.UpgradeLegacyDNSRules()`，在同一入口就地升级这类配置，避免升级内核后旧订阅档无法启动。
+
 ## 5. 迁移步骤（建议）
 
 1. 备份当前 `go.mod` / `go.sum`（已提交且已推送，`git status` 干净）。

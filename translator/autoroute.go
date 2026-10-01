@@ -210,9 +210,24 @@ func generateDNSRules(t *translation) {
 	}
 	ensureRuleSetDef(geoipTag, "geoip", cc, t)
 	rsTags = append(rsTags, geoipTag)
+
+	// sing-box 1.14 起，DNS 规则引用只含 ip_cidr 的 rule-set（GeoIP）必须配合
+	// evaluate + match_response 做响应匹配，否则启动直接报
+	// "Legacy Address Filter Fields in DNS rules is deprecated"（1.16 将移除）。
+	// 先用 direct DNS 取一次响应，再按响应地址判定是否直连：与 1.13 legacy 模式
+	// “按该 server 解析、再用响应地址复核”的判定一致。
+	// query_type 对齐 legacy 的 WithAddressLimit：仅对地址类查询生效，
+	// 其余查询沿用 legacy 的跳过行为（落到 final）。
 	rules = append(rules, map[string]any{
-		"rule_set": rsTags,
-		"server":   directTag,
+		"action":     "evaluate",
+		"server":     directTag,
+		"query_type": dnsAddressQueryTypes,
+	})
+	rules = append(rules, map[string]any{
+		"match_response": true,
+		"rule_set":       rsTags,
+		"server":         directTag,
+		"query_type":     dnsAddressQueryTypes,
 	})
 
 	// FakeIP 兜住其余 A/AAAA 查询。它匹配一切 A/AAAA，因此必须排在 hosts 与

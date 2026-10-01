@@ -426,18 +426,27 @@ sing-box 使用 `dns.servers` + `dns.rules` 的路由模式。
 
 实际生成的 DNS 规则策略：
 - `clash_mode: "Direct"` → 国内 DNS
-- 私有域名、国内 geosite/geoip → 国内 DNS
+- 私有域名、国内 geosite/geoip → 国内 DNS（sing-box 1.14 起为响应匹配）
 - A/AAAA 查询 → FakeIP 服务器（如启用）
 - 其他 → DNS final 服务器
 
 ```
-sing-box dns.rules（自动生成）:
+sing-box dns.rules（自动生成，sing-box 1.14+）:
   [
     {clash_mode: "Direct", server: "dns-local"},
-    {rule_set: ["geosite-private", "geosite-cn", "geoip-cn"], server: "dns-local"},
+    {action: "evaluate", server: "dns-local", query_type: ["A", "AAAA", "HTTPS"]},
+    {action: "route", match_response: true, query_type: ["A", "AAAA", "HTTPS"],
+     rule_set: ["geosite-private", "geosite-cn", "geoip-cn"], server: "dns-local"},
     {query_type: ["A", "AAAA"], server: "fakeip"},
   ]
 ```
+
+> **sing-box 1.14 迁移**：GeoIP rule-set 只含 `ip_cidr`，直接放进 DNS 规则属于
+> [Legacy Address Filter Fields](https://sing-box.sagernet.org/migration/#migrate-address-filter-fields-to-response-matching)，
+> 1.14 起启动即报错、1.16 将移除。翻译器改为先用 `evaluate` 取一次响应，再用
+> `match_response` 按响应地址判定直连；`action: "route"` 由 `addDNSRouteAction` 统一补齐。
+> 旧版本已保存的 profile（已转换 JSON）走 JSON 透传路径，由 `translator.UpgradeLegacyDNSRules`
+> 就地升级，保证升级内核后旧订阅仍可启动。
 
 ---
 

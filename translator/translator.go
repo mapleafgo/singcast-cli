@@ -38,7 +38,18 @@ func ConvertWithMeta(data []byte, opts *Options) (string, []string, Meta, error)
 	}
 	// JSON 直接透传
 	if DetectFormat(data) == FormatJSON {
-		return string(data), nil, Meta{}, nil
+		// 已保存的 profile 是旧版本转换后的 JSON，会走到这条透传分支。
+		// 旧版本会把 GeoIP rule-set 直接写进 DNS 规则，在 sing-box 1.14 属于
+		// legacy address filter，启动即报错，因此这里补一次就地升级。
+		upgraded, changed, err := UpgradeLegacyDNSRules(string(data))
+		if err != nil {
+			return "", nil, Meta{}, err
+		}
+		var warnings []string
+		if changed {
+			warnings = append(warnings, "已将 legacy DNS address filter 规则升级为 evaluate + match_response（sing-box 1.14）")
+		}
+		return upgraded, warnings, Meta{}, nil
 	}
 	// URI 列表：直接构造 RawConfig，跳过 YAML 序列化往返
 	if isProxyURIList(data) {

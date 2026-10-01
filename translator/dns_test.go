@@ -741,6 +741,20 @@ func TestGenerateDNSRulesIncludesPrivate(t *testing.T) {
 	if geoRule == nil {
 		t.Fatal("expected a geo-based DNS rule")
 	}
+	// sing-box 1.14 起，引用 GeoIP（纯 ip_cidr）rule-set 的 DNS 规则必须配合
+	// evaluate + match_response，否则启动直接报 Legacy Address Filter Fields。
+	if matched, _ := geoRule["match_response"].(bool); !matched {
+		t.Errorf("geo DNS rule must set match_response for sing-box 1.14, got %v", geoRule["match_response"])
+	}
+	hasEvaluate := false
+	for _, rule := range tr.config.DNS.Rules {
+		if rule["action"] == "evaluate" {
+			hasEvaluate = true
+		}
+	}
+	if !hasEvaluate {
+		t.Error("geo DNS rule requires a preceding evaluate action")
+	}
 	rs, _ := geoRule["rule_set"].([]string)
 	found := false
 	for _, tag := range rs {

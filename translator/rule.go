@@ -10,6 +10,10 @@ import (
 // ApplyRuleSetProxy 只改写该前缀，避免代理参数影响任意 URL。
 const RawGitHubPrefix = "https://raw.githubusercontent.com/"
 
+// dnsAddressQueryTypes 是 legacy DNS address filter 的生效范围：仅地址类查询
+// （A/AAAA/HTTPS）参与响应地址判定。生成与升级 DNS 规则时统一引用，避免两处漂移。
+var dnsAddressQueryTypes = []string{"A", "AAAA", "HTTPS"}
+
 // ProxyURL prepends the proxy prefix for raw.githubusercontent.com URLs.
 func ProxyURL(rawURL, proxy string) string {
 	if prefix := strings.TrimRight(proxy, "/"); prefix != "" {
