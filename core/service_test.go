@@ -128,6 +128,34 @@ func TestApplyRuleSetProxy_EmptyProxy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, input, result)
 }
+
+// 看门狗自愈重启必须复用最近一次生效的 rule-set 代理前缀。
+// StartWithContent 成功后会无条件记录传入的代理，因此重启若传空串，
+// lastRuleSetProxy 会被清空——用它作为"重启是否带上代理"的判据。
+func TestService_HealthRestartPreservesRuleSetProxy(t *testing.T) {
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	mustMkdirAll(t, homeDir)
+
+	svc := NewService()
+	require.NoError(t, svc.Init(initJSON(homeDir)))
+	defer svc.Destroy()
+
+	// 不含 rule_set 的最小可离线启动配置，避免测试依赖真实网络。
+	const offlineJSON = `{"log":{"level":"error"},"outbounds":[{"type":"direct","tag":"DIRECT"}]}`
+	const proxy = "https://mirror.example.com"
+	require.NoError(t, svc.StartWithContent(offlineJSON, proxy))
+	require.NotNil(t, svc.lastRuleSetProxy.Load())
+	require.Equal(t, proxy, *svc.lastRuleSetProxy.Load())
+
+	svc.restartForHealth()
+
+	require.Equal(t, StateRunning, svc.State(), "restartForHealth should leave the service running")
+	require.NotNil(t, svc.lastRuleSetProxy.Load())
+	assert.Equal(t, proxy, *svc.lastRuleSetProxy.Load(),
+		"health restart dropped the rule-set proxy")
+}
+
 func TestService_QueryProxies_NotRunning(t *testing.T) {
 	svc := NewService()
 	defer svc.Destroy()

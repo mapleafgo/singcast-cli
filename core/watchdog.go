@@ -183,7 +183,13 @@ func (s *Service) restartForHealth() {
 	if rs == nil {
 		return
 	}
-	if err := s.StartWithContent(rs.currentConfig, ""); err != nil {
+	// 复用最近一次生效的 rule-set 代理前缀：重启会用 rs.currentConfig（尚未加
+	// 前缀的 JSON）重新翻译，缺少它就会把 rule-set 下载退回直连。
+	proxy := ""
+	if p := s.lastRuleSetProxy.Load(); p != nil {
+		proxy = *p
+	}
+	if err := s.StartWithContent(rs.currentConfig, proxy); err != nil {
 		slog.Error("health watchdog: restart failed", "error", err)
 	}
 }

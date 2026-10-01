@@ -162,6 +162,11 @@ type Service struct {
 	startMu  sync.Mutex
 	startSeq atomic.Int64 // coalesce: only the latest caller proceeds
 
+	// 看门狗自愈重启必须带上最近一次生效的 rule-set 代理前缀。代理在启动时
+	// 被烘进 rule-set URL，只存在于运行实例的 currentConfig 里；重启若传空串，
+	// rule-set 下载会退回直连。
+	lastRuleSetProxy atomic.Pointer[string]
+
 	// hooksMu 保护 subCancel 的读改写。绝不在持有它时调用宿主回调，
 	// 因此不会与 startMu 形成锁序问题。
 	hooksMu sync.Mutex
@@ -291,6 +296,7 @@ func (s *Service) StartWithContent(content, ruleSetProxy string) error {
 		s.casState(StateStarting, StateInitialized)
 		return err
 	}
+	s.lastRuleSetProxy.Store(&ruleSetProxy)
 	return nil
 }
 
