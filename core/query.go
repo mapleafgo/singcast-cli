@@ -25,9 +25,8 @@ func (s *Service) trafficManager() *trafficcontrol.Manager {
 	if rs == nil {
 		return nil
 	}
-	if !rs.clashAPIEnabled {
-		return nil
-	}
+	// 1.14 起 trafficcontrol.Manager 独立于 clash_api 注册，运行时统计
+	// （流量/连接/内存）不再要求启用对外 API。
 	return service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
 }
 
@@ -36,13 +35,12 @@ func (s *Service) clashModeManager() *clashmode.Manager {
 	if rs == nil {
 		return nil
 	}
-	if !rs.clashAPIEnabled {
-		return nil
-	}
+	// 1.14 起 clashmode.Manager 与 trafficcontrol.Manager 同条件注册
+	// （只要配置了 PlatformLogWriter），模式查询/切换不再要求启用对外 API。
 	return service.PtrFromContext[clashmode.Manager](rs.boxCtx)
 }
 
-// QueryProxies 返回代理组 JSON；未运行或 Clash API 未启用时返回空数组。
+// QueryProxies 返回代理组 JSON；未运行时返回空数组。
 func (s *Service) QueryProxies() string {
 	rs := s.running.Load()
 	if rs == nil {
@@ -50,12 +48,9 @@ func (s *Service) QueryProxies() string {
 	}
 	inst := rs.instance
 
-	var history *urltest.HistoryStorage
-	var cache adapter.CacheFile
-	if rs.clashAPIEnabled {
-		history = service.PtrFromContext[urltest.HistoryStorage](rs.boxCtx)
-	}
-	cache = service.FromContext[adapter.CacheFile](rs.boxCtx)
+	// 测速历史同样独立于 clash_api：节点延迟不应要求先启用对外 API。
+	history := service.PtrFromContext[urltest.HistoryStorage](rs.boxCtx)
+	cache := service.FromContext[adapter.CacheFile](rs.boxCtx)
 
 	var groups []ProxyGroup
 	for _, out := range inst.Outbound().Outbounds() {
@@ -101,7 +96,7 @@ func (s *Service) QueryProxies() string {
 // QueryStats 返回流量、连接数、内存与启动时间 JSON；未运行时返回零值快照。
 func (s *Service) QueryStats() string {
 	rs := s.running.Load()
-	if rs == nil || !rs.clashAPIEnabled {
+	if rs == nil {
 		return zeroStatsJSON()
 	}
 	manager := service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
@@ -302,11 +297,11 @@ func (s *Service) SelectOutbound(groupTag, outboundTag string) error {
 	return nil
 }
 
-// SetMode 切换 Clash 路由模式；Clash API 不可用时返回错误。
+// SetMode 切换 Clash 路由模式；未运行时返回错误。
 func (s *Service) SetMode(mode string) error {
 	manager := s.clashModeManager()
 	if manager == nil {
-		return fmt.Errorf("clash API not available")
+		return fmt.Errorf("clash mode manager not available")
 	}
 	manager.SetMode(mode)
 	return nil

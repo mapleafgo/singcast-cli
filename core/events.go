@@ -46,14 +46,16 @@ func (s *Service) emitState(state State) {
 	s.emitEvent(EventStateChange, state.String())
 }
 
-// subscribeHooks 为 rs 这一代实例注册 Clash 事件订阅。
+// subscribeHooks 为 rs 这一代实例注册运行时事件订阅（流量统计、连接事件、
+// 测速历史、模式变化）。
+//
+// 这些事件是应用层（仪表盘统计、连接列表、节点延迟、模式切换）的数据来源，
+// 因此不依赖 clash_api 是否启用：1.14 起 trafficcontrol.Manager /
+// urltest.HistoryStorage / clashmode.Manager 均已独立于 clash_api 注册
+// （只要配置了 PlatformLogWriter）。谁可用就订阅谁。
 // rs 必须是刚存入 s.running 的那个实例：安装前会校验它是否仍是当前代，
 // 若并发的 Stop 已把它摘除则直接放弃订阅，避免 goroutine 对着已关闭的实例空转。
 func (s *Service) subscribeHooks(rs *runningState) {
-	if !rs.clashAPIEnabled {
-		return
-	}
-
 	s.hooksMu.Lock()
 	defer s.hooksMu.Unlock()
 
@@ -70,46 +72,48 @@ func (s *Service) subscribeHooks(rs *runningState) {
 	history := service.PtrFromContext[urltest.HistoryStorage](rs.boxCtx)
 	modeManager := service.PtrFromContext[clashmode.Manager](rs.boxCtx)
 	trafficManager := service.PtrFromContext[trafficcontrol.Manager](rs.boxCtx)
-	if history == nil || modeManager == nil || trafficManager == nil {
+	if history == nil && modeManager == nil && trafficManager == nil {
 		cancel()
 		s.subCancel.Store(nil)
 		return
 	}
-	sub3, done, err := trafficManager.SubscribeEvents()
-	if err != nil {
-		cancel()
-		s.subCancel.Store(nil)
-		return
+	if trafficManager != nil {
+		sub3, done, err := trafficManager.SubscribeEvents()
+		if err == nil {
+			go observeSubscription(ctx, sub3, done, func() { trafficManager.UnSubscribeEvents(sub3) }, func(evt trafficcontrol.ConnectionEvent) {
+				meta := evt.Metadata
+				if meta == nil {
+					return
+				}
+				entry := trackerToEntry(meta)
+				entry.Event = int32(evt.Type)
+				if evt.Type == trafficcontrol.ConnectionEventClosed {
+					entry.Event = connectionEventClosed
+				}
+				data, _ := json.Marshal(entry)
+				s.emitEvent(EventConnEvent, string(data))
+			})
+		}
 	}
 
 	// 无条件订阅：不能用"启动瞬间是否已注册回调"来决定，否则宿主在 Start 之后
 	// 才 SetOnEvent 时，事件在下次重启前永远不会送达。emitEvent 内部已判空，
 	// 未注册回调时这些 goroutine 只是空转。
-	sub := observable.NewSubscriber[struct{}](8)
-	history.AddUpdateHook(sub)
-	go observe(ctx, sub, func(struct{}) {
-		s.emitEvent(EventURLTest, "")
-	})
+	if history != nil {
+		sub := observable.NewSubscriber[struct{}](8)
+		history.AddUpdateHook(sub)
+		go observe(ctx, sub, func(struct{}) {
+			s.emitEvent(EventURLTest, "")
+		})
+	}
 
-	sub2 := observable.NewSubscriber[struct{}](8)
-	modeManager.AddUpdateHook(sub2)
-	go observe(ctx, sub2, func(struct{}) {
-		s.emitEvent(EventModeUpdate, modeManager.Mode())
-	})
-
-	go observeSubscription(ctx, sub3, done, func() { trafficManager.UnSubscribeEvents(sub3) }, func(evt trafficcontrol.ConnectionEvent) {
-		meta := evt.Metadata
-		if meta == nil {
-			return
-		}
-		entry := trackerToEntry(meta)
-		entry.Event = int32(evt.Type)
-		if evt.Type == trafficcontrol.ConnectionEventClosed {
-			entry.Event = connectionEventClosed
-		}
-		data, _ := json.Marshal(entry)
-		s.emitEvent(EventConnEvent, string(data))
-	})
+	if modeManager != nil {
+		sub2 := observable.NewSubscriber[struct{}](8)
+		modeManager.AddUpdateHook(sub2)
+		go observe(ctx, sub2, func(struct{}) {
+			s.emitEvent(EventModeUpdate, modeManager.Mode())
+		})
+	}
 
 	go s.observeStats(ctx)
 }

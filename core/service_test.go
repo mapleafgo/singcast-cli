@@ -261,7 +261,7 @@ func TestService_SetMode_NotRunning(t *testing.T) {
 
 	err := svc.SetMode("Rule")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "clash API not available")
+	assert.Contains(t, err.Error(), "clash mode manager not available")
 }
 
 func TestService_CloseConnection_NotRunning(t *testing.T) {
