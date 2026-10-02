@@ -73,12 +73,12 @@ task ffi-darwin-arm64
 task ffi-linux-amd64
 task ffi-windows-amd64
 
-# FFI 移动端共享库
-task ffi-android-arm64
-task ffi-ios-arm64
+# 移动端 SDK（gomobile）
+task mobile-android-arm64
+task mobile-ios-arm64
 
-# 构建全部
-task all
+# 构建全部产物（CLI + FFI + 移动端）
+task release
 ```
 
 构建标签：`with_clash_api,with_utls,with_quic,with_gvisor`

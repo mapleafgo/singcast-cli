@@ -73,12 +73,12 @@ task ffi-darwin-arm64
 task ffi-linux-amd64
 task ffi-windows-amd64
 
-# FFI shared library (mobile)
-task ffi-android-arm64
-task ffi-ios-arm64
+# Mobile SDK (gomobile)
+task mobile-android-arm64
+task mobile-ios-arm64
 
-# All targets
-task all
+# All release artifacts (CLI + FFI + mobile)
+task release
 ```
 
 Build tags: `with_clash_api,with_utls,with_quic,with_gvisor`

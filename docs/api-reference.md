@@ -17,7 +17,7 @@ Singcast exposes three integration interfaces: **Desktop** (c-shared C ABI), **M
 | Event callbacks | CoreSetEventCallback | SetOnEvent | JSON-RPC notifications (push) |
 | Platform IO (TUN, WiFi, DNS) | — | Full (TUN fd, SocketProtector, WiFi) | — |
 | Memory management | SetMemoryLimit / TriggerGC | SetMemoryLimit / TriggerGC | core.triggerGC |
-| Service management | — | — | service.install / service.uninstall (Windows) |
+| Service management | — | — | CLI: `singcast service install/uninstall` (Linux/Windows) |
 
 ---
 
@@ -127,6 +127,7 @@ Callback signature: `void (*)(int eventType, const char* json)`
 | 2 | ModeUpdate | Mode string, e.g. `"rule"` |
 | 3 | ConnEvent | Connection JSON with `event` field (0=New, 1=Update, 2=Closed) |
 | 4 | StateChange | State string, e.g. `"running"` |
+| 5 | Stats | Traffic stats JSON, pushed every second while running |
 
 Must be set before `CoreStartWithContent`. Persists across restarts.
 
@@ -146,6 +147,7 @@ void onEvent(int eventType, Pointer<Utf8> json) {
     case 2: // ModeUpdate — str is "rule", "global", or "direct"
     case 3: // ConnEvent — str is connection JSON with "event" field
     case 4: // StateChange — str is "initialized", "running", etc.
+    case 5: // Stats — traffic stats JSON
   }
 }
 ```
@@ -253,7 +255,7 @@ A single unified listener delivers all events. Called from background threads. R
 |--------|-----------|
 | `SetOnEvent(l)` | `EventListener.OnEvent(eventType int32, json string)` |
 
-eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent, 4=StateChange. See the Desktop Event Callback section for payload details.
+eventType values: 0=Log, 1=URLTest, 2=ModeUpdate, 3=ConnEvent, 4=StateChange, 5=Stats. See the Desktop Event Callback section for payload details.
 
 ---
 
@@ -312,7 +314,7 @@ All messages are UTF-8 JSON terminated by `\n`. Each JSON object must fit on a s
 # Start IPC service (foreground)
 singcast ipc --home /path/to/home
 
-# On Windows, can also run as a service (see service.install)
+# On Windows, register the SCM service first: singcast service install
 ```
 
 On Windows, `singcast ipc` auto-detects whether it's running under the Windows Service Manager. If so, it registers as a Windows service; otherwise it runs in foreground.
@@ -373,14 +375,20 @@ On Windows, `singcast ipc` auto-detects whether it's running under the Windows S
 | `core.setLogLevel` | `{"level": int32}` | `null` | Set min log level (2=Error, 3=Warn, 4=Info, 5=Debug, 6=Trace) |
 | `core.getVersion` | — | JSON string | Version info |
 
-### Service Methods (Windows Only)
+### Service Management
 
-| Method | Params | Result | Description |
-|--------|--------|--------|-------------|
-| `service.install` | — | `null` | Register singcast as Windows service (auto-start) |
-| `service.uninstall` | — | `null` | Remove the Windows service |
+System service install/uninstall is a **CLI command**, not a JSON-RPC method. The IPC handler does not expose `service.install` / `service.uninstall`; GUIs invoke the CLI.
 
-On non-Windows platforms, these methods return error: `"service management is only supported on Windows"`.
+```bash
+singcast service install     # install the system service
+singcast service uninstall   # remove it
+```
+
+| Platform | Mechanism | Notes |
+|----------|-----------|-------|
+| Linux | systemd unit | requires root (run via `pkexec` or package postinst) |
+| Windows | SCM service `SingcastService` | manual start (`StartManual`), not auto-start |
+| macOS | not supported | returns an error |
 
 ### Notifications (Service → GUI)
 
